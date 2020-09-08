@@ -6,19 +6,25 @@ const Jazzicon = dynamic(() => import("../components/jazzicon"), { ssr: false })
 export function ConnectedPeers({ peers }){
   return (
     <div className={styles.connectedPeers}>
-      <h2>Connected Peers ({peers.length})</h2>
-      <div className={styles.connectedPeersList}>
+      <table>
+        <tr>
+          <th colspan={2}>Peer</th>
+          <th>Channel</th>
+        </tr>
         { peers.map( x => (
-          <div className={styles.peer} key={x}>
-            <Jazzicon
-              diameter={40}
-              address={x}
-              className={styles.peerIcon}
-            />
-            <div>{x}</div>
-          </div>
+          <tr className={styles.peer} key={x}>
+            <td>
+              <Jazzicon
+                diameter={40}
+                address={x}
+                className={styles.peerIcon}
+              />
+            </td>
+            <td>{x}</td>
+            <td></td>
+          </tr>
         )) }
-      </div>
+      </table>
     </div>
   )
 }
