@@ -5,6 +5,7 @@ import Logo from '../components/logo'
 import { Logs } from '../components/log'
 import { Connection } from '../connection'
 import dynamic from "next/dynamic";
+import { Balance } from '../components/balance'
 import { ConnectedPeers } from '../components/connected-peers'
 
 const Jazzicon = dynamic(() => import("../components/jazzicon"), { ssr: false });
@@ -52,6 +53,7 @@ export default function Home() {
 
           { selectedTab == 0 && <Logs messages={messages} connecting={connecting} /> }
           { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
+          { selectedTab == 2 && <Balance /> }
         </div>
       </div>
     </>
