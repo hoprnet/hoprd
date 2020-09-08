@@ -5,15 +5,14 @@ import Logo from '../components/logo'
 import { Logs } from '../components/log'
 import { Connection } from '../connection'
 import dynamic from "next/dynamic";
+import { ConnectedPeers } from '../components/connected-peers'
 
 const Jazzicon = dynamic(() => import("../components/jazzicon"), { ssr: false });
-
-
 
 export default function Home() {
   let connection
 
-  const [showConnected, setShowConnected] = useState(false)
+  const [selectedTab, setSelectedTab] = useState(0)
   const [connecting, setConnecting] = useState(true);
   const [messages, setMessages] = useState([]); // The fetish for immutability in react means this will be slower than a mutable array..
   const [peers, setConnectedPeers] = useState([]);
@@ -33,37 +32,28 @@ export default function Home() {
       </Head>
 
       <Logo
-        onClick={() => setShowConnected(!showConnected)}
+        onClick={() => setSelectedTab((selectedTab + 1) % 3)}
         />
       <h1>HOPR Logs [TESTNET NODE]</h1>
 
-      <Logs messages={messages} connecting={connecting} />
-
-      <div className='send'>
-        <input id="command"
-          type="text"
-          disabled={connecting}
-          autoFocus
-          placeholder="type 'help' for full list of commands" /> 
+      <div className={styles.tabs}>
+        <a href='#'
+          className={selectedTab == 0 ? styles.selectedTab : ''}
+          onClick={() => setSelectedTab(0)}>Logs</a>
+        <a href='#'
+          className={selectedTab == 1 ? styles.selectedTab : ''}
+          onClick={() => setSelectedTab(1)}>Connected Peers</a>
+        <a href='#'
+          className={selectedTab == 2 ? styles.selectedTab : ''}
+          onClick={() => setSelectedTab(2)}>Balance</a>
       </div>
 
-      { showConnected && 
-        <div className={styles.connectedPeers}>
-          <h2>Connected Peers ({peers.length})</h2>
-          <div className={styles.connectedPeersList}>
-            { peers.map( x => (
-              <div className={styles.peer} key={x}>
-                <Jazzicon
-                  diameter={40}
-                  address={x}
-                  className={styles.peerIcon}
-                />
-                <div>{x}</div>
-              </div>
-            )) }
-          </div>
-        </div>
-      }
+      <div className={styles.pane}>
+
+        { selectedTab == 0 && <Logs messages={messages} connecting={connecting} /> }
+        { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
+      </div>
+
     </div>
   )
 }

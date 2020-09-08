@@ -52,10 +52,19 @@ export function Logs(props){
 
   let cls = styles.logs + ' ' + (props.connecting ? styles.connecting : '')
   return (
+    <div>
       <div className={cls}>
         <div ref={container}>
         { props.messages.map(x => <LogLine value={x} />) }
         </div>
       </div>
+      <div className='send'>
+        <input id="command"
+          type="text"
+          disabled={props.connecting}
+          autoFocus
+          placeholder="type 'help' for full list of commands" /> 
+      </div>
+    </div>
   )
 }
