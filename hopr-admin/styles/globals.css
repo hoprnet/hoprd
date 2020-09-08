@@ -5,6 +5,7 @@ body {
   font-family: monospace;
   padding: 0 2rem;
   overflow: hidden;
+  height: 100%;
 }
 .send {
   position: fixed;
@@ -33,3 +34,7 @@ body {
   color: transparent;
 }
 
+/* NextJS sucks.. https://github.com/vercel/next.js/issues/4834  */
+#__next {
+  height: 100%;
+}

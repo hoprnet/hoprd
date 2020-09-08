@@ -3,6 +3,7 @@
   color: #000050; /* Dark Blue */
   padding: 1rem;
   overflow-y: scroll;
+  min-height: 100%;
 }
 .connecting {
   background-color: #ffffa0; /* HOPR Yellow */

@@ -25,8 +25,7 @@ export default function Home() {
   }, [])
 
   return (
-    <div className={styles.container}>
-
+    <>
       <Head>
         <title>HOPR Admin</title>
       </Head>
@@ -34,26 +33,28 @@ export default function Home() {
       <Logo
         onClick={() => setSelectedTab((selectedTab + 1) % 3)}
         />
-      <h1>HOPR Logs [TESTNET NODE]</h1>
 
-      <div className={styles.tabs}>
-        <a href='#'
-          className={selectedTab == 0 ? styles.selectedTab : ''}
-          onClick={() => setSelectedTab(0)}>Logs</a>
-        <a href='#'
-          className={selectedTab == 1 ? styles.selectedTab : ''}
-          onClick={() => setSelectedTab(1)}>Connected Peers</a>
-        <a href='#'
-          className={selectedTab == 2 ? styles.selectedTab : ''}
-          onClick={() => setSelectedTab(2)}>Balance</a>
+      <div className={styles.container}>
+        <h1>HOPR Logs [TESTNET NODE]</h1>
+        <div className={styles.tabs}>
+          <a href='#'
+            className={selectedTab == 0 ? styles.selectedTab : ''}
+            onClick={() => setSelectedTab(0)}>Logs</a>
+          <a href='#'
+            className={selectedTab == 1 ? styles.selectedTab : ''}
+            onClick={() => setSelectedTab(1)}>Connected Peers</a>
+          <a href='#'
+            className={selectedTab == 2 ? styles.selectedTab : ''}
+            onClick={() => setSelectedTab(2)}>Balance</a>
+        </div>
+
+        <div className={styles.pane}>
+
+          { selectedTab == 0 && <Logs messages={messages} connecting={connecting} /> }
+          { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
+        </div>
       </div>
 
-      <div className={styles.pane}>
-
-        { selectedTab == 0 && <Logs messages={messages} connecting={connecting} /> }
-        { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
-      </div>
-
-    </div>
+    </>
   )
 }
