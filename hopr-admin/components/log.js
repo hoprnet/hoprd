@@ -58,7 +58,7 @@ export function Logs(props){
         { props.messages.map(x => <LogLine value={x} />) }
         </div>
       </div>
-      <div className='send'>
+      <div className={styles.send}>
         <input id="command"
           type="text"
           disabled={props.connecting}

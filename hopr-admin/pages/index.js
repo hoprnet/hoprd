@@ -54,7 +54,6 @@ export default function Home() {
           { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
         </div>
       </div>
-
     </>
   )
 }

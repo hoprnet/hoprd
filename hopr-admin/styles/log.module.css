@@ -36,3 +36,30 @@
   height: 15px;
   flex: 0 0 auto;
 }
+
+.send {
+  position: fixed;
+  bottom: 0rem;
+  left: 0rem;
+  right: 0rem;
+  background-color:  #000050;
+  color: #b4f0ff;
+  border-top: 1px solid #b4f0ff;
+}
+
+.send input {
+  background: transparent;
+  color: #b4f0ff;
+  border: none;
+  width:100%;
+  padding: 1rem;
+  font-family: monospace;
+  font-size: 1.2rem;
+}
+.send input:disabled {
+  background: #000050;
+  opacity: 0.9;
+}
+.send input:disabled::placeholder {
+  color: transparent;
+}
