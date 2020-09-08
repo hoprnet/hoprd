@@ -6,7 +6,6 @@ const MAX_MESSAGES_CACHED = 50
 
 export class Connection {
   logs = []
-  prevLog = ""
 
   constructor(
     setConnecting,
@@ -36,30 +35,22 @@ export class Connection {
     }
   }
 
+  sendMessage(message){
+    if (!this.client) {
+      console.error('No client to send')
+      return
+    }
+    this.client.send(message)
+  }
+
   connect() {
     console.log('Connecting ...')
-    var client = new WebSocket('ws://' + window.location.host);
+    var client = this.client = new WebSocket('ws://' + window.location.host);
     console.log('Web socket created')
 
     client.onopen = () => {
       console.log('Web socket opened')
       this.setConnecting(false)
-
-      document.querySelector('#command').onkeydown = (e) => {
-        if (e.keyCode == 13 ) { // enter 
-          var text = e.target.value 
-          console.log("Command: ", text)
-          if (text.length > 0) {
-            client.send(text)
-            this.prevLog = text
-            e.target.value = ""
-          }
-        }
-        if (e.keyCode == 38) { // Up Arrow
-          e.target.value = this.prevLog
-        }
-      }
-
     }
 
     client.onmessage = (event) => {
@@ -73,6 +64,7 @@ export class Connection {
 
     client.onclose = () => {
       console.log('Web socket closed')
+      delete this.client
       this.setConnecting(true)
       this.appendMessage(' --- < Lost Connection, attempting to reconnect... > ---')
       setTimeout(function(){

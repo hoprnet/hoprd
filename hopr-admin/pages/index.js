@@ -10,8 +10,9 @@ import { ConnectedPeers } from '../components/connected-peers'
 
 const Jazzicon = dynamic(() => import("../components/jazzicon"), { ssr: false });
 
+let connection
+
 export default function Home() {
-  let connection
 
   const [selectedTab, setSelectedTab] = useState(0)
   const [connecting, setConnecting] = useState(true);
@@ -50,8 +51,10 @@ export default function Home() {
         </div>
 
         <div className={styles.pane}>
-
-          { selectedTab == 0 && <Logs messages={messages} connecting={connecting} /> }
+          { selectedTab == 0 && <Logs
+              messages={messages}
+              connecting={connecting}
+              connection={connection} /> }
           { selectedTab == 1 && <ConnectedPeers peers={peers} /> }
           { selectedTab == 2 && <Balance /> }
         </div>
