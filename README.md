@@ -1,3 +1,8 @@
+# Announcment
+
+**Development has moved to [`hoprnet/hoprnet`](https://github.com/hoprnet/hoprnet)**
+
+---
 # HOPR Admin
 
 Runs a HOPR Node and the HOPR Admin interface.
