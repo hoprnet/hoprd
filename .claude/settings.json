@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo:*)",
+      "Bash(cat:*)",
+      "Bash(cd:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(nix:*)",
+      "Bash(tail:*)"
+    ]
+  }
+}

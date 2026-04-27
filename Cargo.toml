@@ -1,0 +1,137 @@
+[workspace]
+resolver = "2"
+members = [
+  "hoprd",
+  "rest-api",
+  "rest-api-client",
+  "localcluster",
+]
+
+[workspace.package]
+rust-version = "1.91"
+authors = ["HOPR Association <tech@hoprnet.org>"]
+edition = "2024"
+
+[workspace.dependencies]
+# Intra-workspace path deps
+hoprd = { path = "hoprd", default-features = false }
+hoprd-api = { path = "rest-api", default-features = false }
+hoprd-api-client = { path = "rest-api-client" }
+
+# hoprnet git deps (pinned to last commit before hoprd extraction)
+hopr-async-runtime = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-metrics = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-reference = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8b2a61c1362778acaed4f3d4a1c8f22db1a26bc5" }
+
+# crates.io HOPR deps
+hopr-api = { version = "1.8.1" }
+hopr-types = { version = "1.5.4", features = ["use-bindings"] }
+
+# Third-party deps
+anyhow = "1.0.102"
+async-signal = "0.2.14"
+async-trait = "0.1.89"
+axum = { version = "0.8.9", features = ["http2"] }
+base64 = "0.22.1"
+bimap = "0.6.3"
+bytesize = { version = "2.3.1", features = ["serde"] }
+bytes = "1.11.1"
+chrono = { version = "0.4.44", default-features = false, features = ["std", "clock"] }
+clap = { version = "4.6.1", features = ["derive", "env", "string"] }
+console-subscriber = "0.5.0"
+const_format = "0.2.36"
+flagset = "0.4.7"
+futures = { version = "0.3.32", default-features = false, features = ["std", "async-await"] }
+futures-core = "0.3.32"
+http = "1.4.0"
+human-bandwidth = { version = "0.1.4", features = ["serde"] }
+humansize = "2.1.3"
+humantime-serde = "1.1.1"
+lazy_static = "1.5.0"
+mimalloc = { version = "0.1.50", default-features = false, features = ["secure"] }
+mockall = "0.14.0"
+oas3 = "0.21.0"
+openapiv3 = "2.2.0"
+opentelemetry = { version = "0.31.0" }
+opentelemetry-otlp = { version = "0.31.1", default-features = false }
+opentelemetry-prometheus-text-exporter = { version = "0.2.1" }
+opentelemetry_sdk = { version = "0.31.0" }
+percent-encoding = "2.3.2"
+prettyplease = "0.2.37"
+proc-macro-regex = "~1.1.0"
+progenitor = "0.13.0"
+progenitor-client = "0.13.0"
+regex = "1.12.3"
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "stream"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde-saphyr = "0.0.24"
+serde_json = "1.0.149"
+serde_urlencoded = "0.7.1"
+serde_with = { version = "3.18.0", features = ["base64"] }
+signal-hook = "0.4.4"
+smart-default = "0.7.1"
+strum = { version = "0.28.0", features = ["derive"] }
+syn = { version = "2.0.117", features = ["full"] }
+tempfile = "3.27.0"
+test-log = { version = "0.2.20", features = ["trace"] }
+thiserror = "2.0.18"
+tikv-jemalloc-ctl = { version = "0.6.1", features = ["stats"] }
+tikv-jemallocator = "0.6.1"
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "macros", "tracing"] }
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+tower-http = { version = "0.6.8", features = [
+  "validate-request",
+  "compression-full",
+  "cors",
+  "trace",
+  "sensitive-headers",
+] }
+tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
+tracing-opentelemetry = { version = "0.32.1" }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "registry", "std"] }
+utoipa = { version = "5.4.0" }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored", "debug-embed"] }
+uuid = { version = "1.23.1" }
+validator = { version = "0.20.0", features = ["derive"] }
+vergen-gix = { version = "9.1.0", features = ["build"] }
+
+[profile.dev]
+panic = "abort"
+
+[profile.candidate]
+inherits = "release"
+codegen-units = 16
+lto = false
+panic = "abort"
+strip = true
+opt-level = 2
+
+[profile.test]
+opt-level = 1
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = true
+opt-level = 3
+
+[profile.bench]
+debug = 2
+split-debuginfo = "off"
+strip = false
+
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3
+
+[workspace.metadata.cargo-shear]
+ignored = ["oas3", "humantime-serde"]
