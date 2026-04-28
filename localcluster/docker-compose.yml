@@ -1,3 +1,4 @@
+---
 # FIXME: The nodes can't dial each other within the docker container. 
 services:
   chain:

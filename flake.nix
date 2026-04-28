@@ -232,7 +232,11 @@
                 });
 
             hoprd-clippy = rust-builder-local.callPackage nixLib.mkRustPackage (
-              projectBuildArgs // { runClippy = true; }
+              projectBuildArgs
+              // {
+                runClippy = true;
+                cargoExtraArgs = "-p hoprd -p hoprd-api";
+              }
             );
             binary-hoprd-dev = rust-builder-local.callPackage nixLib.mkRustPackage (
               projectBuildArgs

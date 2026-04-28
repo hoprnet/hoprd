@@ -1,3 +1,4 @@
+---
 db:
   data: /var/lib/hoprd
 strategy:
