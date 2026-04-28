@@ -56,10 +56,14 @@ pub(super) async fn startedz<H: HoprNodeOperations + Send + Sync + 'static>(
         ),
         tag = "Checks"
     )]
-pub(super) async fn readyz<H: HoprNodeOperations + HasNetworkView + HasChainApi + Send + Sync + 'static>(
+pub(super) async fn readyz<
+    H: HoprNodeOperations + HasNetworkView + HasChainApi + Send + Sync + 'static,
+>(
     State(state): State<Arc<AppState<H>>>,
 ) -> impl IntoResponse {
-    eval_precondition(is_running(&state) && is_minimally_connected(&state) && is_chain_available(&state))
+    eval_precondition(
+        is_running(&state) && is_minimally_connected(&state) && is_chain_available(&state),
+    )
 }
 
 /// Check whether the node is **healthy**.
@@ -127,7 +131,9 @@ fn eval_precondition(precondition: bool) -> impl IntoResponse {
         ),
         tag = "Checks"
     )]
-pub(super) async fn eligiblez<H: Send + Sync + 'static>(State(_state): State<Arc<AppState<H>>>) -> impl IntoResponse {
+pub(super) async fn eligiblez<H: Send + Sync + 'static>(
+    State(_state): State<Arc<AppState<H>>>,
+) -> impl IntoResponse {
     (StatusCode::OK, "").into_response()
 }
 
@@ -142,14 +148,18 @@ mod tests {
     fn startedz_router(mock: MockNodeOps) -> Router {
         Router::new()
             .route("/startedz", get(startedz::<MockNodeOps>))
-            .with_state(Arc::new(AppState { hopr: Arc::new(mock) }))
+            .with_state(Arc::new(AppState {
+                hopr: Arc::new(mock),
+            }))
     }
 
     fn readyz_router(node: ChecksNode) -> Router {
         Router::new()
             .route("/readyz", get(readyz::<ChecksNode>))
             .route("/healthyz", get(healthyz::<ChecksNode>))
-            .with_state(Arc::new(AppState { hopr: Arc::new(node) }))
+            .with_state(Arc::new(AppState {
+                hopr: Arc::new(node),
+            }))
     }
 
     #[test]
@@ -231,7 +241,9 @@ mod tests {
             .with_state(Arc::new(AppState {
                 hopr: Arc::new(NoopNode),
             }));
-        let resp = app.oneshot(Request::get("/eligiblez").body(Body::empty())?).await?;
+        let resp = app
+            .oneshot(Request::get("/eligiblez").body(Body::empty())?)
+            .await?;
         assert_eq!(resp.status(), StatusCode::OK);
         Ok(())
     }

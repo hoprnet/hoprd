@@ -5,6 +5,7 @@
 `hoprd` is the HOPR node daemon. It runs the HOPR protocol (sourced from [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet) as git dependencies) and exposes a REST API for interaction.
 
 **Workspace members**:
+
 - [`hoprd/`](hoprd/) — daemon binary + lib (Axum REST server, config, telemetry)
 - [`rest-api/`](rest-api/) — REST API handlers (utoipa/OpenAPI)
 - [`rest-api-client/`](rest-api-client/) — generated Rust client for the REST API

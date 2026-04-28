@@ -1,4 +1,3 @@
----
 blokli_url: https://blokli.prod.hoprnet.link
 identity:
   file: "/app/hoprd/conf/hopr.id"

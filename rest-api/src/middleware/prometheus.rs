@@ -49,11 +49,16 @@ pub(crate) async fn record(
     if path.starts_with("/api/v4/") && !path.contains("node/metrics") {
         let path = ID_REGEX.replace(&path, "<id>");
         METRIC_COUNT_API_CALLS.increment(&[&path, method.as_str(), &status.to_string()]);
-        METRIC_COUNT_API_CALLS_TIMING.observe(&[&path, method.as_str()], response_duration.as_secs_f64());
+        METRIC_COUNT_API_CALLS_TIMING
+            .observe(&[&path, method.as_str()], response_duration.as_secs_f64());
     }
 
     // Set for any API call
-    METRIC_API_LAST_TIME.set(std::time::SystemTime::now().as_unix_timestamp().as_secs_f64());
+    METRIC_API_LAST_TIME.set(
+        std::time::SystemTime::now()
+            .as_unix_timestamp()
+            .as_secs_f64(),
+    );
 
     response
 }

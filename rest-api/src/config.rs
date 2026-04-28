@@ -28,7 +28,9 @@ pub enum Auth {
     Token(String),
 }
 
-#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Validate, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, smart_default::SmartDefault, Validate, Serialize, Deserialize,
+)]
 #[serde(deny_unknown_fields)]
 pub struct Api {
     /// Selects whether the REST API is enabled

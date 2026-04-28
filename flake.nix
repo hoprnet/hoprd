@@ -185,6 +185,52 @@
                   '';
                 });
 
+            test-nightly =
+              (fixUtoipaEmbedPaths (
+                rust-builder-local-nightly.callPackage nixLib.mkRustPackage (
+                  projectBuildArgs
+                  // {
+                    src = testSrc;
+                    cargoExtraArgs = "-p hoprd -p hoprd-api -Z panic-abort-tests -F allocator-jemalloc";
+                    runTests = true;
+                    prependPackageName = false;
+                    cargoTestExtraArgs = "--lib";
+                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                  }
+                )
+              )).overrideAttrs
+                (_: {
+                  checkPhase = ''
+                    runHook preCheck
+                    cargo nextest run ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} -Z panic-abort-tests -F allocator-jemalloc --lib
+                    runHook postCheck
+                  '';
+                });
+
+            coverage-unit =
+              (fixUtoipaEmbedPaths (
+                rust-builder-local-coverage.callPackage nixLib.mkRustPackage (
+                  projectBuildArgs
+                  // {
+                    src = testSrc;
+                    cargoExtraArgs = "-p hoprd -p hoprd-api -F allocator-jemalloc";
+                    runCoverage = true;
+                    prependPackageName = false;
+                    cargoLlvmCovExtraArgs = "--lcov --output-path $out --lib";
+                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                  }
+                )
+              )).overrideAttrs
+                (_: {
+                  buildPhase = ''
+                    runHook preBuild
+                    cargo llvm-cov nextest --lcov --output-path $out --lib \
+                      ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} \
+                      -p hoprd -p hoprd-api -F allocator-jemalloc
+                    runHook postBuild
+                  '';
+                });
+
             hoprd-clippy = rust-builder-local.callPackage nixLib.mkRustPackage (
               projectBuildArgs // { runClippy = true; }
             );
@@ -374,6 +420,9 @@
           };
 
           run-check = nixLib.mkCheckApp { inherit system; };
+          run-audit = nixLib.mkAuditApp {
+            rustToolchainFile = ./rust-toolchain.toml;
+          };
         in
         {
           treefmt = {
@@ -439,6 +488,7 @@
 
           apps = {
             check = run-check;
+            audit = run-audit;
           };
 
           packages =

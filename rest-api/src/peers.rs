@@ -9,7 +9,10 @@ use hopr_lib::{
     Address, ChannelEntry, ChannelStatus, HoprBalance, IncentiveChannelOperations, Multiaddr,
     api::{
         chain::{AccountSelector, ChainKeyOperations, ChainReadAccountOperations},
-        graph::{EdgeLinkObservable, NetworkGraphConnectivity, NetworkGraphView, traits::EdgeObservableRead},
+        graph::{
+            EdgeLinkObservable, NetworkGraphConnectivity, NetworkGraphView,
+            traits::EdgeObservableRead,
+        },
         network::NetworkView,
         node::{HasChainApi, HasGraphView, HasNetworkView, HasTransportApi, TransportOperations},
     },
@@ -20,7 +23,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, DurationMilliSeconds, serde_as};
 use tracing::debug;
 
-use crate::{ApiError, ApiErrorStatus, BASE_PATH, InternalState, network::AnnouncementOriginResponse};
+use crate::{
+    ApiError, ApiErrorStatus, BASE_PATH, InternalState, network::AnnouncementOriginResponse,
+};
 
 /// A multiaddress paired with its discovery origin.
 #[serde_as]
@@ -168,7 +173,12 @@ fn channel_entry_to_peer_info(
     tag = "Peers",
 )]
 pub(super) async fn show_peer_info<
-    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + HasNetworkView + HasGraphView + Send + Sync + 'static,
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
+        + HasNetworkView
+        + HasGraphView
+        + Send
+        + Sync
+        + 'static,
 >(
     Path(AddressParams { address }): Path<AddressParams>,
     State(state): State<Arc<InternalState<H>>>,
@@ -177,7 +187,9 @@ pub(super) async fn show_peer_info<
 
     let offchain_key = match hopr.chain_api().chain_key_to_packet_key(&address) {
         Ok(Some(key)) => key,
-        Ok(None) | Err(_) => return (StatusCode::NOT_FOUND, ApiErrorStatus::PeerNotFound).into_response(),
+        Ok(None) | Err(_) => {
+            return (StatusCode::NOT_FOUND, ApiErrorStatus::PeerNotFound).into_response();
+        }
     };
     let peer: hopr_lib::api::PeerId = offchain_key.into();
 
@@ -244,8 +256,10 @@ pub(super) async fn show_peer_info<
 
     // 3. Channel state
     let me = hopr.identity().node_address;
-    let outgoing_channel = channel_entry_to_peer_info(hopr.channel(me, address).map_err(HoprLibError::chain));
-    let incoming_channel = channel_entry_to_peer_info(hopr.channel(address, me).map_err(HoprLibError::chain));
+    let outgoing_channel =
+        channel_entry_to_peer_info(hopr.channel(me, address).map_err(HoprLibError::chain));
+    let incoming_channel =
+        channel_entry_to_peer_info(hopr.channel(address, me).map_err(HoprLibError::chain));
 
     (
         StatusCode::OK,
@@ -312,7 +326,9 @@ where
 
     let offchain_key = match hopr.chain_api().chain_key_to_packet_key(&address) {
         Ok(Some(key)) => key,
-        Ok(None) => return Ok((StatusCode::NOT_FOUND, ApiErrorStatus::PeerNotFound).into_response()),
+        Ok(None) => {
+            return Ok((StatusCode::NOT_FOUND, ApiErrorStatus::PeerNotFound).into_response());
+        }
         Err(e) => {
             return Ok((
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -322,9 +338,16 @@ where
         }
     };
 
-    match hopr.transport().ping(&offchain_key).await.map_err(Into::into) {
+    match hopr
+        .transport()
+        .ping(&offchain_key)
+        .await
+        .map_err(Into::into)
+    {
         Ok((latency, _status)) => {
-            let resp = Json(PingResponse { latency: latency / 2 });
+            let resp = Json(PingResponse {
+                latency: latency / 2,
+            });
             Ok((StatusCode::OK, resp).into_response())
         }
         Err(HoprTransportError::Protocol(hopr_lib::errors::ProtocolError::Timeout)) => {
@@ -333,9 +356,11 @@ where
         Err(HoprTransportError::Probe(hopr_lib::ProbeError::TrafficError(_))) => {
             Ok((StatusCode::REQUEST_TIMEOUT, ApiErrorStatus::Timeout).into_response())
         }
-        Err(HoprTransportError::Probe(hopr_lib::ProbeError::PingerError(e))) => {
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::PingError(e)).into_response())
-        }
+        Err(HoprTransportError::Probe(hopr_lib::ProbeError::PingerError(e))) => Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiErrorStatus::PingError(e),
+        )
+            .into_response()),
         Err(HoprTransportError::Probe(hopr_lib::ProbeError::NonExistingPeer)) => {
             Ok((StatusCode::NOT_FOUND, ApiErrorStatus::PeerNotFound).into_response())
         }
@@ -381,14 +406,18 @@ mod tests {
         let json = serde_json::to_value(&response)?;
         assert!(json.get("announced").is_none());
         assert!(json["announcedSources"].is_array());
-        assert_eq!(json["announcedSources"][0]["multiaddress"], "/ip4/10.0.2.100/tcp/19093");
+        assert_eq!(
+            json["announcedSources"][0]["multiaddress"],
+            "/ip4/10.0.2.100/tcp/19093"
+        );
         assert_eq!(json["announcedSources"][0]["origin"], "chain");
         assert!(json["observed"].is_array());
         Ok(())
     }
 
     #[test]
-    fn node_peer_info_response_should_serialize_empty_sources_when_no_announcements() -> anyhow::Result<()> {
+    fn node_peer_info_response_should_serialize_empty_sources_when_no_announcements()
+    -> anyhow::Result<()> {
         let response = NodePeerInfoResponse {
             announced_sources: vec![],
             observed: vec!["/ip4/10.0.2.100/tcp/19094".parse()?],
@@ -529,8 +558,12 @@ mod tests {
     fn channel_entry_to_peer_info_should_return_some_for_open_channel() {
         let ch = ChannelEntry::builder()
             .between(
-                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6".parse::<Address>().unwrap(),
-                "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse::<Address>().unwrap(),
+                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
+                    .parse::<Address>()
+                    .unwrap(),
+                "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
+                    .parse::<Address>()
+                    .unwrap(),
             )
             .balance("10 wxHOPR".parse().unwrap())
             .status(ChannelStatus::Open)
@@ -548,8 +581,12 @@ mod tests {
     fn channel_entry_to_peer_info_should_return_some_for_pending_to_close() {
         let ch = ChannelEntry::builder()
             .between(
-                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6".parse::<Address>().unwrap(),
-                "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse::<Address>().unwrap(),
+                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
+                    .parse::<Address>()
+                    .unwrap(),
+                "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
+                    .parse::<Address>()
+                    .unwrap(),
             )
             .balance("5 wxHOPR".parse().unwrap())
             .status(ChannelStatus::PendingToClose(std::time::SystemTime::now()))
@@ -563,8 +600,12 @@ mod tests {
     fn channel_entry_to_peer_info_should_return_none_for_closed_channel() {
         let ch = ChannelEntry::builder()
             .between(
-                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6".parse::<Address>().unwrap(),
-                "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse::<Address>().unwrap(),
+                "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
+                    .parse::<Address>()
+                    .unwrap(),
+                "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
+                    .parse::<Address>()
+                    .unwrap(),
             )
             .balance("10 wxHOPR".parse().unwrap())
             .status(ChannelStatus::Closed)
@@ -593,7 +634,9 @@ mod tests {
         let params: AddressParams = serde_json::from_value(json).unwrap();
         assert_eq!(
             params.address,
-            "0x07eaf07d6624f741e04f4092a755a9027aaab7f6".parse().unwrap()
+            "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
+                .parse()
+                .unwrap()
         );
     }
 
@@ -607,11 +650,18 @@ mod tests {
     fn peer_channel_info_should_serialize_pending_to_close_status() -> anyhow::Result<()> {
         let info = PeerChannelInfo {
             id: Hash::default(),
-            status: ChannelStatus::PendingToClose(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            status: ChannelStatus::PendingToClose(
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(1),
+            ),
             balance: "3 wxHOPR".parse()?,
         };
         let json = serde_json::to_value(&info)?;
-        assert!(json["status"].as_str().unwrap().starts_with("PendingToClose"));
+        assert!(
+            json["status"]
+                .as_str()
+                .unwrap()
+                .starts_with("PendingToClose")
+        );
         Ok(())
     }
 

@@ -48,7 +48,10 @@ async fn main() -> Result<()> {
     let log_dir = data_dir.join("logs");
     fs::create_dir_all(&log_dir).context("failed to create log directory")?;
 
-    let blokli_url = args.chain_url.clone().unwrap_or_else(|| DEFAULT_BLOKLI_URL.to_string());
+    let blokli_url = args
+        .chain_url
+        .clone()
+        .unwrap_or_else(|| DEFAULT_BLOKLI_URL.to_string());
     let blokli_url = blokli_url.trim_end_matches('/').to_string();
     let config = identity::GenerationConfig {
         blokli_url: blokli_url.to_string(),
@@ -113,7 +116,9 @@ async fn main() -> Result<()> {
         node_summary(&cleanup.nodes, &args);
 
         info!("localcluster running; press Ctrl+C to stop");
-        tokio::signal::ctrl_c().await.context("failed to await Ctrl+C")?;
+        tokio::signal::ctrl_c()
+            .await
+            .context("failed to await Ctrl+C")?;
         info!("shutdown requested");
 
         Ok(())
@@ -137,7 +142,11 @@ async fn start_hoprd_nodes(
 ) -> Result<Vec<client_helper::NodeProcess>> {
     let mut nodes = Vec::new();
     let api_host = &args.api_host;
-    let api_client_host = if api_host == "0.0.0.0" { "127.0.0.1" } else { api_host };
+    let api_client_host = if api_host == "0.0.0.0" {
+        "127.0.0.1"
+    } else {
+        api_host
+    };
 
     for id in 0..args.size {
         let api_port = args.api_port_base + id as u16;
@@ -147,12 +156,18 @@ async fn start_hoprd_nodes(
             anyhow::bail!("missing hoprd config file: {}", cfg_file.display());
         }
         let db_dir = data_dir.join(format!("db_{id}"));
-        fs::create_dir_all(db_dir.join("node_db"))
-            .with_context(|| format!("failed to create db directory {}", db_dir.join("node_db").display()))?;
+        fs::create_dir_all(db_dir.join("node_db")).with_context(|| {
+            format!(
+                "failed to create db directory {}",
+                db_dir.join("node_db").display()
+            )
+        })?;
         let log_file = log_dir.join(format!("hoprd_{id}.log"));
 
         let log_file = File::create(&log_file).context("failed to create hoprd log file")?;
-        let log_err = log_file.try_clone().context("failed to clone hoprd log file handle")?;
+        let log_err = log_file
+            .try_clone()
+            .context("failed to clone hoprd log file handle")?;
 
         let mut cmd = Command::new(&args.hoprd_bin);
         cmd.arg("--configurationFilePath")
@@ -170,7 +185,10 @@ async fn start_hoprd_nodes(
             .env("HOPRD_OTEL_SIGNALS", "metrics")
             .env("HOPRD_OTLP_ENDPOINT", "http://localhost:4318")
             .env("HOPRD_METRIC_EXPORT_INTERVAL", "15000,hopr_session=1000")
-            .env("HOPR_TX_TIMEOUT_MULTIPLIER", DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string())
+            .env(
+                "HOPR_TX_TIMEOUT_MULTIPLIER",
+                DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
+            )
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 

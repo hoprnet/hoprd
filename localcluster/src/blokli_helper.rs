@@ -16,7 +16,9 @@ impl ChainHandle {
         fs::create_dir_all(log_dir).context("failed to create log directory")?;
         let log_file = log_dir.join("chain.log");
         let log_file = File::create(&log_file).context("failed to create blokli log file")?;
-        let log_err = log_file.try_clone().context("failed to clone blokli log file handle")?;
+        let log_err = log_file
+            .try_clone()
+            .context("failed to clone blokli log file handle")?;
         let name = "hopr-chain";
 
         let mut cmd = Command::new("docker");
@@ -40,6 +42,10 @@ impl ChainHandle {
 
     pub fn stop(&mut self) {
         let _ = self.child.kill();
-        let _ = Command::new("docker").arg("rm").arg("-f").arg(&self.name).status();
+        let _ = Command::new("docker")
+            .arg("rm")
+            .arg("-f")
+            .arg(&self.name)
+            .status();
     }
 }

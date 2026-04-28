@@ -1,12 +1,9 @@
----
 networks:
   hoprnet:
     driver: bridge
-
 volumes:
   prometheus_data: {}
   grafana_data: {}
-
 services:
   hoprd:
     image: "${HOPRD_IMAGE}"
@@ -51,7 +48,6 @@ services:
         max-file: 5
     profiles:
       - hoprd
-
   hopr-admin:
     image: "${HOPR_ADMIN_IMAGE}"
     restart: unless-stopped
@@ -71,7 +67,6 @@ services:
           memory: "${HOPR_ADMIN_MEM_LIMIT}"
     profiles:
       - admin-ui
-
   jaeger:
     image: "${JAEGER_IMAGE}"
     restart: unless-stopped
@@ -88,7 +83,6 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     profiles:
       - tracing
-
   cadvisor:
     image: "${METRICS_CADVISOR_IMAGE}"
     container_name: cadvisor
@@ -111,7 +105,6 @@ services:
     profiles:
       - metrics
       - metrics-vis
-
   nodeexporter:
     image: "${METRICS_NODE_EXPORTER_IMAGE}"
     restart: unless-stopped
@@ -134,7 +127,6 @@ services:
     profiles:
       - metrics
       - metrics-vis
-
   metricspusher:
     image: curlimages/curl:latest
     container_name: metricspusher
@@ -148,7 +140,6 @@ services:
       - .env-secrets
     profiles:
       - metrics-push
-
   prometheus:
     image: "${PROMETHEUS_IMAGE}"
     restart: always
@@ -175,7 +166,6 @@ services:
       - hoprnet
     profiles:
       - metrics-vis
-
   grafana:
     image: "${GRAFANA_IMAGE}"
     platform: ${DOCKER_PLATFORM}

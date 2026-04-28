@@ -138,7 +138,11 @@ pub(crate) struct NodeInfoResponse {
         tag = "Node"
     )]
 pub(super) async fn info<
-    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + HasNetworkView + Send + Sync + 'static,
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
+        + HasNetworkView
+        + Send
+        + Sync
+        + 'static,
 >(
     State(state): State<Arc<InternalState<H>>>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -154,7 +158,8 @@ pub(super) async fn info<
 
     match futures::try_join!(hopr.chain_info(), hopr.get_channel_closure_notice_period()) {
         Ok((info, channel_closure_notice_period)) => {
-            let listening: Vec<Multiaddr> = hopr.network_view().listening_as().into_iter().collect();
+            let listening: Vec<Multiaddr> =
+                hopr.network_view().listening_as().into_iter().collect();
             let body = NodeInfoResponse {
                 announced_address: listening.clone(),
                 listening_address: listening,
@@ -168,7 +173,11 @@ pub(super) async fn info<
 
             Ok((StatusCode::OK, Json(body)).into_response())
         }
-        Err(error) => Ok((StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(error)).into_response()),
+        Err(error) => Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiErrorStatus::from(error),
+        )
+            .into_response()),
     }
 }
 
@@ -377,14 +386,17 @@ mod tests {
 
     #[test]
     fn component_status_to_info_initializing() {
-        let info = component_status_to_info(&ComponentStatus::Initializing(Cow::Borrowed("starting")));
+        let info =
+            component_status_to_info(&ComponentStatus::Initializing(Cow::Borrowed("starting")));
         assert_eq!(info.status, "Initializing");
         assert_eq!(info.detail.as_deref(), Some("starting"));
     }
 
     #[test]
     fn component_status_to_info_with_owned_cow() {
-        let info = component_status_to_info(&ComponentStatus::Degraded(Cow::Owned("dynamic detail".to_string())));
+        let info = component_status_to_info(&ComponentStatus::Degraded(Cow::Owned(
+            "dynamic detail".to_string(),
+        )));
         assert_eq!(info.status, "Degraded");
         assert_eq!(info.detail.as_deref(), Some("dynamic detail"));
     }

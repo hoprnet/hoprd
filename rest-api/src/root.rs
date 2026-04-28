@@ -21,7 +21,9 @@ fn collect_hopr_metrics() -> Result<String, ApiErrorStatus> {
 
 #[cfg(not(feature = "telemetry"))]
 fn collect_hopr_metrics() -> Result<String, ApiErrorStatus> {
-    Err(ApiErrorStatus::UnknownFailure("BUILT WITHOUT METRICS SUPPORT".into()))
+    Err(ApiErrorStatus::UnknownFailure(
+        "BUILT WITHOUT METRICS SUPPORT".into(),
+    ))
 }
 
 /// Retrieve Prometheus metrics from the running node.
@@ -60,17 +62,24 @@ mod tests {
         let session_metric_name = "hopr_session_metrics_endpoint_test".to_string();
         let non_session_metric_name = "hopr_metrics_endpoint_test".to_string();
 
-        let session_metric =
-            hopr_metrics::MultiCounter::new(&session_metric_name, "session endpoint filtering test", &["session_id"])?;
+        let session_metric = hopr_metrics::MultiCounter::new(
+            &session_metric_name,
+            "session endpoint filtering test",
+            &["session_id"],
+        )?;
 
-        let non_session_metric =
-            hopr_metrics::MultiCounter::new(&non_session_metric_name, "endpoint non-session metric test", &["kind"])?;
+        let non_session_metric = hopr_metrics::MultiCounter::new(
+            &non_session_metric_name,
+            "endpoint non-session metric test",
+            &["kind"],
+        )?;
 
         session_metric.increment(&["test-session"]);
         non_session_metric.increment(&["test-kind"]);
 
-        let collected_metrics = collect_hopr_metrics()
-            .map_err(|error| anyhow::anyhow!("collect_hopr_metrics should return metrics: {error}"))?;
+        let collected_metrics = collect_hopr_metrics().map_err(|error| {
+            anyhow::anyhow!("collect_hopr_metrics should return metrics: {error}")
+        })?;
 
         assert!(!collected_metrics.contains(&session_metric_name));
         assert!(collected_metrics.contains(&non_session_metric_name));

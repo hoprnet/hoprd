@@ -13,12 +13,13 @@ fn main() {
         .to_pretty_json()
         .expect("failed to generate OpenAPI JSON");
 
-    let mut spec_value: Value = serde_json::from_str(&openapi_json).expect("failed to parse OpenAPI JSON");
+    let mut spec_value: Value =
+        serde_json::from_str(&openapi_json).expect("failed to parse OpenAPI JSON");
     normalize_openapi_version(&mut spec_value);
     normalize_nullable_types(&mut spec_value);
     normalize_response_content(&mut spec_value);
-    let spec: openapiv3::OpenAPI =
-        serde_json::from_value(spec_value).expect("failed to parse OpenAPI JSON after normalization");
+    let spec: openapiv3::OpenAPI = serde_json::from_value(spec_value)
+        .expect("failed to parse OpenAPI JSON after normalization");
 
     let mut generator = Generator::default();
     let tokens = generator
@@ -28,7 +29,8 @@ fn main() {
     let ast = syn::parse2(tokens).expect("failed to parse generated tokens");
     let content = prettyplease::unparse(&ast);
 
-    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR missing"));
+    let crate_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR missing"));
     let out_dir = crate_dir.join("src/codegen/");
     fs::create_dir_all(&out_dir).expect("failed to create generated client directory");
 
@@ -73,14 +75,18 @@ fn normalize_nullable_types(value: &mut Value) {
                         map.insert("type".to_string(), Value::String(collected[0].clone()));
                     }
                     _ => {
-                        let one_of = collected.into_iter().map(|t| json!({ "type": t })).collect::<Vec<_>>();
+                        let one_of = collected
+                            .into_iter()
+                            .map(|t| json!({ "type": t }))
+                            .collect::<Vec<_>>();
                         map.remove("type");
                         map.insert("oneOf".to_string(), Value::Array(one_of));
                     }
                 }
 
                 if nullable {
-                    map.entry("nullable".to_string()).or_insert(Value::Bool(true));
+                    map.entry("nullable".to_string())
+                        .or_insert(Value::Bool(true));
                 }
             }
 
@@ -90,7 +96,10 @@ fn normalize_nullable_types(value: &mut Value) {
                     let has_null = variants.iter().any(is_null_schema);
 
                     if has_null {
-                        let non_null: Vec<Value> = variants.into_iter().filter(|v| !is_null_schema(v)).collect();
+                        let non_null: Vec<Value> = variants
+                            .into_iter()
+                            .filter(|v| !is_null_schema(v))
+                            .collect();
 
                         match non_null.len() {
                             0 => {}

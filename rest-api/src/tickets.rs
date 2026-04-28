@@ -103,13 +103,21 @@ impl From<ChannelStats> for NodeTicketStatisticsResponse {
         tag = "Tickets"
     )]
 pub(super) async fn show_ticket_statistics<
-    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + HasTicketManagement + Send + Sync + 'static,
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
+        + HasTicketManagement
+        + Send
+        + Sync
+        + 'static,
 >(
     State(state): State<Arc<InternalState<H>>>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
     match hopr.ticket_statistics() {
-        Ok(stats) => (StatusCode::OK, Json(NodeTicketStatisticsResponse::from(stats))).into_response(),
+        Ok(stats) => (
+            StatusCode::OK,
+            Json(NodeTicketStatisticsResponse::from(stats)),
+        )
+            .into_response(),
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -162,7 +170,11 @@ pub(crate) struct RedeemTicketsRequest {
         tag = "Tickets"
     )]
 pub(super) async fn redeem_tickets<
-    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + HasTicketManagement + Send + Sync + 'static,
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
+        + HasTicketManagement
+        + Send
+        + Sync
+        + 'static,
 >(
     State(state): State<Arc<InternalState<H>>>,
     Json(req): Json<RedeemTicketsRequest>,
@@ -175,7 +187,10 @@ pub(super) async fn redeem_tickets<
             let me = hopr.identity().node_address;
             let channel_id = match hopr.channel(address, me) {
                 Ok(Some(ch)) if ch.status != ChannelStatus::Closed => *ch.get_id(),
-                Ok(_) => return (StatusCode::NOT_FOUND, ApiErrorStatus::ChannelNotFound).into_response(),
+                Ok(_) => {
+                    return (StatusCode::NOT_FOUND, ApiErrorStatus::ChannelNotFound)
+                        .into_response();
+                }
                 Err(e) => {
                     return (
                         StatusCode::UNPROCESSABLE_ENTITY,
@@ -318,7 +333,10 @@ mod tests {
         });
 
         Router::new()
-            .route("/tickets/statistics", get(show_ticket_statistics::<MockChainNode>))
+            .route(
+                "/tickets/statistics",
+                get(show_ticket_statistics::<MockChainNode>),
+            )
             .with_state(state)
     }
 

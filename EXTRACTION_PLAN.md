@@ -11,13 +11,13 @@ Extract `hoprd` from `hoprnet` monorepo into standalone repo at `/Users/emil/Doc
 
 ## Source → Destination Mapping
 
-| Source (`hoprnet/`) | Dest (`hoprd/`) |
-|---|---|
-| `hoprd/hoprd/` | `hoprd/` |
-| `hoprd/rest-api/` | `rest-api/` |
+| Source (`hoprnet/`)      | Dest (`hoprd/`)    |
+| ------------------------ | ------------------ |
+| `hoprd/hoprd/`           | `hoprd/`           |
+| `hoprd/rest-api/`        | `rest-api/`        |
 | `hoprd/rest-api-client/` | `rest-api-client/` |
-| `localcluster/` | `localcluster/` |
-| `deploy/` | `deploy/` |
+| `localcluster/`          | `localcluster/`    |
+| `deploy/`                | `deploy/`          |
 
 ## Target Structure
 
@@ -59,6 +59,7 @@ cp -r /Users/emil/Documents/hopr/hoprnet/deploy           /Users/emil/Documents/
 New root `Cargo.toml` with 4 members: `hoprd`, `rest-api`, `rest-api-client`, `localcluster`.
 
 `[workspace.dependencies]` needs:
+
 - **Intra-repo path deps**:
   - `hoprd-api = { path = "rest-api", default-features = false }`
   - `hoprd-api-client = { path = "rest-api-client" }`
@@ -90,17 +91,17 @@ Use crane + cross-compilation, adapted from hoprnet's `flake.nix` (822 lines →
 
 **Outputs to include:**
 
-| Output | Notes |
-|---|---|
-| `binary-hoprd-{x86_64,aarch64}-{linux,darwin}` | release builds |
-| `binary-hoprd-dev` | debug build |
-| `binary-hoprd-candidate` | opt-level 2, lto=false (fast iteration) |
-| `binary-hoprd-localcluster-x86_64-linux` | test harness |
-| `docker-hoprd-{x86_64,aarch64}-linux` | production Docker |
-| `docker-hoprd-dev-x86_64-linux` | dev Docker |
-| `test-unit` | `cargo nextest --lib` |
-| `devShells.{default,ci,test}` | dev environments |
-| `docs` | rustdoc |
+| Output                                         | Notes                                   |
+| ---------------------------------------------- | --------------------------------------- |
+| `binary-hoprd-{x86_64,aarch64}-{linux,darwin}` | release builds                          |
+| `binary-hoprd-dev`                             | debug build                             |
+| `binary-hoprd-candidate`                       | opt-level 2, lto=false (fast iteration) |
+| `binary-hoprd-localcluster-x86_64-linux`       | test harness                            |
+| `docker-hoprd-{x86_64,aarch64}-linux`          | production Docker                       |
+| `docker-hoprd-dev-x86_64-linux`                | dev Docker                              |
+| `test-unit`                                    | `cargo nextest --lib`                   |
+| `devShells.{default,ci,test}`                  | dev environments                        |
+| `docs`                                         | rustdoc                                 |
 
 Risk: crane vendoring of git deps. Test `nix build .#hoprd-candidate` early.
 
@@ -109,6 +110,7 @@ Risk: crane vendoring of git deps. Test `nix build .#hoprd-candidate` early.
 Reusable workflows from `hoprnet/hopr-workflows` work unchanged — reference them with current SHAs.
 
 **`pr.yaml`** jobs:
+
 - `validate-pr-title` — copy as-is
 - `label` — copy as-is
 - `checks` → `uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@<sha>`
@@ -128,6 +130,7 @@ Source workflows to adapt from: `/Users/emil/Documents/hopr/hoprnet/.github/work
 ## Phase 5 — README
 
 Content:
+
 - What: hoprd daemon + REST API for HOPR protocol
 - Quick start: Docker (`docker run`) and binary
 - Build: `nix build .#hoprd-candidate`, `cargo build --release`
@@ -168,12 +171,12 @@ Content:
 
 ## Effort Estimate
 
-| Phase | Effort |
-|---|---|
-| 1 — Copy files | 0.5h |
-| 2 — Cargo workspace + git deps | 2-4h |
-| 3 — flake.nix | 1-2d |
-| 4 — CI workflows | 4-6h |
-| 5 — README | 1h |
-| 6 — hoprnet cleanup | 2-4h |
-| 7 — Verification | 1d |
+| Phase                          | Effort |
+| ------------------------------ | ------ |
+| 1 — Copy files                 | 0.5h   |
+| 2 — Cargo workspace + git deps | 2-4h   |
+| 3 — flake.nix                  | 1-2d   |
+| 4 — CI workflows               | 4-6h   |
+| 5 — README                     | 1h     |
+| 6 — hoprnet cleanup            | 2-4h   |
+| 7 — Verification               | 1d     |

@@ -1,6 +1,5 @@
----
 ################################################################################
-# Pipeline to run on merge to master / release branches
+# Pipeline to run on merge to main / release branches
 ################################################################################
 name: Merge
 on:
@@ -8,7 +7,7 @@ on:
     types:
       - closed
     branches:
-      - master
+      - main
       - "release/*"
 concurrency:
   group: merge-${{ github.event.pull_request.base.ref }}
@@ -45,7 +44,6 @@ jobs:
       gcp_service_account: ${{ secrets.GCP_SA_GITHUB_RUNNER }}
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
-
   build-docker:
     name: Docker
     needs: build-binaries
@@ -60,6 +58,8 @@ jobs:
       version_type: pr
       build_matrix: >-
         [
+
+
           {
             "runner": "depot-ubuntu-24.04-4",
             "architecture": "x86_64-linux",
@@ -83,7 +83,6 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
       docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
-
   deploy-dev:
     name: Deploy Gnosis Dev
     runs-on: depot-ubuntu-24.04
@@ -103,7 +102,6 @@ jobs:
             {
               "environment": "dev"
             }
-
   cache_deps:
     name: Cache deps
     if: github.event.pull_request.merged == true
@@ -129,7 +127,6 @@ jobs:
             nix develop -c cargo fetch
         env:
           PRIVATE_CARGO_REGISTRY_PROXY_URL: ${{ secrets.PRIVATE_CARGO_REGISTRY_PROXY_URL }}
-
   docs:
     name: Docs
     if: github.event.pull_request.merged == true
@@ -157,7 +154,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./result/share/doc/
           force_orphan: true
-
   notify:
     name: Notify failure
     needs:
@@ -178,7 +174,6 @@ jobs:
           topic: "Core"
           content: |
             The merge pipeline has failed for pull request [#${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
   cleanup_actions:
     name: Cleanup Actions
     runs-on: depot-ubuntu-24.04

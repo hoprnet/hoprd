@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use hopr_lib::api::{
     chain::{
-        ChainReadChannelOperations, ChainReadSafeOperations, ChainValues, ChainWriteChannelOperations,
-        ChainWriteTicketOperations,
+        ChainReadChannelOperations, ChainReadSafeOperations, ChainValues,
+        ChainWriteChannelOperations, ChainWriteTicketOperations,
     },
     node::{ActionableEventSource, HasChainApi, HasTicketManagement},
     tickets::TicketManagement,
@@ -197,18 +197,27 @@ where
         match strategy {
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::AutoRedeeming(sub_cfg) => strategies.push(
-                hopr_strategy::auto_redeeming::AutoRedeemingStrategy::new(*sub_cfg, cfg.execution_interval)
-                    .build(Arc::clone(&node)),
+                hopr_strategy::auto_redeeming::AutoRedeemingStrategy::new(
+                    *sub_cfg,
+                    cfg.execution_interval,
+                )
+                .build(Arc::clone(&node)),
             ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::AutoFunding(sub_cfg) => strategies.push(
-                hopr_strategy::auto_funding::AutoFundingStrategy::new(*sub_cfg, cfg.execution_interval)
-                    .build(Arc::clone(&node)),
+                hopr_strategy::auto_funding::AutoFundingStrategy::new(
+                    *sub_cfg,
+                    cfg.execution_interval,
+                )
+                .build(Arc::clone(&node)),
             ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ClosureFinalizer(sub_cfg) => strategies.push(
-                hopr_strategy::channel_finalizer::ClosureFinalizerStrategy::new(*sub_cfg, cfg.execution_interval)
-                    .build(Arc::clone(&node)),
+                hopr_strategy::channel_finalizer::ClosureFinalizerStrategy::new(
+                    *sub_cfg,
+                    cfg.execution_interval,
+                )
+                .build(Arc::clone(&node)),
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {

@@ -47,8 +47,14 @@ enum OtlpTransport {
 impl OtlpTransport {
     fn from_env() -> Self {
         match std::env::var(LEGACY_OTLP_ENDPOINT_ENV_KEY) {
-            Ok(raw_url) => Self::from_str(raw_url.trim().split_once("://").map(|(scheme, _)| scheme).unwrap_or(""))
-                .unwrap_or(Self::Grpc),
+            Ok(raw_url) => Self::from_str(
+                raw_url
+                    .trim()
+                    .split_once("://")
+                    .map(|(scheme, _)| scheme)
+                    .unwrap_or(""),
+            )
+            .unwrap_or(Self::Grpc),
             Err(_) => Self::Grpc,
         }
     }
@@ -174,21 +180,30 @@ fn parse_export_interval(value: &str) -> Option<Duration> {
     }
 
     let normalized = trimmed.to_ascii_lowercase();
-    if let Some(ms) = normalized.strip_suffix("ms").and_then(|v| v.trim().parse::<u64>().ok()) {
+    if let Some(ms) = normalized
+        .strip_suffix("ms")
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
         if ms == 0 {
             return None;
         }
         return Some(Duration::from_millis(ms));
     }
 
-    if let Some(seconds) = normalized.strip_suffix('s').and_then(|v| v.trim().parse::<u64>().ok()) {
+    if let Some(seconds) = normalized
+        .strip_suffix('s')
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
         if seconds == 0 {
             return None;
         }
         return Some(Duration::from_secs(seconds));
     }
 
-    if let Some(minutes) = normalized.strip_suffix('m').and_then(|v| v.trim().parse::<u64>().ok()) {
+    if let Some(minutes) = normalized
+        .strip_suffix('m')
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
         if minutes == 0 {
             return None;
         }
@@ -285,7 +300,11 @@ impl<S> tracing_subscriber::Layer<S> for OtelLogsLayer
 where
     S: tracing::Subscriber,
 {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         let metadata = event.metadata();
         let mut visitor = TracingEventVisitor::default();
         event.record(&mut visitor);
@@ -344,13 +363,15 @@ impl TracingEventVisitor {
         if field.name() == "message" {
             self.body = Some(value.to_string());
         } else {
-            self.attributes.push((field.name().to_string(), value.into()));
+            self.attributes
+                .push((field.name().to_string(), value.into()));
         }
     }
 
     fn maybe_record_unix_timestamp_millis(&mut self, field: &Field, value: u64) {
         if field.name() == "timestamp" && self.timestamp.is_none() {
-            self.timestamp = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_millis(value));
+            self.timestamp =
+                std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_millis(value));
         }
     }
 }
@@ -414,7 +435,9 @@ impl Drop for TelemetryHandles {
     }
 }
 
-pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Result<TelemetryHandles> {
+pub(super) fn init_logger(
+    node_identity: NodeTelemetryIdentity,
+) -> anyhow::Result<TelemetryHandles> {
     let mut telemetry_handles = TelemetryHandles::default();
     apply_hoprd_otlp_endpoint_override();
     let config = OtlpConfig::from_env();
@@ -465,7 +488,10 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
                 .build();
             let tracer = tracer_provider.tracer(env!("CARGO_PKG_NAME"));
             telemetry_handles.tracer_provider = Some(tracer_provider);
-            Some(tracing_opentelemetry::layer::<tracing_subscriber::registry::Registry>().with_tracer(tracer))
+            Some(
+                tracing_opentelemetry::layer::<tracing_subscriber::registry::Registry>()
+                    .with_tracer(tracer),
+            )
         } else {
             None
         };
@@ -546,10 +572,15 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
                         .with_reader(prefixed_reader)
                         .with_resource(resource.clone());
                     if !is_session_prefix {
-                        prefixed_provider_builder = prefixed_provider_builder.with_reader(prometheus_exporter.clone());
+                        prefixed_provider_builder =
+                            prefixed_provider_builder.with_reader(prometheus_exporter.clone());
                     }
 
-                    prefixed_meter_providers.push((prefix.clone(), *interval, prefixed_provider_builder.build()));
+                    prefixed_meter_providers.push((
+                        prefix.clone(),
+                        *interval,
+                        prefixed_provider_builder.build(),
+                    ));
                 }
             }
 
@@ -576,7 +607,9 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
             // Initialize hopr-metrics with this unified provider so all instruments
             // feed into both OTLP and the Prometheus text endpoint
             if !hopr_metrics::init_with_provider(prometheus_exporter, meter_provider.clone()) {
-                tracing::warn!("hopr-metrics global state was already initialized; custom provider not applied");
+                tracing::warn!(
+                    "hopr-metrics global state was already initialized; custom provider not applied"
+                );
             }
 
             tracing::info!(
@@ -585,7 +618,8 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
             );
 
             for (prefix, interval, prefixed_meter_provider) in prefixed_meter_providers {
-                if !hopr_metrics::register_prefix_provider(&prefix, prefixed_meter_provider.clone()) {
+                if !hopr_metrics::register_prefix_provider(&prefix, prefixed_meter_provider.clone())
+                {
                     tracing::warn!(
                         metric_prefix = %prefix,
                         "failed to register dedicated meter provider for metric prefix; falling back to default OTLP interval"
@@ -598,7 +632,9 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
                     );
                 }
 
-                telemetry_handles.prefixed_meter_providers.push(prefixed_meter_provider);
+                telemetry_handles
+                    .prefixed_meter_providers
+                    .push(prefixed_meter_provider);
             }
 
             telemetry_handles.meter_provider = Some(meter_provider);
@@ -616,7 +652,9 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
                 .with_resource(resource.clone())
                 .build();
             if !hopr_metrics::init_with_provider(prometheus_exporter, meter_provider.clone()) {
-                tracing::warn!("hopr-metrics global state was already initialized; custom provider not applied");
+                tracing::warn!(
+                    "hopr-metrics global state was already initialized; custom provider not applied"
+                );
             }
             telemetry_handles.meter_provider = Some(meter_provider);
         }
@@ -647,7 +685,9 @@ pub(super) fn init_logger(node_identity: NodeTelemetryIdentity) -> anyhow::Resul
             .with_reader(prometheus_exporter.clone())
             .build();
         if !hopr_metrics::init_with_provider(prometheus_exporter, meter_provider.clone()) {
-            tracing::warn!("hopr-metrics global state was already initialized; custom provider not applied");
+            tracing::warn!(
+                "hopr-metrics global state was already initialized; custom provider not applied"
+            );
         }
         telemetry_handles.meter_provider = Some(meter_provider);
     }

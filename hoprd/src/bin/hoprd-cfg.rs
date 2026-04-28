@@ -63,13 +63,12 @@ fn main() -> Result<(), hoprd::errors::HoprdError> {
                 .map_err(|e| hoprd::errors::HoprdError::ConfigError(e.to_string()))?
         );
     } else if let Some(cfg_path) = args.validate {
-        let cfg_path = cfg_path
-            .into_os_string()
-            .into_string()
-            .map_err(|_| hoprd::errors::HoprdError::ConfigError("file path not convertible".into()))?;
+        let cfg_path = cfg_path.into_os_string().into_string().map_err(|_| {
+            hoprd::errors::HoprdError::ConfigError("file path not convertible".into())
+        })?;
 
-        let yaml_configuration =
-            std::fs::read_to_string(&cfg_path).map_err(|e| hoprd::errors::HoprdError::ConfigError(e.to_string()))?;
+        let yaml_configuration = std::fs::read_to_string(&cfg_path)
+            .map_err(|e| hoprd::errors::HoprdError::ConfigError(e.to_string()))?;
 
         let cfg: HoprdConfig = serde_saphyr::from_str(&yaml_configuration)
             .map_err(|e| hoprd::errors::HoprdError::SerializationError(e.to_string()))?;

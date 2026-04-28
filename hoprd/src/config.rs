@@ -3,8 +3,8 @@ use std::time::Duration;
 use hopr_lib::{
     HoprBalance, HoprProtocolConfig, SafeModule, TagAllocatorConfig, WinningProbability,
     config::{
-        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, ProbeConfig, SessionGlobalConfig,
-        TransportConfig,
+        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, ProbeConfig,
+        SessionGlobalConfig, TransportConfig,
     },
     exports::transport::config::HoprCodecConfig,
 };
@@ -82,7 +82,9 @@ impl std::fmt::Debug for Identity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize, Validate)]
+#[derive(
+    Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize, Validate,
+)]
 #[serde(deny_unknown_fields)]
 pub struct Db {
     /// Path to the directory containing the database
@@ -102,11 +104,18 @@ fn default_session_idle_timeout() -> Duration {
 }
 
 fn default_max_sessions() -> usize {
-    HoprLibConfig::default().protocol.session.tag_allocator.session as usize
+    HoprLibConfig::default()
+        .protocol
+        .session
+        .tag_allocator
+        .session as usize
 }
 
 fn default_session_establish_max_retries() -> usize {
-    HoprLibConfig::default().protocol.session.establish_max_retries as usize
+    HoprLibConfig::default()
+        .protocol
+        .session
+        .establish_max_retries as usize
 }
 
 fn default_probe_recheck_threshold() -> Duration {
@@ -265,7 +274,9 @@ impl Validate for UserHoprLibConfig {
 ///
 /// An always up-to-date config YAML example can be found in [example_cfg.yaml](https://github.com/hoprnet/hoprnet/tree/master/hoprd/hoprd/example_cfg.yaml)
 /// which is always in the root of this crate.
-#[derive(Debug, Serialize, Deserialize, Validate, Clone, PartialEq, smart_default::SmartDefault)]
+#[derive(
+    Debug, Serialize, Deserialize, Validate, Clone, PartialEq, smart_default::SmartDefault,
+)]
 #[serde(deny_unknown_fields)]
 pub struct HoprdConfig {
     /// Configuration related to hopr-lib functionality
@@ -321,7 +332,8 @@ impl HoprdConfig {
 
     pub fn as_redacted_string(&self) -> crate::errors::Result<String> {
         let redacted_cfg = self.as_redacted();
-        serde_json::to_string(&redacted_cfg).map_err(|e| crate::errors::HoprdError::SerializationError(e.to_string()))
+        serde_json::to_string(&redacted_cfg)
+            .map_err(|e| crate::errors::HoprdError::SerializationError(e.to_string()))
     }
 }
 
@@ -387,7 +399,9 @@ mod tests {
 
     #[test]
     fn example_config_should_be_serializable_into_string() -> anyhow::Result<()> {
-        serde_saphyr::from_str::<HoprdConfig>(include_str!("../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"))?;
+        serde_saphyr::from_str::<HoprdConfig>(include_str!(
+            "../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"
+        ))?;
         Ok(())
     }
 

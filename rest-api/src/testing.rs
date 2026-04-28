@@ -18,14 +18,14 @@ use async_trait::async_trait;
 use bimap::BiMap;
 use futures::stream::{self, BoxStream};
 use hopr_lib::{
-    Address, ChainKeypair, HoprBalance, Keypair, Multiaddr, OffchainKeypair, OffchainPublicKey, PeerId,
-    WinningProbability,
+    Address, ChainKeypair, HoprBalance, Keypair, Multiaddr, OffchainKeypair, OffchainPublicKey,
+    PeerId, WinningProbability,
     api::{
         chain::{self, *},
         network::{Health, NetworkEvent, NetworkView},
         node::{
-            ComponentStatus, EventWaitResult, HasChainApi, HasNetworkView, HasTicketManagement, HoprNodeOperations,
-            HoprState, NodeOnchainIdentity, TicketEvent,
+            ComponentStatus, EventWaitResult, HasChainApi, HasNetworkView, HasTicketManagement,
+            HoprNodeOperations, HoprState, NodeOnchainIdentity, TicketEvent,
         },
         tickets::{ChannelStats, RedemptionResult, TicketManagement},
         types::primitive::prelude::{Balance, Currency, KeyIdMapping, KeyIdent},
@@ -135,7 +135,10 @@ impl HasChainApi for ChecksNode {
         _predicate: F,
         _context: String,
         _timeout: Duration,
-    ) -> EventWaitResult<<Self::ChainApi as hopr_lib::api::chain::HoprChainApi>::ChainError, Self::ChainError>
+    ) -> EventWaitResult<
+        <Self::ChainApi as hopr_lib::api::chain::HoprChainApi>::ChainError,
+        Self::ChainError,
+    >
     where
         F: Fn(&hopr_lib::api::chain::ChainEvent) -> bool + Send + Sync + 'static,
     {
@@ -197,7 +200,10 @@ impl ChainReadChannelOperations for StubChain {
         Ok(None)
     }
 
-    fn stream_channels<'a>(&'a self, _selector: ChannelSelector) -> Result<BoxStream<'a, ChannelEntry>, Self::Error> {
+    fn stream_channels<'a>(
+        &'a self,
+        _selector: ChannelSelector,
+    ) -> Result<BoxStream<'a, ChannelEntry>, Self::Error> {
         Ok(Box::pin(stream::empty()))
     }
 }
@@ -212,7 +218,8 @@ impl ChainWriteChannelOperations for StubChain {
         &'a self,
         _dst: &'a Address,
         _amount: HoprBalance,
-    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error> {
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
         Err(StubError("stub cannot open channels".into()))
     }
 
@@ -220,14 +227,16 @@ impl ChainWriteChannelOperations for StubChain {
         &'a self,
         _channel_id: &'a ChannelId,
         _amount: HoprBalance,
-    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error> {
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
         Err(StubError("stub cannot fund channels".into()))
     }
 
     async fn close_channel<'a>(
         &'a self,
         _channel_id: &'a ChannelId,
-    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error> {
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
         Err(StubError("stub cannot close channels".into()))
     }
 }
@@ -238,7 +247,10 @@ impl ChainWriteChannelOperations for StubChain {
 impl ChainReadAccountOperations for StubChain {
     type Error = StubError;
 
-    fn stream_accounts<'a>(&'a self, _selector: AccountSelector) -> Result<BoxStream<'a, AccountEntry>, Self::Error> {
+    fn stream_accounts<'a>(
+        &'a self,
+        _selector: AccountSelector,
+    ) -> Result<BoxStream<'a, AccountEntry>, Self::Error> {
         Ok(Box::pin(stream::empty()))
     }
 
@@ -265,8 +277,10 @@ impl ChainWriteAccountOperations for StubChain {
         &self,
         _multiaddrs: &[Multiaddr],
         _key: &OffchainKeypair,
-    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, AnnouncementError<Self::Error>>
-    {
+    ) -> Result<
+        futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>,
+        AnnouncementError<Self::Error>,
+    > {
         Err(AnnouncementError::ProcessingError(StubError(
             "stub cannot announce".into(),
         )))
@@ -276,15 +290,18 @@ impl ChainWriteAccountOperations for StubChain {
         &self,
         _balance: Balance<C>,
         _recipient: &Address,
-    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error> {
+    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
         Err(StubError("stub cannot withdraw".into()))
     }
 
     async fn register_safe(
         &self,
         _safe_address: &Address,
-    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, SafeRegistrationError<Self::Error>>
-    {
+    ) -> Result<
+        futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>,
+        SafeRegistrationError<Self::Error>,
+    > {
         Err(SafeRegistrationError::ProcessingError(StubError(
             "stub cannot register safe".into(),
         )))
@@ -304,7 +321,10 @@ impl ChainReadSafeOperations for StubChain {
         Ok(Balance::zero())
     }
 
-    async fn safe_info(&self, _selector: SafeSelector) -> Result<Option<DeployedSafe>, Self::Error> {
+    async fn safe_info(
+        &self,
+        _selector: SafeSelector,
+    ) -> Result<Option<DeployedSafe>, Self::Error> {
         Ok(None)
     }
 
@@ -335,7 +355,8 @@ impl ChainWriteSafeOperations for StubChain {
     async fn deploy_safe<'a>(
         &'a self,
         _balance: HoprBalance,
-    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error> {
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
         Err(StubError("stub cannot deploy safe".into()))
     }
 }
@@ -372,11 +393,17 @@ impl ChainKeyOperations for StubChain {
     type Error = StubError;
     type Mapper = StubKeyMapper;
 
-    fn chain_key_to_packet_key(&self, chain: &Address) -> Result<Option<OffchainPublicKey>, Self::Error> {
+    fn chain_key_to_packet_key(
+        &self,
+        chain: &Address,
+    ) -> Result<Option<OffchainPublicKey>, Self::Error> {
         Ok(self.keys.get_by_left(chain).copied())
     }
 
-    fn packet_key_to_chain_key(&self, packet: &OffchainPublicKey) -> Result<Option<Address>, Self::Error> {
+    fn packet_key_to_chain_key(
+        &self,
+        packet: &OffchainPublicKey,
+    ) -> Result<Option<Address>, Self::Error> {
         Ok(self.keys.get_by_right(packet).copied())
     }
 
@@ -391,7 +418,10 @@ impl ChainKeyOperations for StubChain {
 impl ChainValues for StubChain {
     type Error = StubError;
 
-    async fn balance<C: Currency, A: Into<Address> + Send>(&self, _address: A) -> Result<Balance<C>, Self::Error> {
+    async fn balance<C: Currency, A: Into<Address> + Send>(
+        &self,
+        _address: A,
+    ) -> Result<Balance<C>, Self::Error> {
         Ok(Balance::zero())
     }
 
@@ -427,7 +457,10 @@ impl ChainValues for StubChain {
         })
     }
 
-    async fn redemption_stats<A: Into<Address> + Send>(&self, _: A) -> Result<RedemptionStats, Self::Error> {
+    async fn redemption_stats<A: Into<Address> + Send>(
+        &self,
+        _: A,
+    ) -> Result<RedemptionStats, Self::Error> {
         Ok(RedemptionStats {
             redeemed_count: 0,
             redeemed_value: HoprBalance::zero(),
@@ -470,7 +503,10 @@ impl ChainWriteTicketOperations for StubChain {
         &'a self,
         ticket: RedeemableTicket,
     ) -> Result<
-        futures::future::BoxFuture<'a, Result<(VerifiedTicket, ChainReceipt), TicketRedeemError<Self::Error>>>,
+        futures::future::BoxFuture<
+            'a,
+            Result<(VerifiedTicket, ChainReceipt), TicketRedeemError<Self::Error>>,
+        >,
         TicketRedeemError<Self::Error>,
     > {
         Err(TicketRedeemError::ProcessingError(
@@ -571,7 +607,10 @@ impl TicketManagement for StubTicketManager {
         _client: C,
         _channel_id: hopr_lib::api::chain::ChannelId,
         _min_amount: Option<HoprBalance>,
-    ) -> Result<impl futures::Stream<Item = Result<RedemptionResult, Self::Error>> + Send, Self::Error> {
+    ) -> Result<
+        impl futures::Stream<Item = Result<RedemptionResult, Self::Error>> + Send,
+        Self::Error,
+    > {
         Ok(stream::empty())
     }
 
@@ -583,7 +622,10 @@ impl TicketManagement for StubTicketManager {
         Ok(vec![])
     }
 
-    fn ticket_stats(&self, _channel_id: Option<&hopr_lib::api::chain::ChannelId>) -> Result<ChannelStats, Self::Error> {
+    fn ticket_stats(
+        &self,
+        _channel_id: Option<&hopr_lib::api::chain::ChannelId>,
+    ) -> Result<ChannelStats, Self::Error> {
         Ok(ChannelStats::default())
     }
 

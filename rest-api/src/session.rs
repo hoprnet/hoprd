@@ -7,10 +7,12 @@ use axum::{
 };
 use base64::Engine;
 use hopr_lib::{
-    Address, HopRouting, HoprSessionClientConfig, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
-    SessionTarget, SurbBalancerConfig, errors::HoprLibError,
+    Address, HopRouting, HoprSessionClientConfig, SESSION_MTU, SURB_SIZE, ServiceId,
+    SessionCapabilities, SessionId, SessionTarget, SurbBalancerConfig, errors::HoprLibError,
 };
-use hopr_utils_session::{ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding};
+use hopr_utils_session::{
+    ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding,
+};
 use serde::{Deserialize, Serialize};
 // Imported for some IDEs to not treat the `json!` macro inside the `schema` macro as an error
 #[allow(unused_imports)]
@@ -38,7 +40,9 @@ impl std::fmt::Display for SessionTargetSpec {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             SessionTargetSpec::Plain(t) => write!(f, "{t}"),
-            SessionTargetSpec::Sealed(t) => write!(f, "$${}", base64::prelude::BASE64_URL_SAFE.encode(t)),
+            SessionTargetSpec::Sealed(t) => {
+                write!(f, "$${}", base64::prelude::BASE64_URL_SAFE.encode(t))
+            }
             SessionTargetSpec::Service(t) => write!(f, "#{t}"),
         }
     }
@@ -108,9 +112,12 @@ impl From<SessionCapability> for hopr_lib::SessionCapabilities {
         match cap {
             SessionCapability::Segmentation => hopr_lib::SessionCapability::Segmentation.into(),
             SessionCapability::Retransmission => {
-                hopr_lib::SessionCapability::RetransmissionNack | hopr_lib::SessionCapability::RetransmissionAck
+                hopr_lib::SessionCapability::RetransmissionNack
+                    | hopr_lib::SessionCapability::RetransmissionAck
             }
-            SessionCapability::RetransmissionAckOnly => hopr_lib::SessionCapability::RetransmissionAck.into(),
+            SessionCapability::RetransmissionAckOnly => {
+                hopr_lib::SessionCapability::RetransmissionAck.into()
+            }
             SessionCapability::NoDelay => hopr_lib::SessionCapability::NoDelay.into(),
             SessionCapability::NoRateControl => hopr_lib::SessionCapability::NoRateControl.into(),
         }
@@ -378,7 +385,8 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
     Path(protocol): Path<IpProtocol>,
     Json(args): Json<SessionClientRequest>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let bind_host: std::net::SocketAddr = build_binding_host(args.listen_host.as_deref(), state.default_listen_host);
+    let bind_host: std::net::SocketAddr =
+        build_binding_host(args.listen_host.as_deref(), state.default_listen_host);
 
     let listener_id = ListenerId(protocol.into(), bind_host);
     if bind_host.port() > 0 && state.open_listeners.0.contains_key(&listener_id) {
@@ -417,7 +425,9 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
                 }
                 hopr_utils_session::BindError::UnknownFailure(_) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
-                    ApiErrorStatus::UnknownFailure(format!("failed to start TCP listener on {bind_host}: {e}")),
+                    ApiErrorStatus::UnknownFailure(format!(
+                        "failed to start TCP listener on {bind_host}: {e}"
+                    )),
                 ),
             })?
         }
@@ -445,7 +455,9 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
                 }
                 hopr_utils_session::BindError::UnknownFailure(_) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
-                    ApiErrorStatus::UnknownFailure(format!("failed to start UDP listener on {bind_host}: {e}")),
+                    ApiErrorStatus::UnknownFailure(format!(
+                        "failed to start UDP listener on {bind_host}: {e}"
+                    )),
                 ),
             })?
         }
@@ -538,7 +550,11 @@ pub(crate) async fn list_clients<H: Send + Sync + 'static>(
                 destination: entry.destination,
                 hopr_mtu: SESSION_MTU,
                 surb_len: SURB_SIZE,
-                active_clients: entry.get_clients().iter().map(|e| e.key().to_string()).collect(),
+                active_clients: entry
+                    .get_clients()
+                    .iter()
+                    .map(|e| e.key().to_string())
+                    .collect(),
                 max_client_sessions: entry.max_client_sessions,
                 max_surb_upstream: entry.max_surb_upstream,
                 response_buffer: entry.response_buffer,
@@ -589,14 +605,16 @@ impl From<SessionConfig> for Option<SurbBalancerConfig> {
     fn from(value: SessionConfig) -> Self {
         match value.response_buffer {
             // Buffer worth at least 2 reply packets
-            Some(buffer_size) if buffer_size.as_u64() >= 2 * SESSION_MTU as u64 => Some(SurbBalancerConfig {
-                target_surb_buffer_size: buffer_size.as_u64() / SESSION_MTU as u64,
-                max_surbs_per_sec: value
-                    .max_surb_upstream
-                    .map(|b| (b.as_bps() as usize / (8 * SURB_SIZE)) as u64)
-                    .unwrap_or_else(|| SurbBalancerConfig::default().max_surbs_per_sec),
-                ..Default::default()
-            }),
+            Some(buffer_size) if buffer_size.as_u64() >= 2 * SESSION_MTU as u64 => {
+                Some(SurbBalancerConfig {
+                    target_surb_buffer_size: buffer_size.as_u64() / SESSION_MTU as u64,
+                    max_surbs_per_sec: value
+                        .max_surb_upstream
+                        .map(|b| (b.as_bps() as usize / (8 * SURB_SIZE)) as u64)
+                        .unwrap_or_else(|| SurbBalancerConfig::default().max_surbs_per_sec),
+                    ..Default::default()
+                })
+            }
             // No additional SURBs are set up and maintained, useful for high-send low-reply sessions
             Some(_) => None,
             // Use defaults otherwise
@@ -649,15 +667,17 @@ pub(crate) async fn adjust_session<H: Send + Sync + 'static>(
     Path(session_id): Path<String>,
     Json(args): Json<SessionConfig>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id =
-        SessionId::from_str(&session_id).map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
+    let session_id = SessionId::from_str(&session_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     if let Some(cfg) = Option::<SurbBalancerConfig>::from(args) {
         let configurator = state.open_listeners.find_configurator(&session_id);
 
         match configurator {
             Some(configurator) => match configurator.update_surb_balancer_config(cfg).await {
-                Ok(_) => Ok::<_, (StatusCode, ApiErrorStatus)>((StatusCode::NO_CONTENT, "").into_response()),
+                Ok(_) => Ok::<_, (StatusCode, ApiErrorStatus)>(
+                    (StatusCode::NO_CONTENT, "").into_response(),
+                ),
                 Err(e) => Err((
                     StatusCode::NOT_ACCEPTABLE,
                     ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -666,7 +686,10 @@ pub(crate) async fn adjust_session<H: Send + Sync + 'static>(
             None => Err((StatusCode::NOT_FOUND, ApiErrorStatus::SessionNotFound)),
         }
     } else {
-        Err::<_, (StatusCode, ApiErrorStatus)>((StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidInput))
+        Err::<_, (StatusCode, ApiErrorStatus)>((
+            StatusCode::BAD_REQUEST,
+            ApiErrorStatus::InvalidInput,
+        ))
     }
 }
 
@@ -694,8 +717,8 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
     State(state): State<Arc<InternalState<H>>>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id =
-        SessionId::from_str(&session_id).map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
+    let session_id = SessionId::from_str(&session_id)
+        .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     // Find the configurator for this session across all listeners
     let configurator = state.open_listeners.0.iter().find_map(|entry| {
@@ -708,9 +731,9 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
 
     match configurator {
         Some(configurator) => match configurator.get_surb_balancer_config().await {
-            Ok(Some(cfg)) => {
-                Ok::<_, (StatusCode, ApiErrorStatus)>((StatusCode::OK, Json(SessionConfig::from(cfg))).into_response())
-            }
+            Ok(Some(cfg)) => Ok::<_, (StatusCode, ApiErrorStatus)>(
+                (StatusCode::OK, Json(SessionConfig::from(cfg))).into_response(),
+            ),
             Ok(None) => Err((StatusCode::NOT_FOUND, ApiErrorStatus::SessionNotFound)),
             Err(e) => Err((
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -722,7 +745,17 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
 }
 
 #[derive(
-    Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, strum::Display, strum::EnumString, utoipa::ToSchema,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumString,
+    utoipa::ToSchema,
 )]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
@@ -803,7 +836,9 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
             .iter()
             .filter(|v| {
                 let ListenerId(proto, addr) = v.key();
-                protocol == *proto && addr.ip() == listening_ip && (addr.port() == port || port == 0)
+                protocol == *proto
+                    && addr.ip() == listening_ip
+                    && (addr.port() == port || port == 0)
             })
             .for_each(|v| to_remove.push(*v.key()));
 
@@ -847,7 +882,9 @@ mod tests {
     #[tokio::test]
     async fn list_clients_should_return_empty_when_no_sessions() -> anyhow::Result<()> {
         let app = session_router();
-        let resp = app.oneshot(Request::get("/session/tcp").body(Body::empty())?).await?;
+        let resp = app
+            .oneshot(Request::get("/session/tcp").body(Body::empty())?)
+            .await?;
         assert_eq!(resp.status(), StatusCode::OK);
 
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;

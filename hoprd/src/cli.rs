@@ -34,8 +34,12 @@ fn parse_api_token(mut s: &str) -> Result<String, String> {
 
     match (s.starts_with('\''), s.ends_with('\'')) {
         (true, true) => {
-            s = s.strip_prefix('\'').ok_or("failed to parse strip prefix part")?;
-            s = s.strip_suffix('\'').ok_or("failed to parse strip suffix part")?;
+            s = s
+                .strip_prefix('\'')
+                .ok_or("failed to parse strip prefix part")?;
+            s = s
+                .strip_suffix('\'')
+                .ok_or("failed to parse strip suffix part")?;
 
             Ok(s.into())
         }
@@ -264,8 +268,12 @@ impl TryFrom<CliArgs> for HoprdConfig {
             cfg.session_ip_forwarding.default_entry_listen_host = match host.address {
                 HostType::IPv4(addr) => IpAddr::from_str(&addr)
                     .map(|ip| std::net::SocketAddr::new(ip, host.port))
-                    .map_err(|_| HoprdError::ConfigError("invalid default session listen IP address".into())),
-                HostType::Domain(_) => Err(HoprdError::ConfigError("default session listen must be an IP".into())),
+                    .map_err(|_| {
+                        HoprdError::ConfigError("invalid default session listen IP address".into())
+                    }),
+                HostType::Domain(_) => Err(HoprdError::ConfigError(
+                    "default session listen must be an IP".into(),
+                )),
             }?;
         }
 
@@ -291,9 +299,10 @@ impl TryFrom<CliArgs> for HoprdConfig {
             cfg.api.auth = Auth::Token(x);
         };
         if let Some(x) = value.api_host {
-            cfg.api.host =
-                HostConfig::from_str(format!("{}:{}", x.as_str(), hoprd_api::config::DEFAULT_API_PORT).as_str())
-                    .map_err(crate::errors::HoprdError::ValidationError)?;
+            cfg.api.host = HostConfig::from_str(
+                format!("{}:{}", x.as_str(), hoprd_api::config::DEFAULT_API_PORT).as_str(),
+            )
+            .map_err(crate::errors::HoprdError::ValidationError)?;
         }
         if let Some(x) = value.api_port {
             cfg.api.host.port = x

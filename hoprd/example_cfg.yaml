@@ -1,4 +1,3 @@
----
 # Blokli provider URL to connect to.
 #
 # blokli_url: https://blokli.prod.hoprnet.link
@@ -104,7 +103,6 @@ strategy:
 hopr:
   # Determines whether the node should publish itself on-chain.
   announce: true
-
   # Specifies host to listen on for the HOPR P2P protocol
   host:
     # Specifies the external IP address of the local interface
@@ -114,14 +112,12 @@ hopr:
       IPv4: 1.2.3.4
     # Listen TCP port
     port: 9091
-
   # Configuration of node's Safe
   safe_module:
     # Node's safe address, this must be provided by the user
     safe_address: "0x0000000000000000000000000000000000000000"
     # Node's safe module address, this must be provided by the user
     module_address: "0x0000000000000000000000000000000000000000"
-
   #  Various HOPR-network and transport-related configuration options.
   network:
     # How many seconds it takes before HOPR Session is considered idle and is closed automatically
@@ -148,7 +144,6 @@ hopr:
     # The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
     # and will default to that value whenever it is lower.
     # min_incoming_ticket_price: "1 wxHOPR"
-
 # Session Entry/Exit IP forwarding configuration for this node
 # This applies whenever the node is an Exit node of a Session.
 session_ip_forwarding:

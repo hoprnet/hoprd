@@ -183,7 +183,11 @@ pub(super) async fn list_channels<
 
         match topology {
             Ok(stream) => {
-                let all = stream.await.iter().map(channel_to_topology_info).collect::<Vec<_>>();
+                let all = stream
+                    .await
+                    .iter()
+                    .map(channel_to_topology_info)
+                    .collect::<Vec<_>>();
                 (
                     StatusCode::OK,
                     Json(NodeChannelsResponse {
@@ -317,7 +321,10 @@ pub(super) async fn open_channel<
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
 
-    match hopr.open_channel(open_req.destination, open_req.amount).await {
+    match hopr
+        .open_channel(open_req.destination, open_req.amount)
+        .await
+    {
         Ok(channel_details) => (
             StatusCode::CREATED,
             Json(OpenChannelResponse {
@@ -326,9 +333,9 @@ pub(super) async fn open_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(HoprStatusError::NotThereYet(..)))) => {
-            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
-        }
+        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
+            HoprStatusError::NotThereYet(..),
+        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -427,8 +434,14 @@ pub(super) async fn show_channel<
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
 
-    match hopr_async_runtime::prelude::spawn_blocking(move || resolve_channel(&*hopr, &address, direction)).await {
-        Ok(Ok(channel)) => (StatusCode::OK, Json(channel_to_topology_info(&channel))).into_response(),
+    match hopr_async_runtime::prelude::spawn_blocking(move || {
+        resolve_channel(&*hopr, &address, direction)
+    })
+    .await
+    {
+        Ok(Ok(channel)) => {
+            (StatusCode::OK, Json(channel_to_topology_info(&channel))).into_response()
+        }
         Ok(Err(status)) => match status {
             ApiErrorStatus::ChannelNotFound => (StatusCode::NOT_FOUND, status).into_response(),
             _ => (StatusCode::UNPROCESSABLE_ENTITY, status).into_response(),
@@ -511,9 +524,9 @@ pub(super) async fn close_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(HoprStatusError::NotThereYet(..)))) => {
-            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
-        }
+        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
+            HoprStatusError::NotThereYet(..),
+        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -607,9 +620,9 @@ pub(super) async fn fund_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(HoprStatusError::NotThereYet(..)))) => {
-            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
-        }
+        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
+            HoprStatusError::NotThereYet(..),
+        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -625,8 +638,12 @@ mod tests {
     use super::*;
 
     fn test_channel(status: ChannelStatus) -> ChannelEntry {
-        let src: Address = "0x07eaf07d6624f741e04f4092a755a9027aaab7f6".parse().unwrap();
-        let dst: Address = "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse().unwrap();
+        let src: Address = "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
+            .parse()
+            .unwrap();
+        let dst: Address = "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
+            .parse()
+            .unwrap();
         ChannelEntry::builder()
             .between(src, dst)
             .balance("10 wxHOPR".parse().unwrap())
@@ -697,7 +714,10 @@ mod tests {
         let err = HoprLibError::GeneralError("test".into());
         let result = filter_open_channel(Err(err));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ApiErrorStatus::UnknownFailure(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ApiErrorStatus::UnknownFailure(_)
+        ));
     }
 
     #[test]
@@ -781,7 +801,9 @@ mod tests {
         let params: AddressParams = serde_json::from_value(json).unwrap();
         assert_eq!(
             params.address,
-            "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse().unwrap()
+            "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
+                .parse()
+                .unwrap()
         );
     }
 
@@ -847,7 +869,9 @@ mod tests {
         let req: OpenChannelBodyRequest = serde_json::from_value(json).unwrap();
         assert_eq!(
             req.destination,
-            "0xa8194d36e322592d4c707b70dbe96121f5c74c64".parse().unwrap()
+            "0xa8194d36e322592d4c707b70dbe96121f5c74c64"
+                .parse()
+                .unwrap()
         );
         assert_eq!(req.amount, "10 wxHOPR".parse().unwrap());
     }
@@ -874,7 +898,9 @@ mod tests {
 
     #[test]
     fn fund_channel_response_should_serialize_correctly() {
-        let resp = FundChannelResponse { hash: Hash::default() };
+        let resp = FundChannelResponse {
+            hash: Hash::default(),
+        };
         let json = serde_json::to_value(&resp).unwrap();
         assert!(json.get("hash").is_some());
     }

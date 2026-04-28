@@ -105,6 +105,8 @@ pub async fn open_full_mesh_channels(nodes: &[NodeProcess], amount: &HoprBalance
         }
     }
 
-    try_join_all(tasks).await.context("failed to open channels")?;
+    try_join_all(tasks)
+        .await
+        .context("failed to open channels")?;
     Ok(())
 }

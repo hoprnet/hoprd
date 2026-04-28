@@ -61,15 +61,15 @@ Example config: [`hoprd/example_cfg.yaml`](hoprd/example_cfg.yaml)
 
 Key config options:
 
-| Option | Description |
-|--------|-------------|
-| `host` | P2P listen address |
-| `apiPort` | REST API port (default 3001) |
-| `apiToken` | Authentication token for REST API |
-| `identity` | Path to node identity file |
-| `data` | Data directory for node state |
-| `password` | Identity file password |
-| `network` | Network to connect to (e.g. `dufour`) |
+| Option     | Description                           |
+| ---------- | ------------------------------------- |
+| `host`     | P2P listen address                    |
+| `apiPort`  | REST API port (default 3001)          |
+| `apiToken` | Authentication token for REST API     |
+| `identity` | Path to node identity file            |
+| `data`     | Data directory for node state         |
+| `password` | Identity file password                |
+| `network`  | Network to connect to (e.g. `dufour`) |
 
 ## REST API
 

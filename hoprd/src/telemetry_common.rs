@@ -58,7 +58,8 @@ pub(super) fn install_base_subscriber() -> anyhow::Result<()> {
     #[cfg(not(feature = "prof"))]
     let prof_layer = tracing_subscriber::layer::Identity::new();
 
-    let (reload_layer, handle) = reload::Layer::<Vec<OtelBoxedLayer>, Registry>::new(passthrough_layers(Vec::new()));
+    let (reload_layer, handle) =
+        reload::Layer::<Vec<OtelBoxedLayer>, Registry>::new(passthrough_layers(Vec::new()));
     let _ = OTEL_HANDLE.set(handle); // ignore the error if called more than once (e.g. in tests)
 
     let subscriber = Registry::default()
@@ -77,7 +78,9 @@ pub(super) fn install_base_subscriber() -> anyhow::Result<()> {
 pub(super) fn install_otel_layers(layers: Vec<OtelBoxedLayer>) -> anyhow::Result<()> {
     OTEL_HANDLE
         .get()
-        .ok_or_else(|| anyhow::anyhow!("base subscriber not initialized; call install_base_subscriber() first"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!("base subscriber not initialized; call install_base_subscriber() first")
+        })?
         .reload(passthrough_layers(layers))?;
     Ok(())
 }

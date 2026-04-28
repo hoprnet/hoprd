@@ -8,13 +8,16 @@ use hopr_chain_connector::{
     create_trustful_safeless_hopr_blokli_connector,
     reexports::chain::exports::alloy::hex,
 };
-use hopr_lib::{ChainKeypair, HoprKeys, Keypair, SafeModule, XDaiBalance, crypto_traits::Randomizable};
+use hopr_lib::{
+    ChainKeypair, HoprKeys, Keypair, SafeModule, XDaiBalance, crypto_traits::Randomizable,
+};
 use hopr_reference::config::SessionIpForwardingConfig;
 use hoprd::config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig};
 use hoprd_api::config::{Api, Auth};
 
 pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
-pub const DEFAULT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+pub const DEFAULT_PRIVATE_KEY: &str =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
@@ -77,7 +80,8 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
     let home_path = &config.config_home;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
 
-    let blokli_client = BlokliClient::new(config.blokli_url.parse()?, BlokliClientConfig::default());
+    let blokli_client =
+        BlokliClient::new(config.blokli_url.parse()?, BlokliClientConfig::default());
     let status = blokli_client.query_health().await?;
     if !status.eq_ignore_ascii_case("ok") {
         return Err(anyhow::anyhow!("Blokli is not usable: {status}"));
@@ -132,14 +136,22 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
                 ));
             }
 
-            anvil_connector.withdraw(top_up, &node_address).await?.await?;
+            anvil_connector
+                .withdraw(top_up, &node_address)
+                .await?
+                .await?;
             eprint!("\x1b[2K\rNode {id}: {top_up} transferred to {node_address}");
         } else {
-            eprint!("\x1b[2K\rNode {id}: {node_address} already has {node_native_balance} xDai tokens");
+            eprint!(
+                "\x1b[2K\rNode {id}: {node_address} already has {node_native_balance} xDai tokens"
+            );
         }
 
         eprint!("\x1b[2K\rNode {id}: Checking Safe deployment...");
-        let safe = if let Some(safe) = node_connector.safe_info(SafeSelector::Owner(node_address)).await? {
+        let safe = if let Some(safe) = node_connector
+            .safe_info(SafeSelector::Owner(node_address))
+            .await?
+        {
             safe
         } else {
             // Send 1000 wxHOPR tokens to the new node address from Anvil 0 account
@@ -154,20 +166,31 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
                     ));
                 }
 
-                anvil_connector.withdraw(top_up, &node_address).await?.await?;
+                anvil_connector
+                    .withdraw(top_up, &node_address)
+                    .await?
+                    .await?;
                 eprint!("\x1b[2K\rNode {id}: {top_up} transferred to {node_address}");
             } else {
-                eprint!("\x1b[2K\rNode {id}: {node_address} already has {node_token_balance} wxHOPR tokens");
+                eprint!(
+                    "\x1b[2K\rNode {id}: {node_address} already has {node_token_balance} wxHOPR tokens"
+                );
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
             let node_connector_clone = node_connector.clone();
             let jh = tokio::task::spawn(async move {
                 node_connector_clone
-                    .await_safe_deployment(SafeSelector::Owner(node_address), std::time::Duration::from_secs(10))
+                    .await_safe_deployment(
+                        SafeSelector::Owner(node_address),
+                        std::time::Duration::from_secs(10),
+                    )
                     .await
             });
-            node_connector.deploy_safe(initial_token_balance).await?.await?;
+            node_connector
+                .deploy_safe(initial_token_balance)
+                .await?
+                .await?;
             jh.await??
         };
 

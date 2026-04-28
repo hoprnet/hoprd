@@ -1,9 +1,7 @@
----
 ################################################################################
 # Pull request pipeline for hoprd
 ################################################################################
 name: PR
-
 on:
   merge_group:
     types: [checks_requested]
@@ -13,14 +11,11 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-
 permissions:
   contents: read
-
 concurrency:
   group: ${{ github.event.pull_request.head.ref || github.ref_name }}-pr
   cancel-in-progress: true
-
 jobs:
   validate-pr-title:
     name: Validate title
@@ -47,7 +42,6 @@ jobs:
           ignoreLabels: |
             bot
             ignore-semantic-pull-request
-
   label:
     name: Add labels
     if: github.event_name == 'pull_request'
@@ -62,16 +56,13 @@ jobs:
         with:
           disable-sudo: true
           egress-policy: audit
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
         with:
           sync-labels: true
-
       - name: Add "external" label for forked PRs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +73,6 @@ jobs:
           if [[ "$HEAD_REPO" != "$BASE_REPO" ]]; then
             gh pr edit "$PR_NUMBER" --add-label "external"
           fi
-
   checks:
     name: Check
     uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@bbd22e57cf954c15f0a6051d59329857809141dd # workflow-checks-v1
@@ -92,7 +82,6 @@ jobs:
       runner_large: depot-ubuntu-24.04-4
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
   tests:
     name: Test
     uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@68c55f5bd5bd5a74a92b03f7cd72970f862894d0 # workflow-tests-v4
@@ -112,7 +101,6 @@ jobs:
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
-
   build-binaries:
     name: Binary ${{ matrix.architecture }}
     strategy:
@@ -152,7 +140,6 @@ jobs:
       gcp_service_account: ${{ secrets.GCP_SA_GITHUB_RUNNER }}
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
-
   build-docker:
     name: Docker
     needs: build-binaries
@@ -166,6 +153,7 @@ jobs:
       version_type: commit
       build_matrix: >-
         [
+
           {
             "runner": "depot-ubuntu-24.04-4",
             "architecture": "x86_64-linux",
@@ -180,7 +168,6 @@ jobs:
     secrets:
       gcp_service_account: ${{ secrets.GCP_SA_GITHUB_RUNNER }}
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
   docs:
     name: Docs
     runs-on: depot-ubuntu-24.04-4

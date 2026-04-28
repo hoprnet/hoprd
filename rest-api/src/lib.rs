@@ -50,7 +50,8 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::Auth;
 
-pub(crate) const BASE_PATH: &str = const_format::formatcp!("/api/v{}", env!("CARGO_PKG_VERSION_MAJOR"));
+pub(crate) const BASE_PATH: &str =
+    const_format::formatcp!("/api/v{}", env!("CARGO_PKG_VERSION_MAJOR"));
 
 /// Combined trait bound for the HOPR node type parameter used throughout the REST API.
 ///
@@ -278,7 +279,9 @@ where
     Router::new()
         .merge(
             Router::new()
-                .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+                .merge(
+                    SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()),
+                )
                 .merge(Scalar::with_url("/scalar", ApiDoc::openapi())),
         )
         .merge(
@@ -332,9 +335,15 @@ where
                 .route("/channels", post(channels::open_channel::<H>))
                 .route("/channels/{address}", get(channels::show_channel::<H>))
                 .route("/channels/{address}", delete(channels::close_channel::<H>))
-                .route("/channels/{address}/fund", post(channels::fund_channel::<H>))
+                .route(
+                    "/channels/{address}/fund",
+                    post(channels::fund_channel::<H>),
+                )
                 .route("/tickets/redeem", post(tickets::redeem_tickets::<H>))
-                .route("/tickets/statistics", get(tickets::show_ticket_statistics::<H>))
+                .route(
+                    "/tickets/statistics",
+                    get(tickets::show_ticket_statistics::<H>),
+                )
                 .route("/network/price", get(network::price::<H>))
                 .route("/network/probability", get(network::probability::<H>))
                 .route("/network/connected", get(network::connected::<H>))
@@ -349,7 +358,10 @@ where
                 .route("/session/config/{id}", post(session::adjust_session::<H>))
                 .route("/session/{protocol}", post(session::create_client::<H>))
                 .route("/session/{protocol}", get(session::list_clients::<H>))
-                .route("/session/{protocol}/{ip}/{port}", delete(session::close_client::<H>))
+                .route(
+                    "/session/{protocol}/{ip}/{port}",
+                    delete(session::close_client::<H>),
+                )
                 .with_state(inner_state.clone().into())
                 .layer(axum::middleware::from_fn_with_state(
                     inner_state.clone(),
@@ -360,7 +372,12 @@ where
                         .layer(TraceLayer::new_for_http())
                         .layer(
                             CorsLayer::new()
-                                .allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::DELETE])
+                                .allow_methods([
+                                    Method::GET,
+                                    Method::POST,
+                                    Method::OPTIONS,
+                                    Method::DELETE,
+                                ])
                                 .allow_origin(Any)
                                 .allow_headers(Any)
                                 .max_age(std::time::Duration::from_secs(86400)),

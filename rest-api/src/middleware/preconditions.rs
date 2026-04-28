@@ -22,7 +22,8 @@ pub(crate) async fn authenticate<H: Send + Sync + 'static>(
 ) -> impl IntoResponse {
     let auth = state.auth.clone();
 
-    let x_auth_header = HeaderName::from_str("x-auth-token").expect("Invalid header name: x-auth-token");
+    let x_auth_header =
+        HeaderName::from_str("x-auth-token").expect("Invalid header name: x-auth-token");
 
     let is_authorized = match auth.as_ref() {
         Auth::Token(expected_token) => {

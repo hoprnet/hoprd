@@ -32,7 +32,9 @@ impl JemallocStats {
             }
         });
 
-        Self { _handle: Some(handle) }
+        Self {
+            _handle: Some(handle),
+        }
     }
 }
 
@@ -79,7 +81,8 @@ fn read_stats(start_time: Instant) -> Result<String, String> {
     // Trigger epoch update to get current stats
     epoch::advance().map_err(|e| format!("epoch advance failed: {}", e))?;
 
-    let allocated = stats::allocated::read().map_err(|e| format!("allocated read failed: {}", e))?;
+    let allocated =
+        stats::allocated::read().map_err(|e| format!("allocated read failed: {}", e))?;
     let active = stats::active::read().map_err(|e| format!("active read failed: {}", e))?;
     let mapped = stats::mapped::read().map_err(|e| format!("mapped read failed: {}", e))?;
     let retained = stats::retained::read().map_err(|e| format!("retained read failed: {}", e))?;

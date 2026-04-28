@@ -3,7 +3,9 @@ use std::{num::NonZeroUsize, process::ExitCode, str::FromStr, sync::Arc};
 use async_signal::{Signal, Signals};
 use futures::{FutureExt, StreamExt, future::abortable};
 use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliClient};
-use hopr_lib::{AbortableList, HoprKeys, IdentityRetrievalModes, Keypair, ToHex, config::HoprLibConfig};
+use hopr_lib::{
+    AbortableList, HoprKeys, IdentityRetrievalModes, Keypair, ToHex, config::HoprLibConfig,
+};
 use hopr_network_graph::SharedChannelGraph;
 use hopr_transport_p2p::HoprNetwork;
 use hoprd::{cli::CliArgs, config::HoprdConfig, errors::HoprdError};
@@ -15,7 +17,9 @@ use validator::Validate;
 //
 // https://nickb.dev/blog/default-musl-allocator-considered-harmful-to-performance
 #[cfg(all(feature = "allocator-mimalloc", feature = "allocator-jemalloc"))]
-compile_error!("feature \"allocator-jemalloc\" and feature \"allocator-mimalloc\" cannot be enabled at the same time");
+compile_error!(
+    "feature \"allocator-jemalloc\" and feature \"allocator-mimalloc\" cannot be enabled at the same time"
+);
 #[cfg(all(target_os = "linux", feature = "allocator-mimalloc"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -33,8 +37,12 @@ mod telemetry_common;
 const DEFAULT_BLOKLI_URL: &str = "https://blokli.dufour.hoprnet.link";
 
 type HoprBlokliConnector = HoprBlockchainSafeConnector<BlokliClient>;
-type HoprNode =
-    hopr_lib::Hopr<Arc<HoprBlokliConnector>, SharedChannelGraph, HoprNetwork, hopr_reference::SharedTicketManager>;
+type HoprNode = hopr_lib::Hopr<
+    Arc<HoprBlokliConnector>,
+    SharedChannelGraph,
+    HoprNetwork,
+    hopr_reference::SharedTicketManager,
+>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
 enum HoprdProcess {
@@ -49,8 +57,12 @@ enum HoprdProcess {
 #[cfg(not(feature = "runtime-tokio"))]
 compile_error!("The 'runtime-tokio' feature must be enabled");
 
-async fn init_rest_api(cfg: &HoprdConfig, hopr: Arc<HoprNode>) -> anyhow::Result<AbortableList<HoprdProcess>> {
-    let node_cfg_value = serde_json::to_value(cfg.as_redacted()).map_err(|e| HoprdError::ConfigError(e.to_string()))?;
+async fn init_rest_api(
+    cfg: &HoprdConfig,
+    hopr: Arc<HoprNode>,
+) -> anyhow::Result<AbortableList<HoprdProcess>> {
+    let node_cfg_value = serde_json::to_value(cfg.as_redacted())
+        .map_err(|e| HoprdError::ConfigError(e.to_string()))?;
 
     let api_cfg = cfg.api.clone();
 
@@ -60,9 +72,13 @@ async fn init_rest_api(cfg: &HoprdConfig, hopr: Arc<HoprNode>) -> anyhow::Result
         }
     };
 
-    let api_listener = tokio::net::TcpListener::bind(&listen_address).await.map_err(|e| {
-        hopr_lib::errors::HoprLibError::GeneralError(format!("REST API bind failed for {listen_address}: {e}"))
-    })?;
+    let api_listener = tokio::net::TcpListener::bind(&listen_address)
+        .await
+        .map_err(|e| {
+            hopr_lib::errors::HoprLibError::GeneralError(format!(
+                "REST API bind failed for {listen_address}: {e}"
+            ))
+        })?;
 
     tracing::info!(listen_address, "Running a REST API");
 
@@ -70,7 +86,10 @@ async fn init_rest_api(cfg: &HoprdConfig, hopr: Arc<HoprNode>) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
-    processes.insert(HoprdProcess::ListenerSocket, session_listener_sockets.clone());
+    processes.insert(
+        HoprdProcess::ListenerSocket,
+        session_listener_sockets.clone(),
+    );
 
     let cfg_clone = cfg.clone();
     let (proc, abort_handle) = abortable(
@@ -81,14 +100,21 @@ async fn init_rest_api(cfg: &HoprdConfig, hopr: Arc<HoprNode>) -> anyhow::Result
                 cfg: api_cfg,
                 hopr,
                 session_listener_sockets,
-                default_session_listen_host: cfg_clone.session_ip_forwarding.default_entry_listen_host,
+                default_session_listen_host: cfg_clone
+                    .session_ip_forwarding
+                    .default_entry_listen_host,
             })
             .await
             {
                 tracing::error!(error = %e, "the REST API server could not start")
             }
         }
-        .inspect(|_| tracing::warn!(task = "hoprd - REST API", "long-running background task finished")),
+        .inspect(|_| {
+            tracing::warn!(
+                task = "hoprd - REST API",
+                "long-running background task finished"
+            )
+        }),
     );
     let _jh = tokio::spawn(proc);
     processes.insert(HoprdProcess::RestApi, abort_handle);
@@ -208,7 +234,9 @@ fn main() -> ExitCode {
 
 #[cfg(feature = "runtime-tokio")]
 async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result<()> {
-    use hopr_chain_connector::{BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector};
+    use hopr_chain_connector::{
+        BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector,
+    };
     use hopr_reference::exit::HoprServerIpForwardingReactor;
 
     #[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
@@ -293,7 +321,10 @@ async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result<()>
         hopr_lib_cfg,
         Some(prober_cfg),
         chain_connector.clone(),
-        HoprServerIpForwardingReactor::new(hopr_keys.packet_key.clone(), cfg.session_ip_forwarding.clone()),
+        HoprServerIpForwardingReactor::new(
+            hopr_keys.packet_key.clone(),
+            cfg.session_ip_forwarding.clone(),
+        ),
     )
     .await?;
 
@@ -316,8 +347,8 @@ async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result<()>
         }),
     );
 
-    let mut signals =
-        Signals::new([Signal::Hup, Signal::Int, Signal::Term]).map_err(|e| HoprdError::OsError(e.to_string()))?;
+    let mut signals = Signals::new([Signal::Hup, Signal::Int, Signal::Term])
+        .map_err(|e| HoprdError::OsError(e.to_string()))?;
     while let Some(Ok(signal)) = signals.next().await {
         match signal {
             Signal::Hup => {

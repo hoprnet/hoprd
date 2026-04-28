@@ -50,7 +50,9 @@ pub(crate) struct TicketPriceResponse {
         ),
         tag = "Network"
     )]
-pub(super) async fn price<H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static>(
+pub(super) async fn price<
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static,
+>(
     State(state): State<Arc<InternalState<H>>>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
@@ -89,7 +91,9 @@ pub(crate) struct TicketProbabilityResponse {
         ),
         tag = "Network"
     )]
-pub(super) async fn probability<H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static>(
+pub(super) async fn probability<
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static,
+>(
     State(state): State<Arc<InternalState<H>>>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
@@ -97,7 +101,9 @@ pub(super) async fn probability<H: HasChainApi<ChainError = hopr_lib::errors::Ho
     match hopr.get_minimum_incoming_ticket_win_probability().await {
         Ok(p) => (
             StatusCode::OK,
-            Json(TicketProbabilityResponse { probability: p.into() }),
+            Json(TicketProbabilityResponse {
+                probability: p.into(),
+            }),
         )
             .into_response(),
         Err(e) => (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
@@ -263,7 +269,9 @@ pub(crate) struct AnnouncedPeerResponse {
     ),
     tag = "Network"
 )]
-pub(super) async fn announced<H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static>(
+pub(super) async fn announced<
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static,
+>(
     State(state): State<Arc<InternalState<H>>>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
@@ -357,7 +365,12 @@ pub(super) async fn graph<
         key_to_addr.insert(*key, label);
     }
 
-    let label = |key: &hopr_lib::OffchainPublicKey| key_to_addr.get(key).cloned().unwrap_or_else(|| key.to_string());
+    let label = |key: &hopr_lib::OffchainPublicKey| {
+        key_to_addr
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.to_string())
+    };
 
     // Render DOT (Graphviz) format inline using trait methods on the observations.
     let mut dot = String::from("digraph hopr {\n");
@@ -384,7 +397,12 @@ pub(super) async fn graph<
     }
     dot.push_str("}\n");
 
-    (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, "text/plain")], dot).into_response()
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+        dot,
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -515,7 +533,10 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body)?;
 
         // StubChain::minimum_ticket_price returns HoprBalance::zero()
-        assert!(json.get("price").is_some(), "response should contain 'price' field");
+        assert!(
+            json.get("price").is_some(),
+            "response should contain 'price' field"
+        );
         assert!(json["price"].is_string(), "price should be a string");
 
         Ok(())
@@ -554,7 +575,12 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body)?;
 
         // StubChain::stream_accounts returns empty stream
-        assert_eq!(json.as_array().context("response should be an array")?.len(), 0);
+        assert_eq!(
+            json.as_array()
+                .context("response should be an array")?
+                .len(),
+            0
+        );
 
         Ok(())
     }

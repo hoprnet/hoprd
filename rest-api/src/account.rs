@@ -5,7 +5,10 @@ use axum::{
     http::status::StatusCode,
     response::IntoResponse,
 };
-use hopr_lib::{Address, HoprBalance, IncentiveChannelOperations, WxHOPR, XDai, XDaiBalance, api::node::HasChainApi};
+use hopr_lib::{
+    Address, HoprBalance, IncentiveChannelOperations, WxHOPR, XDai, XDaiBalance,
+    api::node::HasChainApi,
+};
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
@@ -96,7 +99,9 @@ pub(crate) struct AccountBalancesResponse {
         ),
         tag = "Account",
     )]
-pub(super) async fn balances<H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static>(
+pub(super) async fn balances<
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static,
+>(
     State(state): State<Arc<InternalState<H>>>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
@@ -105,27 +110,37 @@ pub(super) async fn balances<H: HasChainApi<ChainError = hopr_lib::errors::HoprL
 
     match hopr.get_balance::<XDai>().await {
         Ok(v) => account_balances.native = v,
-        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response();
+        }
     }
 
     match hopr.get_balance::<WxHOPR>().await {
         Ok(v) => account_balances.hopr = v,
-        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response();
+        }
     }
 
     match hopr.get_safe_balance::<XDai>().await {
         Ok(v) => account_balances.safe_native = v,
-        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response();
+        }
     }
 
     match hopr.get_safe_balance::<WxHOPR>().await {
         Ok(v) => account_balances.safe_hopr = v,
-        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response();
+        }
     }
 
     match hopr.safe_allowance().await {
         Ok(v) => account_balances.safe_hopr_allowance = v,
-        Err(e) => return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response(),
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, ApiErrorStatus::from(e)).into_response();
+        }
     }
 
     (StatusCode::OK, Json(account_balances)).into_response()
@@ -182,7 +197,9 @@ pub(crate) struct WithdrawResponse {
         ),
         tag = "Account",
     )]
-pub(super) async fn withdraw<H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static>(
+pub(super) async fn withdraw<
+    H: HasChainApi<ChainError = hopr_lib::errors::HoprLibError> + Send + Sync + 'static,
+>(
     State(state): State<Arc<InternalState<H>>>,
     Json(req_data): Json<WithdrawBodyRequest>,
 ) -> impl IntoResponse {
@@ -282,10 +299,19 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body)?;
 
         // StubChain returns Balance::zero() for all balance queries and safe_allowance
-        assert!(json["native"].is_string(), "native balance should be present");
+        assert!(
+            json["native"].is_string(),
+            "native balance should be present"
+        );
         assert!(json["hopr"].is_string(), "hopr balance should be present");
-        assert!(json["safeNative"].is_string(), "safeNative balance should be present");
-        assert!(json["safeHopr"].is_string(), "safeHopr balance should be present");
+        assert!(
+            json["safeNative"].is_string(),
+            "safeNative balance should be present"
+        );
+        assert!(
+            json["safeHopr"].is_string(),
+            "safeHopr balance should be present"
+        );
         assert!(
             json["safeHoprAllowance"].is_string(),
             "safeHoprAllowance should be present"
@@ -307,7 +333,10 @@ mod tests {
         });
 
         let router = Router::new()
-            .route("/account/withdraw", axum::routing::post(withdraw::<MockChainNode>))
+            .route(
+                "/account/withdraw",
+                axum::routing::post(withdraw::<MockChainNode>),
+            )
             .with_state(state);
 
         let body = serde_json::json!({
