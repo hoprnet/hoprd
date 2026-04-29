@@ -163,6 +163,7 @@ fn channel_entry_to_peer_info(
     responses(
         (status = 200, description = "Peer information fetched successfully.", body = NodePeerInfoResponse),
         (status = 400, description = "Invalid peer address", body = ApiError),
+        (status = 404, description = "Peer not found.", body = ApiError),
         (status = 401, description = "Invalid authorization token.", body = ApiError),
         (status = 422, description = "Unknown failure", body = ApiError)
     ),

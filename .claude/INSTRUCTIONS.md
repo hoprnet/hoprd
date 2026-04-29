@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`hoprd` is the HOPR node daemon. It runs the HOPR protocol (sourced from [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet) as git dependencies) and exposes a REST API for interaction.
+`hoprd` is the Full HOPR node daemon. It runs the HOPR protocol (sourced from [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet) as git dependencies) and exposes a REST API for interaction.
 
 **Workspace members**:
 

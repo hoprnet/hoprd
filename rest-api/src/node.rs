@@ -57,12 +57,11 @@ pub(super) async fn version() -> impl IntoResponse {
     path = const_format::formatcp!("{BASE_PATH}/node/configuration"),
     description = "Get the configuration of the running node",
     responses(
-        (status = 200, description = "Fetched node configuration", body = HashMap<String, String>, example = json!({
+        (status = 200, description = "Fetched node configuration", body = HashMap<String, serde_json::Value>, example = json!({
         "network": "anvil-localhost",
         "provider": "http://127.0.0.1:8545",
         "hoprToken": "0x9a676e781a523b5d0c0e43731313a708cb607508",
-        "hoprChannels": "0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae",
-        "...": "..."
+        "hoprChannels": "0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae"
         })),
         (status = 401, description = "Invalid authorization token.", body = ApiError),
     ),

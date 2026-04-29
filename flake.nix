@@ -143,6 +143,11 @@
               preBuild = ''
                 find target -name 'embed.rs' -path '*/utoipa-swagger-ui*/out/*' \
                   -exec sed -i "s|/nix/var/nix/builds/[^/]*/source|$(pwd)|g" {} \;
+                if find target -name 'embed.rs' -path '*/utoipa-swagger-ui*/out/*' \
+                     -exec grep -l '/nix/var/nix/builds/' {} \; | grep -q .; then
+                  echo "error: stale /nix/var/nix/builds/ paths remain in utoipa-swagger-ui embed.rs after substitution" >&2
+                  exit 1
+                fi
               ''
               + (old.preBuild or "");
             });
@@ -275,14 +280,22 @@
               export NIX_SSL_CERT_FILE="$ssl_cert_file"
             fi
 
-            mkdir -p $TMPDIR
+            mkdir -p "$TMPDIR"
 
             listen_host="''${HOPRD_DEFAULT_SESSION_LISTEN_HOST:-}"
-            listen_host_preset_ip="''${listen_host%%:*}"
-            listen_host_preset_port="''${listen_host#*:}"
+            case "''${listen_host}" in
+              *:*)
+                listen_host_preset_ip="''${listen_host%%:*}"
+                listen_host_preset_port="''${listen_host#*:}"
+                ;;
+              *)
+                listen_host_preset_ip="''${listen_host}"
+                listen_host_preset_port=""
+                ;;
+            esac
 
             if [ -z "''${listen_host_preset_ip:-}" ]; then
-              listen_host_ip="$(hostname -i)"
+              listen_host_ip="$(hostname -i | awk '{print $1}')"
 
               if [ -z "''${listen_host_preset_port:-}" ]; then
                 listen_host="''${listen_host_ip}:0"
