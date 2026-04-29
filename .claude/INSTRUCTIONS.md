@@ -11,7 +11,7 @@
 - [`rest-api-client/`](rest-api-client/) — generated Rust client for the REST API
 - [`localcluster/`](localcluster/) — local multi-node test harness
 
-**Protocol libs live in hoprnet** — `hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc. are git deps. Do not modify them here; submit protocol changes to hoprnet/hoprnet.
+**Protocol libs live in [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet)** — `hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc. are consumed as git deps. Do not modify them here; protocol changes must be made in the hoprnet repo and then the SHA updated here.
 
 ## Build & Test
 
@@ -24,11 +24,16 @@ nix run -L .#check             # Clippy + all linters
 
 ### Build
 
+Nix is the primary build system. Cargo commands run inside `nix develop` to get the correct toolchain and dependencies.
+
 ```bash
-nix develop -c cargo build              # Debug build
+# Nix builds (preferred)
 nix build .#hoprd-candidate             # Fast build (opt-level 2, lto=false)
 nix build .#binary-hoprd                # Release build
 nix build .#docker-hoprd-x86_64-linux   # Docker image (Linux only)
+
+# Cargo (inside nix dev shell)
+nix develop -c cargo build              # Debug build
 cargo build --profile release           # Production (opt-level 3, lto="fat")
 ```
 
@@ -96,13 +101,13 @@ For language-specific rules see [rust.md](rust.md).
 3. Integration tests in parallel → `-j 1` required
 4. Missing tracing prefix → `tracing::info!()` not `info!()`
 5. `.unwrap()` in libraries → propagate with `?`
-6. Protocol-level changes here → those belong in hoprnet/hoprnet
+6. Protocol-level changes here → those belong in the [hoprnet](https://github.com/hoprnet/hoprnet) repo
 
 ## Dependency Strategy
 
 hoprnet crates are consumed as git deps pinned to a SHA in the root `Cargo.toml`. To update:
 
-1. Find the target SHA in hoprnet/hoprnet
+1. Find the target SHA in [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet)
 2. Update all `rev = "..."` entries in the root `Cargo.toml`
 3. Run `cargo check` to verify
 4. Run `nix build .#hoprd-candidate` to verify Nix vendoring

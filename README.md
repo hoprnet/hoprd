@@ -1,6 +1,6 @@
 # hoprd
 
-HOPR node daemon and REST API. Runs a HOPR node that participates in the privacy-preserving messaging network and exposes a REST API for interaction.
+Full HOPR node daemon and REST API. Runs a HOPR node that participates in the privacy-preserving messaging network and exposes a REST API for interaction.
 
 ## Quick Start
 
