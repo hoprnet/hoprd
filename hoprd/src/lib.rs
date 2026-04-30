@@ -1,13 +1,12 @@
-//! HOPR daemon application providing a higher level interface for creating a HOPRd with or without
-//! a dedicated REST API.
+//! HOPR node daemon binary. Runs the HOPR protocol (via [`hopr-lib`](https://github.com/hoprnet/hoprnet))
+//! and exposes a REST API for node management.
 //!
-//! When the Rest API is enabled, the node serves a Swagger UI to inspect and test
-//! the Rest API v4 at: http://localhost:3001/scalar or http://localhost:3001/swagger-ui
-//!
-//! NOTE: Hostname and port can be different, since they depend on the settings `--apiHost` and `--apiPort`.
+//! When the REST API is enabled, interactive API docs are available at:
+//! - `http://localhost:3001/scalar` (Scalar UI)
+//! - `http://localhost:3001/swagger-ui` (Swagger UI)
 //!
 //! ## Usage
-//! See `hoprd --help` for full list.
+//! See `hoprd --help` for the full list of options.
 
 pub mod cli;
 pub mod config;

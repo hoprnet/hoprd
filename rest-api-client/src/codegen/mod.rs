@@ -3211,9 +3211,7 @@ Sends a `GET` request to `/api/v4/node/configuration`
     pub async fn configuration<'a>(
         &'a self,
     ) -> Result<
-        ResponseValue<
-            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-        >,
+        ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
         Error<()>,
     > {
         let url = format!("{}/api/v4/node/configuration", self.baseurl,);

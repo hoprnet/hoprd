@@ -35,6 +35,18 @@ contents:
       mode: 0755
       owner: root
       group: root
+  - src: ./dist/bin/hoprd-api-schema
+    dst: /usr/bin/hoprd-api-schema
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+  - src: ./dist/bin/hoprd-cfg
+    dst: /usr/bin/hoprd-cfg
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
   # Configuration files
   - src: ./deploy/nfpm/logrotate.conf
     dst: /etc/logrotate.d/hoprd

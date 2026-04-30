@@ -6,7 +6,6 @@ toolchain:
           - "flake.nix"
           - ".github/**"
           - "rust-toolchain.toml"
-          - "rust-toolchain-nightly.toml"
 dependencies:
   - changed-files:
       - any-glob-to-any-file:

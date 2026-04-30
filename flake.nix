@@ -95,7 +95,6 @@
             root = ./.;
             inherit fs;
             extraFiles = [
-              ./hoprd/example_cfg.yaml
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
             ];
           };
@@ -103,7 +102,6 @@
             root = ./.;
             inherit fs;
             extraFiles = [
-              ./hoprd/example_cfg.yaml
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
               (fs.fileFilter (file: file.hasExt "snap") ./.)
             ];
@@ -128,7 +126,7 @@
 
           projectBuildArgs = {
             inherit src depsSrc rev;
-            cargoExtraArgs = "-p hoprd -p hoprd-api -F allocator-jemalloc";
+            cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
           };
           localclusterBuildArgs = {
@@ -168,13 +166,37 @@
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
 
+            binary-hoprd-api-schema-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage {
+              inherit src depsSrc rev;
+              cargoExtraArgs = "-p hoprd-api --bin hoprd-api-schema";
+              cargoToml = ./rest-api/Cargo.toml;
+            };
+            binary-hoprd-api-schema-aarch64-linux =
+              rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage
+                {
+                  inherit src depsSrc rev;
+                  cargoExtraArgs = "-p hoprd-api --bin hoprd-api-schema";
+                  cargoToml = ./rest-api/Cargo.toml;
+                };
+
+            binary-hoprd-cfg-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage {
+              inherit src depsSrc rev;
+              cargoExtraArgs = "-p hoprd --bin hoprd-cfg";
+              cargoToml = ./hoprd/Cargo.toml;
+            };
+            binary-hoprd-cfg-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage {
+              inherit src depsSrc rev;
+              cargoExtraArgs = "-p hoprd --bin hoprd-cfg";
+              cargoToml = ./hoprd/Cargo.toml;
+            };
+
             test-unit =
               (fixUtoipaEmbedPaths (
                 rust-builder-local.callPackage nixLib.mkRustPackage (
                   projectBuildArgs
                   // {
                     src = testSrc;
-                    cargoExtraArgs = "-p hoprd -p hoprd-api -F allocator-jemalloc";
+                    cargoExtraArgs = "-p hoprd -p hoprd-api";
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
@@ -185,7 +207,7 @@
                 (_: {
                   checkPhase = ''
                     runHook preCheck
-                    cargo nextest run ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} -F allocator-jemalloc --lib
+                    cargo nextest run ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} --lib
                     runHook postCheck
                   '';
                 });
@@ -196,7 +218,7 @@
                   projectBuildArgs
                   // {
                     src = testSrc;
-                    cargoExtraArgs = "-p hoprd -p hoprd-api -Z panic-abort-tests -F allocator-jemalloc";
+                    cargoExtraArgs = "-p hoprd -p hoprd-api -Z panic-abort-tests";
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
@@ -207,7 +229,7 @@
                 (_: {
                   checkPhase = ''
                     runHook preCheck
-                    cargo nextest run ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} -Z panic-abort-tests -F allocator-jemalloc --lib
+                    cargo nextest run ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} -Z panic-abort-tests --lib
                     runHook postCheck
                   '';
                 });
@@ -218,7 +240,7 @@
                   projectBuildArgs
                   // {
                     src = testSrc;
-                    cargoExtraArgs = "-p hoprd -p hoprd-api -F allocator-jemalloc";
+                    cargoExtraArgs = "-p hoprd -p hoprd-api";
                     runCoverage = true;
                     prependPackageName = false;
                     cargoLlvmCovExtraArgs = "--lcov --output-path $out --lib";
@@ -231,7 +253,7 @@
                     runHook preBuild
                     cargo llvm-cov nextest --lcov --output-path $out --lib \
                       ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} \
-                      -p hoprd -p hoprd-api -F allocator-jemalloc
+                      -p hoprd -p hoprd-api
                     runHook postBuild
                   '';
                 });
@@ -240,7 +262,7 @@
               projectBuildArgs
               // {
                 runClippy = true;
-                cargoExtraArgs = "-p hoprd -p hoprd-api";
+                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic";
               }
             );
             binary-hoprd-dev = rust-builder-local.callPackage nixLib.mkRustPackage (
@@ -516,7 +538,7 @@
               inherit pre-commit-check;
               inherit hoprd-man;
               default = hoprdPackages.binary-hoprd;
-              hoprd-candidate = (mkHoprdCandidate "-p hoprd -p hoprd-api -F allocator-jemalloc");
+              hoprd-candidate = (mkHoprdCandidate "-p hoprd -p hoprd-api");
             };
 
           devShells.default = devShell;

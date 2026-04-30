@@ -306,7 +306,7 @@ where
                 .route("/metrics", get(root::metrics))
                 .layer(axum::middleware::from_fn_with_state(
                     inner_state.clone(),
-                    middleware::preconditions::authenticate::<H>,
+                    middleware::auth::authenticate::<H>,
                 ))
                 .layer(
                     ServiceBuilder::new()
@@ -365,7 +365,7 @@ where
                 .with_state(inner_state.clone().into())
                 .layer(axum::middleware::from_fn_with_state(
                     inner_state.clone(),
-                    middleware::preconditions::authenticate::<H>,
+                    middleware::auth::authenticate::<H>,
                 ))
                 .layer(
                     ServiceBuilder::new()

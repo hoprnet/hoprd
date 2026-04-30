@@ -1,19 +1,19 @@
 ---
 db:
   data: /var/lib/hoprd
+identity:
+  file: "/etc/hoprd/hopr.id"
+  password: "change_me"
+api:
+  enable: true
 strategy:
-  on_fail_continue: true
-  allow_recursive: true
+  allow_recursive: false
   strategies:
-    - !AutoRedeeming
-      redeem_only_aggregated: false
-      minimum_redeem_ticket_value: "1 wxHOPR"
-    - !ClosureFinalizer
-      max_closure_overdue: 300s
+    - AutoRedeeming:
+        redeem_only_aggregated: false
+        minimum_redeem_ticket_value: "1 wxHOPR"
+    - ClosureFinalizer:
+        max_closure_overdue: 300s
 hopr:
   safe_module:
     safe_transaction_service_provider: https://safe-transaction.prod.hoprnet.link/
-identity:
-  file: "/etc/hoprd/hopr.id"
-api:
-  enable: true

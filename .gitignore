@@ -1,3 +1,6 @@
+# Claude Code
+./claude
+
 # Cargo / Rust
 debug/
 **/target
@@ -5,17 +8,9 @@ debug/
 *.pdb
 **/mutants.out*/
 
-# Nix
-result
-.pre-commit-config.yaml
-
 # IDE
 **/.idea
 .DS_Store
-
-# Claude Code
-.claude/settings.local.json
-.claude/worktrees
 
 # Secrets / identity
 *.env

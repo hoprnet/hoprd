@@ -15,6 +15,7 @@ default = [
   "runtime-tokio",
   "telemetry",
   "transport-quic",
+  "allocator-jemalloc",
 ] # uses tokio by default because of axum
 runtime-tokio = [
   "dep:tokio",
