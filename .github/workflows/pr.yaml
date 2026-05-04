@@ -183,5 +183,5 @@ jobs:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           command: |
             set -e
-            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items
+            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items --no-default-features --features runtime-tokio,telemetry,transport-quic
             nix build -L .#docs

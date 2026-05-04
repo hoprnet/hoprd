@@ -380,9 +380,25 @@
             };
           };
 
-          docs = rust-builder-local-nightly.callPackage nixLib.mkRustPackage (
-            projectBuildArgs // { buildDocs = true; }
-          );
+          docs =
+            (rust-builder-local-nightly.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                buildDocs = true;
+                # Drop jemalloc default feature for docs: native lib fails to link in the docs sandbox.
+                # Must be applied here (not just in buildPhase) so cargoArtifacts/deps step also skips it.
+                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic";
+              }
+            )).overrideAttrs
+              (_: {
+                buildPhase = ''
+                  runHook preBuild
+                  cargo doc -p hoprd -p hoprd-api --no-default-features \
+                    -F runtime-tokio,telemetry,transport-quic \
+                    --no-deps --document-private-items
+                  runHook postBuild
+                '';
+              });
 
           pre-commit-lightweight = pkgs.pre-commit.overridePythonAttrs {
             nativeCheckInputs = [ ];
