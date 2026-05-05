@@ -1,6 +1,9 @@
 use std::{num::NonZeroUsize, process::ExitCode, str::FromStr};
 
-use hopr_lib::{HoprKeys, IdentityRetrievalModes, Keypair, ToHex};
+use hopr_lib::{
+    HoprKeys, IdentityRetrievalModes,
+    api::types::{crypto::keypairs::Keypair, primitive::traits::ToHex},
+};
 use hoprd::{cli::CliArgs, config::HoprdConfig};
 use validator::Validate;
 

@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use hopr_lib::{
-    HoprBalance, HoprProtocolConfig, SafeModule, TagAllocatorConfig, WinningProbability,
+    api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
     config::{
-        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, ProbeConfig,
+        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, ProbeConfig, SafeModule,
         SessionGlobalConfig, TransportConfig,
     },
-    exports::transport::config::HoprCodecConfig,
+    exports::transport::{HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig},
 };
 use hopr_reference::config::SessionIpForwardingConfig;
 use hoprd_api::config::{Api, Auth};
@@ -349,7 +349,7 @@ mod tests {
 
     use anyhow::Context;
     use clap::{Args, Command, FromArgMatches};
-    use hopr_lib::Address;
+    use hopr_lib::api::types::primitive::prelude::Address;
     use tempfile::NamedTempFile;
 
     use super::*;

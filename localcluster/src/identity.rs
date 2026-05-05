@@ -9,7 +9,15 @@ use hopr_chain_connector::{
     reexports::chain::exports::alloy::hex,
 };
 use hopr_lib::{
-    ChainKeypair, HoprKeys, Keypair, SafeModule, XDaiBalance, crypto_traits::Randomizable,
+    HoprKeys,
+    api::types::{
+        crypto::{
+            crypto_traits::Randomizable,
+            keypairs::{ChainKeypair, Keypair},
+        },
+        primitive::prelude::XDaiBalance,
+    },
+    config::SafeModule,
 };
 use hopr_reference::config::SessionIpForwardingConfig;
 use hoprd::config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig};
@@ -149,7 +157,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
 
         eprint!("\x1b[2K\rNode {id}: Checking Safe deployment...");
         let safe = if let Some(safe) = node_connector
-            .safe_info(SafeSelector::Owner(node_address))
+            .safe_info(SafeSelector::NodeAddress(node_address))
             .await?
         {
             safe
@@ -182,7 +190,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
             let jh = tokio::task::spawn(async move {
                 node_connector_clone
                     .await_safe_deployment(
-                        SafeSelector::Owner(node_address),
+                        SafeSelector::NodeAddress(node_address),
                         std::time::Duration::from_secs(10),
                     )
                     .await

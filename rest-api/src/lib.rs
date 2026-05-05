@@ -64,7 +64,7 @@ pub trait HoprNode:
     + hopr_lib::api::node::HasGraphView
     + hopr_lib::api::node::HasTransportApi
     + hopr_lib::api::node::HasTicketManagement
-    + hopr_lib::HoprSessionClientOperations
+    + hopr_lib::api::node::HoprSessionClientOperations
     + Send
     + Sync
     + 'static
@@ -78,7 +78,7 @@ impl<T> HoprNode for T where
         + hopr_lib::api::node::HasGraphView
         + hopr_lib::api::node::HasTransportApi
         + hopr_lib::api::node::HasTicketManagement
-        + hopr_lib::HoprSessionClientOperations
+        + hopr_lib::api::node::HoprSessionClientOperations
         + Send
         + Sync
         + 'static

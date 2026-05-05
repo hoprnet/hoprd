@@ -26,7 +26,7 @@ use hopr_chain_connector::{
 };
 use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliClient};
 use hopr_lib::config::HoprLibConfig;
-use hopr_lib::{AbortableList, HoprKeys, Keypair};
+use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
 use hopr_network_graph::SharedChannelGraph;
 use hopr_reference::exit::HoprServerIpForwardingReactor;
 use hopr_transport_p2p::HoprNetwork;
@@ -53,7 +53,7 @@ enum HoprdProcess {
 
 #[cfg(feature = "runtime-tokio")]
 pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result<()> {
-    use hopr_lib::ToHex as _;
+    use hopr_lib::api::types::primitive::traits::ToHex as _;
 
     #[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
     let _jemalloc_stats = jemalloc_stats::JemallocStats::start().await;

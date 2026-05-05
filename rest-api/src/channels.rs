@@ -7,13 +7,16 @@ use axum::{
 };
 use futures::{StreamExt, TryFutureExt};
 use hopr_lib::{
-    Address, AsUnixTimestamp, ChannelEntry, ChannelStatus, HoprBalance, IncentiveChannelOperations,
     api::{
-        chain::{ChainReadChannelOperations, ChannelSelector},
-        node::HasChainApi,
+        chain::{ChainReadChannelOperations, ChannelEntry, ChannelSelector},
+        node::{HasChainApi, IncentiveChannelOperations},
+        types::{
+            crypto::types::Hash,
+            internal::prelude::ChannelStatus,
+            primitive::prelude::{Address, AsUnixTimestamp, HoprBalance},
+        },
     },
-    errors::{HoprLibError, HoprStatusError},
-    prelude::Hash,
+    errors::HoprLibError,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
@@ -333,9 +336,9 @@ pub(super) async fn open_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
-            HoprStatusError::NotThereYet(..),
-        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
+        Err(hopr_lib::api::node::EitherErr::Right(HoprLibError::NotReady(..))) => {
+            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
+        }
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -524,9 +527,9 @@ pub(super) async fn close_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
-            HoprStatusError::NotThereYet(..),
-        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
+        Err(hopr_lib::api::node::EitherErr::Right(HoprLibError::NotReady(..))) => {
+            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
+        }
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
@@ -620,9 +623,9 @@ pub(super) async fn fund_channel<
             }),
         )
             .into_response(),
-        Err(hopr_lib::EitherErr::Right(HoprLibError::StatusError(
-            HoprStatusError::NotThereYet(..),
-        ))) => (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response(),
+        Err(hopr_lib::api::node::EitherErr::Right(HoprLibError::NotReady(..))) => {
+            (StatusCode::PRECONDITION_FAILED, ApiErrorStatus::NotReady).into_response()
+        }
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiErrorStatus::UnknownFailure(e.to_string()),
