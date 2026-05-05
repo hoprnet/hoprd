@@ -38,6 +38,7 @@
 
 use std::path::PathBuf;
 
+use anyhow::{Context, anyhow};
 use clap::Parser;
 use hoprd::config::HoprdConfig;
 use validator::Validate;
@@ -53,29 +54,28 @@ struct CliArgs {
     validate: Option<PathBuf>,
 }
 
-fn main() -> Result<(), hoprd::errors::HoprdError> {
+fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
     if args.default {
         println!(
             "{}",
             serde_saphyr::to_string(&hoprd::config::HoprdConfig::default())
-                .map_err(|e| hoprd::errors::HoprdError::ConfigError(e.to_string()))?
+                .context("failed to serialize default config")?
         );
     } else if let Some(cfg_path) = args.validate {
-        let cfg_path = cfg_path.into_os_string().into_string().map_err(|_| {
-            hoprd::errors::HoprdError::ConfigError("file path not convertible".into())
-        })?;
+        let cfg_path = cfg_path
+            .into_os_string()
+            .into_string()
+            .map_err(|_| anyhow!("file path not convertible"))?;
 
         let yaml_configuration = std::fs::read_to_string(&cfg_path)
-            .map_err(|e| hoprd::errors::HoprdError::ConfigError(e.to_string()))?;
+            .with_context(|| format!("failed to read config file '{cfg_path}'"))?;
 
-        let cfg: HoprdConfig = serde_saphyr::from_str(&yaml_configuration)
-            .map_err(|e| hoprd::errors::HoprdError::SerializationError(e.to_string()))?;
+        let cfg: HoprdConfig =
+            serde_saphyr::from_str(&yaml_configuration).context("failed to parse config YAML")?;
 
-        if let Err(e) = cfg.validate() {
-            return Err(hoprd::errors::HoprdError::ValidationError(e.to_string()));
-        };
+        cfg.validate().context("config validation failed")?;
     }
 
     Ok(())

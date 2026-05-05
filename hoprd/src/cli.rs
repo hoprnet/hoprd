@@ -6,7 +6,9 @@ use hopr_lib::config::{HostConfig, HostType, looks_like_domain};
 use hoprd_api::config::Auth;
 use serde::{Deserialize, Serialize};
 
-use crate::{config::HoprdConfig, errors::HoprdError};
+use anyhow::{Context, anyhow};
+
+use crate::config::HoprdConfig;
 
 pub const DEFAULT_API_HOST: &str = "localhost";
 pub const DEFAULT_API_PORT: u16 = 3001;
@@ -237,15 +239,14 @@ pub struct CliArgs {
 }
 
 impl TryFrom<CliArgs> for HoprdConfig {
-    type Error = HoprdError;
+    type Error = anyhow::Error;
 
     fn try_from(value: CliArgs) -> Result<Self, Self::Error> {
         let mut cfg: HoprdConfig = if let Some(cfg_path) = value.configuration_file_path {
             tracing::debug!(cfg_path, "fetching configuration from file");
             let yaml_configuration = std::fs::read_to_string(cfg_path.as_str())
-                .map_err(|e| crate::errors::HoprdError::ConfigError(e.to_string()))?;
-            serde_saphyr::from_str(&yaml_configuration)
-                .map_err(|e| crate::errors::HoprdError::SerializationError(e.to_string()))?
+                .with_context(|| format!("failed to read config file '{cfg_path}'"))?;
+            serde_saphyr::from_str(&yaml_configuration).context("failed to parse config YAML")?
         } else {
             tracing::debug!("loading default configuration");
             HoprdConfig::default()
@@ -268,12 +269,8 @@ impl TryFrom<CliArgs> for HoprdConfig {
             cfg.session_ip_forwarding.default_entry_listen_host = match host.address {
                 HostType::IPv4(addr) => IpAddr::from_str(&addr)
                     .map(|ip| std::net::SocketAddr::new(ip, host.port))
-                    .map_err(|_| {
-                        HoprdError::ConfigError("invalid default session listen IP address".into())
-                    }),
-                HostType::Domain(_) => Err(HoprdError::ConfigError(
-                    "default session listen must be an IP".into(),
-                )),
+                    .map_err(|_| anyhow!("invalid default session listen IP address")),
+                HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
             }?;
         }
 
@@ -302,7 +299,7 @@ impl TryFrom<CliArgs> for HoprdConfig {
             cfg.api.host = HostConfig::from_str(
                 format!("{}:{}", x.as_str(), hoprd_api::config::DEFAULT_API_PORT).as_str(),
             )
-            .map_err(crate::errors::HoprdError::ValidationError)?;
+            .map_err(|e| anyhow!("invalid api host: {e}"))?;
         }
         if let Some(x) = value.api_port {
             cfg.api.host.port = x
@@ -335,11 +332,11 @@ impl TryFrom<CliArgs> for HoprdConfig {
 
         if let Some(x) = value.safe_address {
             cfg.hopr.safe_module.safe_address =
-                Address::from_str(&x).map_err(|e| HoprdError::ValidationError(e.to_string()))?
+                Address::from_str(&x).with_context(|| format!("invalid safe address '{x}'"))?
         };
         if let Some(x) = value.module_address {
             cfg.hopr.safe_module.module_address =
-                Address::from_str(&x).map_err(|e| HoprdError::ValidationError(e.to_string()))?
+                Address::from_str(&x).with_context(|| format!("invalid module address '{x}'"))?
         };
 
         // additional updates

@@ -330,10 +330,9 @@ impl HoprdConfig {
         ret
     }
 
-    pub fn as_redacted_string(&self) -> crate::errors::Result<String> {
+    pub fn as_redacted_string(&self) -> anyhow::Result<String> {
         let redacted_cfg = self.as_redacted();
-        serde_json::to_string(&redacted_cfg)
-            .map_err(|e| crate::errors::HoprdError::SerializationError(e.to_string()))
+        Ok(serde_json::to_string(&redacted_cfg)?)
     }
 }
 

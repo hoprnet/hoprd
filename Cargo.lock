@@ -5034,7 +5034,6 @@ dependencies = [
  "strum 0.28.0",
  "tempfile",
  "test-log",
- "thiserror 2.0.18",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",

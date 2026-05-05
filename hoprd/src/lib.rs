@@ -9,7 +9,6 @@
 //! See `hoprd --help` for the full list of options.
 pub mod cli;
 pub mod config;
-pub mod errors;
 pub mod strategy;
 
 use async_signal::{Signal, Signals};
@@ -19,7 +18,9 @@ use signal_hook::low_level;
 use hoprd_api::{RestApiParameters, serve_api};
 use std::sync::Arc;
 
-use crate::{config::HoprdConfig, errors::HoprdError};
+use anyhow::Context;
+
+use crate::config::HoprdConfig;
 use hopr_chain_connector::{
     BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector,
 };
@@ -163,7 +164,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     );
 
     let mut signals = Signals::new([Signal::Hup, Signal::Int, Signal::Term])
-        .map_err(|e| HoprdError::OsError(e.to_string()))?;
+        .context("failed to register signal handlers")?;
     while let Some(Ok(signal)) = signals.next().await {
         match signal {
             Signal::Hup => {
@@ -194,8 +195,8 @@ async fn init_rest_api(
     cfg: &HoprdConfig,
     hopr: Arc<HoprNode>,
 ) -> anyhow::Result<AbortableList<HoprdProcess>> {
-    let node_cfg_value = serde_json::to_value(cfg.as_redacted())
-        .map_err(|e| HoprdError::ConfigError(e.to_string()))?;
+    let node_cfg_value =
+        serde_json::to_value(cfg.as_redacted()).context("failed to serialize redacted config")?;
 
     let api_cfg = cfg.api.clone();
 
