@@ -28,6 +28,9 @@ jobs:
           - architecture: x86_64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-x86_64-linux
+          - architecture: aarch64-linux
+            runner: depot-ubuntu-24.04-8
+            build_command: nix build -L .#binary-hoprd-aarch64-linux
     uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@a178becb8c3711ae955bad477861bfefe6feceae # build-binaries-v2
     permissions:
       contents: read
@@ -57,12 +60,16 @@ jobs:
       version_type: release
       build_matrix: >-
         [
-
           {
             "runner": "depot-ubuntu-24.04-4",
             "architecture": "x86_64-linux",
             "build_command": "nix build -L .#docker-hoprd-x86_64-linux",
             "smoke_test_command": "nix develop -c just smoke-test"
+          },
+          {
+            "runner": "depot-ubuntu-24.04-4",
+            "architecture": "aarch64-linux",
+            "build_command": "nix build -L .#docker-hoprd-aarch64-linux"
           }
         ]
       cachix_cache_name: hoprnet
