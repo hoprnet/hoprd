@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 description = "HOPR node executable"
 homepage = "https://hoprnet.org/"
-repository = "https://github.com/hoprnet/hoprnet"
+repository = "https://github.com/hoprnet/hoprd"
 license = "GPL-3.0-only"
 build = "build.rs"
 

@@ -241,7 +241,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
                 auth: Auth::None,
                 ..Default::default()
             },
-            blokli_url: Some(config.blokli_url.clone()),
+            blokli_url: config.blokli_url.clone(),
             session_ip_forwarding: SessionIpForwardingConfig {
                 use_target_allow_list: false,
                 ..Default::default()

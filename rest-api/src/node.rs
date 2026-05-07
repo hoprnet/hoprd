@@ -127,6 +127,7 @@ pub(crate) struct NodeInfoResponse {
         description = "Get information about this HOPR Node",
         responses(
             (status = 200, description = "Fetched node informations", body = NodeInfoResponse),
+            (status = 401, description = "Invalid authorization token.", body = ApiError),
             (status = 422, description = "Unknown failure", body = ApiError)
         ),
         security(

@@ -20,12 +20,16 @@ pub(crate) mod env {
     pub const HOPRD_SESSION_PORT_RANGE: &str = "HOPRD_SESSION_PORT_RANGE";
 }
 
-use std::{error::Error, iter::once, sync::Arc};
+use std::{error::Error, sync::Arc};
 
 use axum::{
     Router,
     extract::Json,
-    http::{Method, header::AUTHORIZATION, status::StatusCode},
+    http::{
+        Method,
+        header::{AUTHORIZATION, HeaderName},
+        status::StatusCode,
+    },
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
@@ -321,7 +325,10 @@ where
                         .layer(axum::middleware::from_fn(middleware::prometheus::record))
                         .layer(CompressionLayer::new())
                         .layer(ValidateRequestHeaderLayer::accept("text/plain"))
-                        .layer(SetSensitiveRequestHeadersLayer::new(once(AUTHORIZATION))),
+                        .layer(SetSensitiveRequestHeadersLayer::new([
+                            AUTHORIZATION,
+                            HeaderName::from_static("x-auth-token"),
+                        ])),
                 ),
         )
         .nest(
@@ -385,7 +392,10 @@ where
                         .layer(axum::middleware::from_fn(middleware::prometheus::record))
                         .layer(CompressionLayer::new())
                         .layer(ValidateRequestHeaderLayer::accept("application/json"))
-                        .layer(SetSensitiveRequestHeadersLayer::new(once(AUTHORIZATION))),
+                        .layer(SetSensitiveRequestHeadersLayer::new([
+                            AUTHORIZATION,
+                            HeaderName::from_static("x-auth-token"),
+                        ])),
                 ),
         )
 }

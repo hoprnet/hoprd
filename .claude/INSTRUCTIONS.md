@@ -76,7 +76,6 @@ nix build -L .#coverage-unit     # LCOV report → ./result
 - `parking_lot::Mutex` (sync) or `tokio::sync::Mutex` (async) — never `std::sync::Mutex`
 - `thiserror` for library errors, `anyhow` for application errors
 - All channels must be bounded
-- `tracing::info!()` not `info!()`
 
 For language-specific rules see [rust.md](rust.md).
 
