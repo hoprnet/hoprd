@@ -327,7 +327,7 @@ impl TryFrom<CliArgs> for HoprdConfig {
         }
 
         if let Some(x) = value.blokli_url {
-            cfg.blokli_url = Some(x);
+            cfg.blokli_url = x;
         }
 
         if let Some(x) = value.safe_address {

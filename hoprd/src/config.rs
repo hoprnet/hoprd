@@ -272,8 +272,7 @@ impl Validate for UserHoprLibConfig {
 /// The configuration is composed of individual configurations of corresponding
 /// component configuration objects.
 ///
-/// An always up-to-date config YAML example can be found in [example_cfg.yaml](https://github.com/hoprnet/hoprnet/tree/master/hoprd/hoprd/example_cfg.yaml)
-/// which is always in the root of this crate.
+/// A default configuration YAML can be generated via `hoprd-cfg --default`.
 #[derive(
     Debug, Serialize, Deserialize, Validate, Clone, PartialEq, smart_default::SmartDefault,
 )]
@@ -301,7 +300,8 @@ pub struct HoprdConfig {
     pub session_ip_forwarding: SessionIpForwardingConfig,
     /// Blokli provider URL to connect to.
     #[validate(url)]
-    pub blokli_url: Option<String>,
+    #[default(default_blokli_url())]
+    pub blokli_url: String,
     /// Configuration of underlying node behavior in the form strategies
     ///
     /// Strategies represent automatically executable behavior performed by
@@ -338,6 +338,11 @@ impl HoprdConfig {
 
 fn just_true() -> bool {
     true
+}
+
+// Local Blokli endpoint default; suitable for development. Production deployments must override via config or CLI.
+fn default_blokli_url() -> String {
+    "http://localhost:8080".to_string()
 }
 
 #[cfg(test)]
@@ -432,7 +437,7 @@ mod tests {
         let mut config_file = NamedTempFile::new()?;
 
         let mut cfg = example_cfg()?;
-        cfg.blokli_url = Some(pwnd.to_owned());
+        cfg.blokli_url = pwnd.to_owned();
 
         let yaml = serde_saphyr::to_string(&cfg)?;
         config_file.write_all(yaml.as_bytes())?;
@@ -452,7 +457,7 @@ mod tests {
         // skipping validation
         let cfg = HoprdConfig::try_from(args)?;
 
-        assert_eq!(cfg.blokli_url, Some(pwnd.to_owned()));
+        assert_eq!(cfg.blokli_url, pwnd.to_owned());
 
         Ok(())
     }

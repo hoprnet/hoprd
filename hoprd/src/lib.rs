@@ -31,8 +31,6 @@ use hopr_network_graph::SharedChannelGraph;
 use hopr_reference::exit::HoprServerIpForwardingReactor;
 use hopr_transport_p2p::HoprNetwork;
 
-const DEFAULT_BLOKLI_URL: &str = "https://blokli.dufour.hoprnet.link";
-
 type HoprBlokliConnector = HoprBlockchainSafeConnector<BlokliClient>;
 type HoprNode = hopr_lib::Hopr<
     Arc<HoprBlokliConnector>,
@@ -108,10 +106,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 .unwrap_or_else(|| BlockchainConnectorConfig::default().tx_timeout_multiplier),
         },
         BlokliClient::new(
-            cfg.blokli_url
-                .clone()
-                .unwrap_or(DEFAULT_BLOKLI_URL.to_string())
-                .parse()?,
+            cfg.blokli_url.parse()?,
             blokli_client::BlokliClientConfig {
                 timeout: std::time::Duration::from_secs(30),
                 stream_reconnect_timeout: std::time::Duration::from_secs(30),
