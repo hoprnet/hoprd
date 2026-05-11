@@ -110,9 +110,14 @@ impl ChainHandle {
 /// prefix length) if one is found in a non-loopback subnet, `None` otherwise.
 fn detect_container_ip(runtime: &str, name: &str) -> Option<String> {
     // Only Apple `container` exposes a routable per-container IP via `container ls`.
-    // Docker and Podman rely on port forwarding; `docker ls`/`podman ls` are not
-    // valid subcommands for those runtimes.
-    if runtime != "container" {
+    // Normalize to basename so a full path (e.g. /opt/homebrew/bin/container) still
+    // matches. Docker/Podman rely on port forwarding; `docker ls`/`podman ls` are not
+    // valid subcommands.
+    let basename = std::path::Path::new(runtime)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(runtime);
+    if basename != "container" {
         return None;
     }
     let deadline = Instant::now() + Duration::from_secs(8);
