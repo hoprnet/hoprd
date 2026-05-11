@@ -97,4 +97,4 @@ Protocol libraries (`hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc.) live 
 
 ## Local cluster
 
-The best way to test with multiple HOPR nodes is by using a [local cluster of interconnected nodes](https://github.com/hoprnet/hoprd/blob/main/SETUP_LOCAL_CLUSTER.md).
+Spin up a multi-node HOPR network locally with `hoprd-localcluster`. See [`docs/localcluster/README.md`](docs/localcluster/README.md) for full setup instructions.

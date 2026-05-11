@@ -8,7 +8,7 @@ use crate::identity::{DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NU
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
-    about = "Run a local HOPR cluster using external processes"
+    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions."
 )]
 pub struct Args {
     /// Number of nodes to start
@@ -43,13 +43,19 @@ pub struct Args {
     #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
     pub data_dir: PathBuf,
 
-    /// Docker image containing both Anvil and Blokli (required unless --chain-url is set)
+    /// Container image containing both Anvil and Blokli (required unless --chain-url is set)
     #[arg(long, env = "HOPRD_CHAIN_IMAGE", required_unless_present = "chain_url")]
     pub chain_image: Option<String>,
 
     /// Base URL for Blokli (e.g. http://chain:8080). If set, localcluster will not start the chain container.
     #[arg(long, env = "HOPRD_CHAIN_URL")]
     pub chain_url: Option<String>,
+
+    /// Container runtime CLI used to start the chain container.
+    /// Must support `run --rm --name --platform -p` and `rm -f`.
+    /// Common values: `docker` (default), `container` (Apple native), `podman`.
+    #[arg(long, env = "HOPRD_CONTAINER_RUNTIME", default_value = "docker")]
+    pub container_runtime: String,
 
     /// Path to the hoprd binary
     #[arg(long, default_value = "hoprd")]

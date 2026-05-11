@@ -157,7 +157,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
 
         eprint!("\x1b[2K\rNode {id}: Checking Safe deployment...");
         let safe = if let Some(safe) = node_connector
-            .safe_info(SafeSelector::NodeAddress(node_address))
+            .safe_info(SafeSelector::Owner(node_address))
             .await?
         {
             safe
@@ -186,20 +186,26 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
-            let node_connector_clone = node_connector.clone();
-            let jh = tokio::task::spawn(async move {
-                node_connector_clone
-                    .await_safe_deployment(
-                        SafeSelector::NodeAddress(node_address),
-                        std::time::Duration::from_secs(10),
-                    )
-                    .await
-            });
             node_connector
                 .deploy_safe(initial_token_balance)
                 .await?
                 .await?;
-            jh.await??
+
+            // Poll safe_info instead of relying on the SSE-based await_safe_deployment,
+            // which is unreliable on local setups where subscriptions may not deliver events.
+            let safe_poll_deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                if let Some(safe) = node_connector
+                    .safe_info(SafeSelector::Owner(node_address))
+                    .await?
+                {
+                    break safe;
+                }
+                if std::time::Instant::now() >= safe_poll_deadline {
+                    anyhow::bail!("timeout polling safe_info after deploy_safe");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
         };
 
         let id_file = home_path

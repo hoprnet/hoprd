@@ -1,3 +1,15 @@
+//! Orchestrator binary for `hoprd-localcluster`.
+//!
+//! Lifecycle:
+//! 1. Start the Blokli + Anvil chain container via the configured container runtime.
+//! 2. Generate node identities and fund Safes on-chain (`identity::generate`).
+//! 3. Spawn `hoprd` processes, one per node.
+//! 4. Wait for each node to pass `/startedz` then `/readyz`.
+//! 5. Open full-mesh payment channels between all nodes.
+//! 6. Block until Ctrl-C, then shut everything down.
+//!
+//! See `docs/localcluster/README.md` for full setup and usage instructions.
+
 use std::{
     fs::{self, File},
     path::Path,
@@ -9,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper,
-    identity::{self, DEFAULT_BLOKLI_URL, DEFAULT_TX_TIMEOUT_MULTIPLIER},
+    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER},
 };
 use tracing::{debug, error, info, warn};
 
@@ -48,33 +60,38 @@ async fn main() -> Result<()> {
     let log_dir = data_dir.join("logs");
     fs::create_dir_all(&log_dir).context("failed to create log directory")?;
 
-    let blokli_url = args
-        .chain_url
-        .clone()
-        .unwrap_or_else(|| DEFAULT_BLOKLI_URL.to_string());
-    let blokli_url = blokli_url.trim_end_matches('/').to_string();
-    let config = identity::GenerationConfig {
-        blokli_url: blokli_url.to_string(),
-        num_nodes: args.size,
-        config_home: data_dir.to_path_buf(),
-        identity_password: args.identity_password.clone(),
-        random_identities: true,
-        ..Default::default()
-    };
+    let explicit_chain_url = args.chain_url.clone();
 
     let mut cleanup = Cleanup::default();
 
     let result: Result<()> = async {
-        if args.chain_url.is_some() {
-            info!("using external chain services at {blokli_url}");
+        // Determine the effective blokli URL: explicit > container-detected > default.
+        let blokli_url = if let Some(ref url) = explicit_chain_url {
+            let url = url.trim_end_matches('/').to_string();
+            info!("using external chain services at {url}");
+            url
         } else {
             let chain_image = args
                 .chain_image
                 .as_deref()
                 .context("missing chain image (set --chain-image or HOPRD_CHAIN_IMAGE)")?;
             info!("starting chain services (anvil + blokli)");
-            cleanup.chain = Some(blokli_helper::ChainHandle::start(chain_image, &log_dir)?);
-        }
+            let handle =
+                blokli_helper::ChainHandle::start(&args.container_runtime, chain_image, &log_dir)?;
+            let url = handle.chain_url();
+            info!("chain container URL: {url}");
+            cleanup.chain = Some(handle);
+            url
+        };
+
+        let config = identity::GenerationConfig {
+            blokli_url: blokli_url.clone(),
+            num_nodes: args.size,
+            config_home: data_dir.to_path_buf(),
+            identity_password: args.identity_password.clone(),
+            random_identities: true,
+            ..Default::default()
+        };
 
         // TODO: replace with a proper healthcheck call to blokli once available
         {
