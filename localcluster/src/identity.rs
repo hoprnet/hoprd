@@ -187,26 +187,22 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
+            // Subscribe before submitting the tx so the SafeDeployed event is not
+            // missed if blokli indexes the block before our subscription opens.
+            let node_connector_clone = node_connector.clone();
+            let deployment_fut = tokio::task::spawn(async move {
+                node_connector_clone
+                    .await_safe_deployment(
+                        SafeSelector::Owner(node_address),
+                        std::time::Duration::from_secs(120),
+                    )
+                    .await
+            });
             node_connector
                 .deploy_safe(initial_token_balance)
                 .await?
                 .await?;
-
-            // Poll safe_info instead of relying on the SSE-based await_safe_deployment,
-            // which is unreliable on local setups where subscriptions may not deliver events.
-            let safe_poll_deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-            loop {
-                if let Some(safe) = node_connector
-                    .safe_info(SafeSelector::Owner(node_address))
-                    .await?
-                {
-                    break safe;
-                }
-                if std::time::Instant::now() >= safe_poll_deadline {
-                    anyhow::bail!("timeout polling safe_info after deploy_safe");
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+            deployment_fut.await??
         };
 
         let id_file = home_path
