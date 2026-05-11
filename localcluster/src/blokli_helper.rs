@@ -29,6 +29,7 @@ use std::{
 use anyhow::{Context, Result};
 
 const CHAIN_PORT: u16 = 8080;
+const CONTAINER_NAME: &str = "hopr-chain";
 
 pub struct ChainHandle {
     runtime: String,
@@ -52,7 +53,7 @@ impl ChainHandle {
         let log_err = log_file
             .try_clone()
             .context("failed to clone blokli log file handle")?;
-        let name = "hopr-chain";
+        let name = CONTAINER_NAME;
 
         let mut cmd = Command::new(runtime);
         cmd.arg("run")
@@ -71,7 +72,7 @@ impl ChainHandle {
 
         // Detect the container's routable IP (if any) so callers can bypass
         // port-forwarding NAT for long-lived SSE connections.
-        let container_ip = detect_container_ip(runtime, name);
+        let container_ip = tokio::task::block_in_place(|| detect_container_ip(runtime, name));
 
         Ok(Self {
             runtime: runtime.to_string(),
@@ -129,14 +130,11 @@ fn try_get_container_ip(runtime: &str, name: &str) -> Option<String> {
 
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
-        // Check both ID and NAME columns (first token); the chain container uses
-        // a predictable name "hopr-chain".
         let cols: Vec<&str> = line.split_whitespace().collect();
         if cols.first().map(|s| *s) == Some(name) && cols.len() >= 6 {
             let addr = cols[5];
-            // Strip /prefix notation (e.g. "192.168.64.2/24" → "192.168.64.2")
+            // Strip CIDR prefix (e.g. "192.168.64.2/24" → "192.168.64.2")
             let ip = addr.split('/').next()?;
-            // Ignore loopback and empty
             if !ip.is_empty() && ip != "127.0.0.1" && ip != "::1" {
                 return Some(ip.to_string());
             }

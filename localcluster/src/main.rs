@@ -110,13 +110,21 @@ async fn main() -> Result<()> {
         cleanup.nodes = start_hoprd_nodes(&args, &data_dir, &log_dir).await?;
 
         info!("waiting for nodes to start");
-        for node in cleanup.nodes.iter() {
-            node.api.wait_started(2 * DEFAULT_WAIT_TIMEOUT).await?;
-        }
+        futures::future::try_join_all(
+            cleanup
+                .nodes
+                .iter()
+                .map(|n| n.api.wait_started(2 * DEFAULT_WAIT_TIMEOUT)),
+        )
+        .await?;
         info!("waiting for nodes to be ready");
-        for node in cleanup.nodes.iter() {
-            node.api.wait_ready(DEFAULT_WAIT_TIMEOUT).await?;
-        }
+        futures::future::try_join_all(
+            cleanup
+                .nodes
+                .iter()
+                .map(|n| n.api.wait_ready(DEFAULT_WAIT_TIMEOUT)),
+        )
+        .await?;
 
         info!("fetching node addresses");
         for node in cleanup.nodes.iter_mut() {
