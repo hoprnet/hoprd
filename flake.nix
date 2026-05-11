@@ -378,15 +378,6 @@
               Cmd = [ "hoprd" ];
               env = [ "TMPDIR=/app/.tmp" ];
             };
-            docker-hoprd-localcluster-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd-localcluster";
-              extraContents = [
-                hoprdPackages.binary-hoprd-localcluster-x86_64-linux
-                hoprdPackages.binary-hoprd-x86_64-linux
-                pkgs.cacert
-              ];
-              Cmd = [ "hoprd-localcluster" ];
-            };
           };
 
           docs =
