@@ -2,22 +2,21 @@
 //!
 //! [`ChainHandle`] shells out to any Docker-compatible container CLI to run the
 //! Blokli + Anvil chain image.  The runtime binary is supplied by the caller;
-//! it must support the following invocations:
+//! it must support:
 //!
 //! - `<runtime> run --rm --name <name> --platform linux/amd64 -p 8080:8080 <image>`
 //! - `<runtime> rm -f <name>`
-//! - `<runtime> ls` (with columns: ID IMAGE OS ARCH STATE ADDR ...)
 //!
 //! Common compatible runtimes: `docker`, `container` (Apple native), `podman`.
 //!
 //! ## Chain URL
 //!
 //! After the container starts, [`ChainHandle::chain_url`] returns the URL to
-//! use when connecting to Blokli. When the runtime exposes containers on a
-//! routable subnet (e.g. Apple `container` at `192.168.64.x`) the direct
-//! container IP is preferred over `localhost:8080`, because some NAT
-//! implementations time out long-lived SSE connections (used by the blokli
-//! client for on-chain event subscriptions) within 20–30 s.
+//! use when connecting to Blokli.  For Apple `container`, containers are
+//! reachable on a routable subnet (`192.168.64.x`) — the direct IP is preferred
+//! over `localhost:8080` because macOS NAT times out long-lived SSE connections
+//! (used by the blokli client for on-chain event subscriptions) within 20–30 s.
+//! Docker and Podman rely on port forwarding and use the `localhost` fallback.
 
 use std::{
     fs::{self, File},
@@ -96,6 +95,7 @@ impl ChainHandle {
 
     pub fn stop(&mut self) {
         let _ = self.child.kill();
+        let _ = self.child.wait();
         let _ = Command::new(&self.runtime)
             .arg("rm")
             .arg("-f")
@@ -109,6 +109,12 @@ impl ChainHandle {
 /// Polls for up to 8 s in 500 ms increments. Returns the IP string (without
 /// prefix length) if one is found in a non-loopback subnet, `None` otherwise.
 fn detect_container_ip(runtime: &str, name: &str) -> Option<String> {
+    // Only Apple `container` exposes a routable per-container IP via `container ls`.
+    // Docker and Podman rely on port forwarding; `docker ls`/`podman ls` are not
+    // valid subcommands for those runtimes.
+    if runtime != "container" {
+        return None;
+    }
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         if let Some(ip) = try_get_container_ip(runtime, name) {
@@ -122,10 +128,8 @@ fn detect_container_ip(runtime: &str, name: &str) -> Option<String> {
 }
 
 fn try_get_container_ip(runtime: &str, name: &str) -> Option<String> {
-    // `container ls` and `podman ps` both emit tabular output where the
-    // container ID/name appears in the first column and the address in the 6th.
-    // `docker ps` does not emit an IP in its default format, so this naturally
-    // falls through to `None` for Docker (which relies on port forwarding).
+    // `container ls` output: NAME IMAGE OS ARCH STATE ADDR ...
+    // The container name appears in col[0], the ADDR (with CIDR prefix) in col[5].
     let out = Command::new(runtime).arg("ls").output().ok()?;
 
     let text = String::from_utf8_lossy(&out.stdout);

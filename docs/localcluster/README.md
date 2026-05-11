@@ -124,11 +124,11 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 ## Configuration reference
 
-All flags accept an environment variable equivalent. Flags take precedence over env vars.
+Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
 | Flag                  | Env var                   | Default           | Description                                        |
 | --------------------- | ------------------------- | ----------------- | -------------------------------------------------- |
-| `--size`              | —                         | `3`               | Number of nodes to start (max 5)                   |
+| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                     |
 | `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                       |
 | `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)          |
 | `--p2p-host`          | —                         | `localhost`       | Host to bind P2P on                                |
@@ -149,7 +149,7 @@ All flags accept an environment variable equivalent. Flags take precedence over 
 
 Everything lands under `--data-dir` (default `/tmp/hopr-nodes`):
 
-```
+```text
 /tmp/hopr-nodes/
   hoprd_cfg_0.yaml       # generated hoprd config for node 0
   hoprd_cfg_1.yaml

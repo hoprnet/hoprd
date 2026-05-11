@@ -29,6 +29,7 @@ pub const DEFAULT_PRIVATE_KEY: &str =
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
+pub const MAX_NUM_NODES: usize = 5;
 // Increased tx client timeout multiplier for Anvil
 pub const DEFAULT_TX_TIMEOUT_MULTIPLIER: u32 = 10;
 
