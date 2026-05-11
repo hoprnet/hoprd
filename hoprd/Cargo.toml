@@ -1,10 +1,10 @@
 [package]
 name = "hoprd"
 version = "4.0.0-rc.5"
-authors = ["HOPR Association <tech@hoprnet.org>"]
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "HOPR node executable"
+description = "A complete HOPR node daemon and reference implementation of the HOPR protocol"
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hoprd"
 license = "GPL-3.0-only"

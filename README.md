@@ -94,3 +94,7 @@ nix run -L .#check
 ## Protocol contributions
 
 Protocol libraries (`hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc.) live in [hoprnet/hoprnet](https://github.com/hoprnet/hoprnet). Submit protocol-level changes there.
+
+## Local cluster
+
+The best way to test with multiple HOPR nodes is by using a [local cluster of interconnected nodes](https://github.com/hoprnet/hoprd/blob/main/SETUP_LOCAL_CLUSTER.md).
