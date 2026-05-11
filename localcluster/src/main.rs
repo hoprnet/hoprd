@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     let mut cleanup = Cleanup::default();
 
     let result: Result<()> = async {
-        // Determine the effective blokli URL: explicit > container-detected > default.
+        // Determine the effective blokli URL: explicit --chain-url or container-detected IP.
         let blokli_url = if let Some(ref url) = explicit_chain_url {
             let url = url.trim_end_matches('/').to_string();
             info!("using external chain services at {url}");

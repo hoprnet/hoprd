@@ -71,7 +71,7 @@ impl ChainHandle {
 
         // Detect the container's routable IP (if any) so callers can bypass
         // port-forwarding NAT for long-lived SSE connections.
-        let container_ip = tokio::task::block_in_place(|| detect_container_ip(runtime, name));
+        let container_ip = detect_container_ip(runtime, name);
 
         Ok(Self {
             runtime: runtime.to_string(),
