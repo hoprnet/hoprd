@@ -166,6 +166,10 @@
           memprofBuildArgs = projectBuildArgs // {
             CARGO_PROFILE = "memprof";
             cargoExtraArgs = "-F capture -F allocator-jemalloc-stats -F allocator-jemalloc-profiling";
+            extraNativeBuildInputs = [
+              pkgs.autoconf
+              pkgs.perl
+            ];
           };
           # jemalloc profiling is Linux-only; on macOS the system allocator is
           # used, so darwin profile builds only enable the capture feature.

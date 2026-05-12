@@ -98,3 +98,11 @@ Protocol libraries (`hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc.) live 
 ## Local cluster
 
 Spin up a multi-node HOPR network locally with `hoprd-localcluster`. See [`docs/localcluster/README.md`](docs/localcluster/README.md) for full setup instructions.
+
+## Memory Profiling
+
+`hoprd` supports detailed heap profiling using `jemalloc` and `jeprof`.
+
+- **[General Profiling Guide](profiling/memory-profiling.md)**: How to build and run the profiling variants.
+- **[macOS VM Setup](profiling/PROFILING_VM.md)**: Setting up a NixOS VM via OrbStack for profiling on macOS.
+- **[VM Usage Helper](profiling/JEPROF-VM-USAGE.md)**: Using the `jeprof-vm.sh` script to drive builds and analysis.

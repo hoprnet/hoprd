@@ -15,8 +15,8 @@ Outputs PNGs to --out (default: /tmp/jeprof-plots).
 Usage on the VM:
 
   nix-shell -p 'python313.withPackages(ps: [ps.matplotlib ps.numpy])' \\
-    --run "python3 ~/hoprnet/scripts/jeprof_plot.py \\
-           --dumps /tmp/jeprof --binary ~/hoprnet/result/bin/hoprd \\
+    --run "python3 ~/hoprd/scripts/jeprof_plot.py \\
+           --dumps /tmp/jeprof --binary ~/hoprd/result/bin/hoprd \\
            --samples 100 --out /tmp/jeprof-plots --topk 10"
 
 Then `scp 'nixos-test@orb:/tmp/jeprof-plots/*.png' ./plots/` to view.

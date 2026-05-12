@@ -21,9 +21,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
-mod jemalloc_stats;
-
 #[cfg(feature = "telemetry")]
 mod telemetry;
 mod telemetry_common;

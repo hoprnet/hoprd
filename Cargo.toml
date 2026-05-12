@@ -157,6 +157,8 @@ similar.opt-level = 3
 inherits = "release"
 debug = 2
 strip = false
+lto = "thin"
+codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]

@@ -37,7 +37,7 @@ CLUSTER_DIR="${CLUSTER_DIR:-/tmp/hoprd-cluster}"
 # 25 = 32MB (sane default for multi-node cluster, ~10s of dumps per node).
 # 20 = 1MB (very aggressive, generates GBs of dumps in minutes).
 LG_PROF_INTERVAL="${LG_PROF_INTERVAL:-25}"
-VM_REPO="hoprnet"
+VM_REPO="hoprd"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -116,7 +116,7 @@ cmd_analyze() {
   ssh -t "$VM_HOST" "
     set -e
     cd '${PROFILE_DIR}'
-    BIN=\$(ls -d ~/hoprnet/result-hoprd 2>/dev/null || echo ~/hoprnet/result)/bin/hoprd
+    BIN=\$(ls -d ~/${VM_REPO}/result-hoprd 2>/dev/null || echo ~/${VM_REPO}/result)/bin/hoprd
     if [ ! -x \"\$BIN\" ]; then echo 'hoprd binary missing' >&2; exit 1; fi
 
     pids=\$(find . -maxdepth 1 -name 'jeprof.*.heap' -printf '%f\n' | sed 's/^jeprof\.//; s/\..*//' | sort -un)
@@ -179,8 +179,8 @@ cmd_pull() {
     scp "${VM_HOST}:${PROFILE_DIR}/${first}" "$out/" 2>/dev/null || true
     scp "${VM_HOST}:${PROFILE_DIR}/${last}" "$out/" 2>/dev/null || true
   done
-  scp "${VM_HOST}:hoprnet/result/bin/hoprd" "$out/hoprd" 2>/dev/null ||
-    scp "${VM_HOST}:hoprnet/result-hoprd/bin/hoprd" "$out/hoprd"
+  scp "${VM_HOST}:${VM_REPO}/result/bin/hoprd" "$out/hoprd" 2>/dev/null ||
+    scp "${VM_HOST}:${VM_REPO}/result-hoprd/bin/hoprd" "$out/hoprd"
   ls -lh "$out"/
   echo "Run on macOS (after 'brew install jemalloc graphviz'):"
   echo "  jeprof --text --base=$out/<earliest>.heap $out/hoprd $out/<latest>.heap"

@@ -13,7 +13,7 @@ scp file nixos-test@orb:   # copy file to VM home
 scp 'nixos-test@orb:/tmp/jeprof/*.heap' ./out/   # copy dumps back
 ```
 
-VM user: `emil`. Sudo: passwordless via `wheel`. No further creds needed.
+VM user: matches your macOS host user (OrbStack default). Sudo: passwordless via `wheel`. No further creds needed.
 
 ## Subcommands of `scripts/jeprof-vm.sh` (run from macOS, repo root)
 
@@ -44,8 +44,8 @@ shutdown (`prof_final:true`).
 Build outputs use named symlinks so they don't clobber each other:
 
 ```
-~/hoprnet/result-hoprd          # hoprd profile binary
-~/hoprnet/result-localcluster   # hoprd-localcluster binary
+~/hoprd/result-hoprd          # hoprd profile binary
+~/hoprd/result-localcluster   # hoprd-localcluster binary
 ```
 
 ## Full localcluster workflow (multi-node, jemalloc enabled)
@@ -88,7 +88,7 @@ Build outputs use named symlinks so they don't clobber each other:
 ./scripts/jeprof-vm.sh run
 # or, manual on the VM:
 ssh nixos-test@orb
-cd ~/hoprnet
+cd ~/hoprd
 mkdir -p /tmp/jeprof /tmp/hoprd
 HOPRD_PASSWORD=test \
 _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:/tmp/jeprof/jeprof,lg_prof_sample:19,lg_prof_interval:20' \
@@ -152,7 +152,7 @@ matters — must match the one that produced the dumps.
 
 ```bash
 ssh nixos-test@orb
-BIN=~/hoprnet/result-hoprd/bin/hoprd
+BIN=~/hoprd/result-hoprd/bin/hoprd
 H=/tmp/jeprof
 
 # Top allocators (text):
@@ -182,7 +182,7 @@ Pull artifacts to macOS for offline analysis:
 ```bash
 mkdir -p ~/jeprof-out
 scp 'nixos-test@orb:/tmp/jeprof/*.heap' ~/jeprof-out/
-scp nixos-test@orb:~/hoprnet/result-hoprd/bin/hoprd ~/jeprof-out/hoprd
+scp nixos-test@orb:~/hoprd/result-hoprd/bin/hoprd ~/jeprof-out/hoprd
 # install jemalloc on macOS (brew install jemalloc) then run jeprof
 # the same way against ~/jeprof-out/hoprd + heap files.
 ```
@@ -204,9 +204,9 @@ nixos.openssl nixos.python313`
 
 ```
 VM:
-  ~/hoprnet/result-hoprd/bin/hoprd            # 50MB ELF aarch64 musl, jemalloc-profiling
-  ~/hoprnet/result-hoprd/bin/hoprd-cfg
-  ~/hoprnet/result-localcluster/bin/hoprd-localcluster
+  ~/hoprd/result-hoprd/bin/hoprd            # 50MB ELF aarch64 musl, jemalloc-profiling
+  ~/hoprd/result-hoprd/bin/hoprd-cfg
+  ~/hoprd/result-localcluster/bin/hoprd-localcluster
 ```
 
 First build of the cross-toolchain compiles GCC + binutils + musl from
@@ -231,8 +231,7 @@ Crane diffs cargo inputs; only changed crates recompile.
 - **Added** `scripts/jeprof-vm.sh` with subcommands:
   `sync` / `build` / `build-localcluster` / `run` / `localcluster N` /
   `all`.
-- **Added** `scripts/JEPROF-VM-USAGE.md` (this file) and
-  `scripts/JEPROF-VM-NOTES.md` (investigation log).
+- **Added** `scripts/JEPROF-VM-USAGE.md` (this file).
 - **VM env**: installed `git`, `jemalloc`, `graphviz`, `perl` via
   `nix-env`. Updated NixOS config to trust `@wheel`.
 - **Build outputs** moved from `result/` to `result-hoprd/` and

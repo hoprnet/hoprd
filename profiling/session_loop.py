@@ -15,7 +15,7 @@ Run from macOS with port-forwards (3000/3001/3002 → VM), or from the VM.
   ./scripts/session_loop.py --iterations 1000
 
 Or directly on the VM:
-  ssh nixos-test@orb 'cd ~/hoprnet && ./scripts/session_loop.py'
+  ssh nixos-test@orb 'cd ~/hoprd && ./scripts/session_loop.py'
 
 Defaults assume 3-node cluster from `scripts/jeprof-vm.sh localcluster 3`.
 """
