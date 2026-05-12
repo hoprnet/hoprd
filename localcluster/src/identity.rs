@@ -205,10 +205,15 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 }
             });
-            node_connector
-                .deploy_safe(initial_token_balance)
-                .await?
-                .await?;
+            let deploy_result: anyhow::Result<()> = async {
+                node_connector.deploy_safe(initial_token_balance).await?.await?;
+                Ok(())
+            }
+            .await;
+            if deploy_result.is_err() {
+                poll_handle.abort();
+                return deploy_result;
+            }
             poll_handle.await??
         };
 
