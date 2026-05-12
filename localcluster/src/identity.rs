@@ -144,8 +144,13 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let home_path = &config.config_home;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
 
-    let blokli_client =
-        BlokliClient::new(config.blokli_url.parse()?, BlokliClientConfig::default());
+    let blokli_client = BlokliClient::new(
+        config.blokli_url.parse()?,
+        BlokliClientConfig {
+            auto_compatibility_check: false,
+            ..Default::default()
+        },
+    );
     let status = blokli_client.query_health().await?;
     if !status.eq_ignore_ascii_case("ok") {
         return Err(anyhow::anyhow!("Blokli is not usable: {status}"));
