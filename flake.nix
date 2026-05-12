@@ -58,6 +58,13 @@
         let
           rev = toString (self.shortRev or self.dirtyShortRev);
           fs = lib.fileset;
+
+          profileDeps = with pkgs; [
+            gdb
+            binutils # objdump/addr2line required by jeprof for symbol resolution
+            rust-bin.stable.latest.minimal
+          ];
+
           localSystem = system;
           overlays = [
             (import rust-overlay)
@@ -75,6 +82,25 @@
             export DYLD_LIBRARY_PATH="${nightlyToolchain}/lib:$DYLD_LIBRARY_PATH"
             exec "${nightlyToolchain}/bin/rustfmt" "$@"
           '';
+
+          # Patched jeprof with fixed shebang for Docker compatibility
+          # jeprof uses #!/usr/bin/env perl which doesn't work in minimal containers
+          jeprofPatched = pkgs.stdenv.mkDerivation {
+            name = "jeprof-patched";
+            src = pkgs.jemalloc;
+            dontUnpack = true;
+            buildInputs = [ pkgs.perl ];
+            installPhase = ''
+              mkdir -p $out/bin
+              cp ${pkgs.jemalloc}/bin/jeprof $out/bin/jeprof
+              chmod +x $out/bin/jeprof
+            '';
+            fixupPhase = ''
+              # Replace #!/usr/bin/env perl with direct perl path
+              sed -i "1s|#!.*perl|#!${pkgs.perl}/bin/perl|" $out/bin/jeprof
+              patchShebangs --host $out/bin/jeprof
+            '';
+          };
 
           craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.latest.default);
           hoprdCrateInfoOriginal = craneLib.crateNameFromCargoToml {
@@ -135,6 +161,19 @@
             cargoToml = ./localcluster/Cargo.toml;
           };
 
+          # Build args for the memory-profiling variant (Linux).
+          # Linux gets full jemalloc profiling: stats + dump-on-interval.
+          memprofBuildArgs = projectBuildArgs // {
+            CARGO_PROFILE = "memprof";
+            cargoExtraArgs = "-F capture -F allocator-jemalloc-stats -F allocator-jemalloc-profiling";
+          };
+          # jemalloc profiling is Linux-only; on macOS the system allocator is
+          # used, so darwin profile builds only enable the capture feature.
+          memprofDarwinBuildArgs = projectBuildArgs // {
+            CARGO_PROFILE = "memprof";
+            cargoExtraArgs = "-F capture";
+          };
+
           fixUtoipaEmbedPaths =
             drv:
             drv.overrideAttrs (old: {
@@ -165,6 +204,11 @@
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
+
+            binary-hoprd-profile-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
+            binary-hoprd-profile-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
+            binary-hoprd-profile-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage memprofDarwinBuildArgs;
+            binary-hoprd-profile-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage memprofDarwinBuildArgs;
 
             binary-hoprd-api-schema-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage {
               inherit src depsSrc rev;
@@ -335,6 +379,10 @@
             fi
           '';
 
+          analyzeMemoryScript = pkgs.writeShellScriptBin "analyze_memory.sh" (
+            builtins.readFile ./profiling/analyze_memory.sh
+          );
+
           hoprd-man = nixLib.mkManPage {
             pname = "hoprd";
             binary = hoprdPackages.binary-hoprd-dev;
@@ -365,6 +413,30 @@
               Entrypoint = [ "/bin/docker-entrypoint.sh" ];
               Cmd = [ "hoprd" ];
               env = [ "TMPDIR=/app/.tmp" ];
+            };
+            docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd";
+              extraContents = [
+                dockerHoprdEntrypoint
+                hoprdPackages.binary-hoprd-profile-x86_64-linux
+                pkgs.cacert
+                pkgs.curl
+                analyzeMemoryScript
+                (pkgs.runCommand "jemalloc-lib-only" { } ''
+                  mkdir -p $out/lib
+                  cp -r ${pkgs.jemalloc}/lib/* $out/lib/
+                '')
+                jeprofPatched
+                pkgs.graphviz
+                pkgs.perl
+              ]
+              ++ profileDeps;
+              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Cmd = [ "hoprd" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
+              ];
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
               name = "hoprd";
