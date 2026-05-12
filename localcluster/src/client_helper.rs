@@ -74,6 +74,11 @@ impl HoprdApiClient {
         let _ = self.inner.open_channel(&req).await?;
         Ok(())
     }
+
+    pub async fn ping_peer(&self, address: &str) -> Result<()> {
+        self.inner.ping_peer(address).await?;
+        Ok(())
+    }
 }
 
 pub struct NodeProcess {
@@ -83,6 +88,56 @@ pub struct NodeProcess {
     pub api: HoprdApiClient,
     pub child: Child,
     pub address: Option<String>,
+}
+
+pub async fn wait_full_mesh_reachable(
+    nodes: &[NodeProcess],
+    timeout: std::time::Duration,
+) -> Result<()> {
+    let start = std::time::Instant::now();
+    loop {
+        let pairs: Vec<_> = nodes
+            .iter()
+            .flat_map(|src| {
+                nodes.iter().filter_map(move |dst| {
+                    let src_addr = src.address.as_deref()?;
+                    let dst_addr = dst.address.as_deref()?;
+                    if src_addr == dst_addr {
+                        return None;
+                    }
+                    Some((src.id, dst.id, src.api.clone(), dst_addr.to_string()))
+                })
+            })
+            .collect();
+
+        let results = futures::future::join_all(
+            pairs
+                .iter()
+                .map(|(_, _, api, dst)| api.ping_peer(dst.as_str())),
+        )
+        .await;
+
+        let failed: Vec<_> = pairs
+            .iter()
+            .zip(results.iter())
+            .filter(|(_, r)| r.is_err())
+            .map(|((src, dst, _, _), _)| (*src, *dst))
+            .collect();
+
+        if failed.is_empty() {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            let pairs_str: Vec<_> = failed
+                .iter()
+                .map(|(s, d)| format!("{s}→{d}"))
+                .collect();
+            anyhow::bail!("timeout waiting for peer visibility: {}", pairs_str.join(", "));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 pub async fn open_full_mesh_channels(nodes: &[NodeProcess], amount: &HoprBalance) -> Result<()> {

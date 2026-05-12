@@ -135,6 +135,8 @@ async fn main() -> Result<()> {
         if args.skip_channels {
             warn!("skipping channel creation");
         } else {
+            info!("waiting for full-mesh peer visibility before opening channels");
+            client_helper::wait_full_mesh_reachable(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT).await?;
             info!("opening channels to every other node");
             client_helper::open_full_mesh_channels(&cleanup.nodes, &args.funding_amount).await?;
         }
