@@ -1,13 +1,10 @@
 ---
-# Build the localcluster image first:
-#   docker load < $(nix build -L .#docker-hoprd-localcluster-x86_64-linux --print-out-paths)
-# Then:
-#   docker compose -f localcluster/docker-compose.yml up -d
+# FIXME: The nodes can't dial each other within the docker container. 
 services:
   chain:
     container_name: hoprd-blokli-anvil
     platform: linux/amd64
-    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.3-pr.339
+    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
     ports:
       - "8080:8080"
   cluster:
@@ -20,16 +17,11 @@ services:
       HOPRD_CHAIN_URL: http://chain:8080
       RUST_LOG: debug
     command:
-      - --hoprd-bin
-      - /bin/hoprd
-      - --api-host
-      - "0.0.0.0"
+      - --size
+      - "${CLUSTER_SIZE:-3}"
       - --api-port-base
       - "3001"
       - --p2p-port-base
       - "9001"
-      - --size
-      - "${CLUSTER_SIZE:-3}"
     ports:
-      # API ports for all possible nodes (1–5); only active nodes respond.
-      - "3001-3005:3001-3005"
+      - "3001-300${CLUSTER_SIZE:-3}:3001-300${CLUSTER_SIZE:-3}"

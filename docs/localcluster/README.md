@@ -57,7 +57,7 @@ grep -A3 'name = "blokli-client"' Cargo.lock
 ```bash
 rm -rf /tmp/hopr-nodes   # clear any stale state
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.3-pr.339
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
 
 RUST_LOG=info \
 ./result-1/bin/hoprd-localcluster \
@@ -73,7 +73,7 @@ container system start   # once per boot
 
 rm -rf /tmp/hopr-nodes
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.3-pr.339
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
 
 RUST_LOG=info \
 HOPRD_CONTAINER_RUNTIME=container \
@@ -235,7 +235,7 @@ docker pull --platform linux/amd64 <chain-image>
 container image pull --platform linux/amd64 <chain-image>
 ```
 
-**`bloklid-anvil:latest` fails with a schema error** — The `latest` tag may have a breaking GraphQL schema change relative to the `blokli-client` version pinned in `Cargo.lock`. Use a version-pinned tag (e.g. `0.10.3-pr.339`) that matches the client's source commit. See the [Run](#run) section for how to identify the compatible tag.
+**`bloklid-anvil:latest` fails with a schema error** — The `latest` tag may have a breaking GraphQL schema change relative to the `blokli-client` version pinned in `Cargo.lock`. Use a version-pinned tag (e.g. `0.10.5-pr.349`) that matches the client's source commit. See the [Run](#run) section for how to identify the compatible tag.
 
 **Apple `container` system is not running** — `container run` fails immediately. Run `container system start` once after each reboot.
 
