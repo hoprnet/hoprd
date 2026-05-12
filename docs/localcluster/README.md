@@ -98,6 +98,23 @@ HOPRD_CHAIN_URL=http://localhost:8080 \
 
 Press **Ctrl-C** to stop — the orchestrator kills all `hoprd` processes and removes the chain container on exit.
 
+### Docker Compose
+
+`localcluster/docker-compose.yml` bundles the chain and the orchestrator into a single `docker compose up`. The `hoprd-localcluster` image must be built first (it is not published; it bundles both `hoprd` and `hoprd-localcluster`):
+
+```bash
+# Build and load the image (x86_64 Linux only)
+docker load < $(nix build -L .#docker-hoprd-localcluster-x86_64-linux --print-out-paths)
+
+# Start the cluster (default: 3 nodes)
+docker compose -f localcluster/docker-compose.yml up -d
+
+# Override the node count
+CLUSTER_SIZE=5 docker compose -f localcluster/docker-compose.yml up -d
+```
+
+API ports `3001–3005` are mapped to the host; node `i` listens on port `3001 + i - 1`. Stop with `docker compose -f localcluster/docker-compose.yml down`.
+
 ---
 
 ## Verify
