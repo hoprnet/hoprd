@@ -111,6 +111,10 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 timeout: std::time::Duration::from_secs(30),
                 stream_reconnect_timeout: std::time::Duration::from_secs(30),
                 subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
+                // Allow local clusters to skip the blokli version compatibility check:
+                // some dev images (e.g. bloklid-anvil) do index Safe events but don't
+                // yet advertise the IndexesSafeEvents feature flag in their API response.
+                auto_compatibility_check: std::env::var("HOPR_BLOKLI_NO_COMPAT_CHECK").is_err(),
                 ..Default::default()
             },
         ),

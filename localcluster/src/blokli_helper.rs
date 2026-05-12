@@ -67,6 +67,22 @@ impl ChainHandle {
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
+        // Clean up any leftover container from a previous run before starting.
+        // Apple `container` cannot force-remove a running container, so stop first.
+        let _ = Command::new(runtime)
+            .arg("stop")
+            .arg(name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = Command::new(runtime)
+            .arg("rm")
+            .arg("-f")
+            .arg(name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
         let child = cmd.spawn().context("failed to start blokli container")?;
 
         // Detect the container's routable IP (if any) so callers can bypass

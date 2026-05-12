@@ -21,12 +21,11 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper,
-    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER},
+    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER, GeneratedIdentity},
 };
 use tracing::{debug, error, info, warn};
 
-const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
-const INDEXING_WAIT_TIME: Duration = Duration::from_secs(10);
+const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 struct Cleanup {
@@ -90,21 +89,18 @@ async fn main() -> Result<()> {
             config_home: data_dir.to_path_buf(),
             identity_password: args.identity_password.clone(),
             random_identities: true,
+            num_extras: args.extra_identities,
+            p2p_host: args.p2p_host.clone(),
+            p2p_port_base: args.p2p_port_base,
             ..Default::default()
         };
 
-        // TODO: replace with a proper healthcheck call to blokli once available
-        {
-            wait_for_http_response(&format!("{blokli_url}/graphql"), DEFAULT_WAIT_TIMEOUT).await?;
-            info!(
-                "chain services are up. Waiting {} seconds for the indexer to catch up",
-                INDEXING_WAIT_TIME.as_secs()
-            );
-            tokio::time::sleep(INDEXING_WAIT_TIME).await;
-        }
+        info!("waiting for blokli indexer to be ready");
+        wait_for_blokli_ready(&blokli_url, DEFAULT_WAIT_TIMEOUT).await?;
+        info!("blokli indexer is ready");
 
         info!("generating identities and configs via hoprd-gen-test library");
-        identity::generate(&config).await?;
+        let identities = identity::generate(&config).await?;
 
         info!("starting hoprd nodes");
         cleanup.nodes = start_hoprd_nodes(&args, &data_dir, &log_dir).await?;
@@ -134,16 +130,22 @@ async fn main() -> Result<()> {
         if args.skip_channels {
             warn!("skipping channel creation");
         } else {
+            info!("waiting for full-mesh peer visibility before opening channels");
+            client_helper::wait_full_mesh_reachable(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT).await?;
             info!("opening channels to every other node");
             client_helper::open_full_mesh_channels(&cleanup.nodes, &args.funding_amount).await?;
         }
 
-        node_summary(&cleanup.nodes, &args);
+        node_summary(&cleanup.nodes, &args, &blokli_url);
+        extras_summary(&identities.extras);
 
         info!("localcluster running; press Ctrl+C to stop");
-        tokio::signal::ctrl_c()
-            .await
-            .context("failed to await Ctrl+C")?;
+        tokio::select! {
+            res = tokio::signal::ctrl_c() => {
+                res.context("failed to await Ctrl+C")?;
+            }
+            _ = wait_sigterm() => {}
+        }
         info!("shutdown requested");
 
         Ok(())
@@ -214,6 +216,7 @@ async fn start_hoprd_nodes(
                 "HOPR_TX_TIMEOUT_MULTIPLIER",
                 DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
             )
+            .env("HOPR_BLOKLI_NO_COMPAT_CHECK", "1")
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
@@ -241,7 +244,9 @@ async fn start_hoprd_nodes(
     Ok(nodes)
 }
 
-fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args) {
+fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args, blokli_url: &str) {
+    println!();
+    println!("Chain (Blokli): {blokli_url}");
     println!();
 
     for node in nodes {
@@ -276,20 +281,60 @@ fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args) {
     }
 }
 
-async fn wait_for_http_response(url: &str, timeout: Duration) -> Result<()> {
+fn extras_summary(extras: &[GeneratedIdentity]) {
+    if extras.is_empty() {
+        return;
+    }
+
+    for extra in extras {
+        let rows = [
+            ("Address", extra.address.clone()),
+            ("Safe address", extra.safe_address.clone()),
+            ("Module address", extra.module_address.clone()),
+            ("Identity file", extra.id_file.display().to_string()),
+            ("Password", extra.password.clone()),
+        ];
+        let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+
+        println!("Extra {}", extra.id);
+        for (label, value) in rows {
+            println!("\t{label:<width$}: {value}", width = label_width);
+        }
+        println!();
+    }
+}
+
+async fn wait_sigterm() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut stream) = signal(SignalKind::terminate()) {
+            stream.recv().await;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        std::future::pending::<()>().await;
+    }
+}
+
+async fn wait_for_blokli_ready(blokli_url: &str, timeout: Duration) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .context("failed to build http client")?;
+    let url = format!("{blokli_url}/readyz");
     let start = std::time::Instant::now();
 
     loop {
-        if client.get(url).send().await.is_ok() {
-            return Ok(());
+        if let Ok(resp) = client.get(&url).send().await {
+            if resp.status().is_success() {
+                return Ok(());
+            }
         }
 
         if start.elapsed() > timeout {
-            anyhow::bail!("timeout waiting for {url}");
+            anyhow::bail!("timeout waiting for blokli indexer at {url}");
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;

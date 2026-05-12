@@ -4,7 +4,8 @@ use clap::Parser;
 use hopr_types::primitive::prelude::HoprBalance;
 
 use crate::identity::{
-    DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_NODES, MAX_NUM_NODES,
+    DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
+    DEFAULT_NUM_NODES, MAX_EXTRA_IDENTITIES, MAX_NUM_NODES,
 };
 
 fn parse_size(s: &str) -> Result<usize, String> {
@@ -84,4 +85,23 @@ pub struct Args {
     /// API token for hoprd REST API (enables authentication)
     #[arg(long)]
     pub api_token: Option<String>,
+
+    /// Number of pre-funded extra identities to create alongside the cluster (0–5).
+    /// Each gets its own Safe + Module, is written to `--data-dir` as an encrypted
+    /// keystore (`extra_id_{i}.id`, password "local-cluster"), and is NOT run as a
+    /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
+    #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
+    pub extra_identities: usize,
+}
+
+fn parse_extras(s: &str) -> Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid number"))?;
+    if n > MAX_EXTRA_IDENTITIES {
+        return Err(format!(
+            "extra-identities must be between 0 and {MAX_EXTRA_IDENTITIES}, got {n}"
+        ));
+    }
+    Ok(n)
 }
