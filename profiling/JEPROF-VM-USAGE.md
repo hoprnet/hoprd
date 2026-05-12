@@ -13,7 +13,7 @@ scp file nixos-test@orb:   # copy file to VM home
 scp 'nixos-test@orb:/tmp/jeprof/*.heap' ./out/   # copy dumps back
 ```
 
-VM user: matches your macOS host user (OrbStack default). Sudo: passwordless via `wheel`. No further creds needed.
+VM user: `nixos-test` (default for the machine name). Sudo: passwordless via `wheel`. No further creds needed.
 
 ## Subcommands of `scripts/jeprof-vm.sh` (run from macOS, repo root)
 
@@ -23,6 +23,7 @@ VM user: matches your macOS host user (OrbStack default). Sudo: passwordless via
 ./scripts/jeprof-vm.sh build-localcluster    # build hoprd-localcluster
 ./scripts/jeprof-vm.sh run                   # single-node hoprd vs BLOKLI_URL
 ./scripts/jeprof-vm.sh localcluster N        # N-node cluster vs CHAIN_URL
+./scripts/jeprof-vm.sh clean                 # wipe transient data/dumps on VM
 ./scripts/jeprof-vm.sh all                   # sync + build + run (single node)
 ```
 
@@ -111,10 +112,10 @@ _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:/tmp/j
 
 ```bash
 # RSS / VSZ snapshot
-ssh nixos-test@orb 'ps -o pid,rss,vsz,comm -p $(pgrep -x hoprd | tr "\n" ",")'
+ssh nixos-test@orb 'pids=$(pgrep -d, -x hoprd); [ -n "$pids" ] && ps -o pid,rss,vsz,comm -p "$pids" || echo "no hoprd processes"'
 
 # top
-ssh nixos-test@orb 'top -p $(pgrep -x hoprd | paste -sd,)'
+ssh nixos-test@orb 'pids=$(pgrep -d, -x hoprd); [ -n "$pids" ] && top -p "$pids" || echo "no hoprd processes"'
 
 # jemalloc stats line is logged automatically by hoprd::jemalloc_stats:
 #   allocated=… active=… mapped=… retained=… arenas_active=… cache_efficiency=…
@@ -231,7 +232,7 @@ Crane diffs cargo inputs; only changed crates recompile.
 - **Added** `scripts/jeprof-vm.sh` with subcommands:
   `sync` / `build` / `build-localcluster` / `run` / `localcluster N` /
   `all`.
-- **Added** `scripts/JEPROF-VM-USAGE.md` (this file).
+- **Added** `profiling/JEPROF-VM-USAGE.md` (this file).
 - **VM env**: installed `git`, `jemalloc`, `graphviz`, `perl` via
   `nix-env`. Updated NixOS config to trust `@wheel`.
 - **Build outputs** moved from `result/` to `result-hoprd/` and

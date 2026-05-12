@@ -228,6 +228,12 @@ cmd_localcluster() {
   "
 }
 
+cmd_clean() {
+  echo "==> Cleaning up transient data and dumps on ${VM_HOST}..."
+  ssh "$VM_HOST" "rm -rf /tmp/hoprd /tmp/hoprd-cluster '${PROFILE_DIR}'"
+  echo "==> Done."
+}
+
 case "${1:-all}" in
 sync) cmd_sync ;;
 build) cmd_build ;;
@@ -245,13 +251,14 @@ pull)
   shift
   cmd_pull "${1:-./jeprof-out}"
   ;;
+clean) cmd_clean ;;
 all)
   cmd_sync
   cmd_build
   cmd_run
   ;;
 *)
-  echo "Usage: $0 [sync|build|build-localcluster|run|localcluster N|analyze MODE [PID]|pull DIR|all]" >&2
+  echo "Usage: $0 [sync|build|build-localcluster|run|localcluster N|analyze MODE [PID]|pull DIR|clean|all]" >&2
   exit 1
   ;;
 esac

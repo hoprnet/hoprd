@@ -85,3 +85,16 @@ Once the VM is set up, use the helper script from your macOS host to drive the p
 ```
 
 For detailed usage of the profiling script, see [JEPROF-VM-USAGE.md](./JEPROF-VM-USAGE.md).
+
+## Troubleshooting
+
+### Identity Password Mismatch
+
+If you see an error like:
+`An identity file is present at /tmp/hoprd/identity but the provided password is not sufficient to decrypt it`
+
+This happens if an existing identity on the VM was created with a different password. You can wipe the transient profiling data and start fresh:
+
+```bash
+./scripts/jeprof-vm.sh clean
+```

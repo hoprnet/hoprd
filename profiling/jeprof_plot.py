@@ -39,8 +39,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
 
 TOTAL_RE = re.compile(r"^Total:\s+([\d.]+)\s+(\w+)\s*$")
+# ROW_RE captures: self, self_unit, self%, cum%, cumulative, cumulative_unit, cum%, function
 ROW_RE = re.compile(
-    r"^\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s+([\d.]+)\s+([\d.]+)%\s+(.+)$"
+    r"^\s*([\d.]+)\s*([a-zA-Z]+)?\s+([\d.]+)%\s+([\d.]+)%\s+([\d.]+)\s*([a-zA-Z]+)?\s+([\d.]+)%\s+(.+)$"
 )
 NAME_RE = re.compile(r"^jeprof\.(\d+)\.(\d+)\.i\d+\.heap$")
 
@@ -57,18 +58,22 @@ class Snapshot:
 def parse_jeprof(out: str, unit_to_mb: bool = True) -> tuple[float, dict[str, float]]:
     """Parse jeprof --text output. Returns (total_MB, {fn: cum_MB})."""
     total = 0.0
+    default_unit = "MB"
     funcs: dict[str, float] = {}
     for line in out.splitlines():
         m = TOTAL_RE.match(line)
         if m:
             v = float(m.group(1))
-            unit = m.group(2)
-            total = v * SIZE_UNITS.get(unit, 1) / SIZE_UNITS["MB"]
+            default_unit = m.group(2)
+            total = v * SIZE_UNITS.get(default_unit, 1) / SIZE_UNITS["MB"]
             continue
         m = ROW_RE.match(line)
         if m:
-            cum_mb = float(m.group(4))  # column 4 is cum (already MB-ish per jeprof default)
-            fn = m.group(6).strip()
+            cum_val = float(m.group(5))
+            cum_unit = m.group(6) or default_unit
+            cum_mb = cum_val * SIZE_UNITS.get(cum_unit, 1) / SIZE_UNITS["MB"]
+
+            fn = m.group(8).strip()
             # Skip jemalloc's own backtrace metadata; it dominates.
             if fn.startswith("_rjem_je_prof_backtrace"):
                 continue
