@@ -57,7 +57,7 @@ impl Default for GenerationConfig {
 }
 
 lazy_static::lazy_static! {
-    static ref NODE_KEYS: [HoprKeys; 5] = [
+    static ref NODE_KEYS: [HoprKeys; MAX_NUM_NODES] = [
         (
             hex!("76a4edbc3f595d4d07671779a0055e30b2b8477ecfd5d23c37afd7b5aa83781d"),
             hex!("71bf1f42ebbfcd89c3e197a3fd7cda79b92499e509b6fefa0fe44d02821d146a")
@@ -187,22 +187,29 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
-            // Subscribe before submitting the tx so the SafeDeployed event is not
-            // missed if blokli indexes the block before our subscription opens.
+            // Start polling before submitting the tx so the indexer result
+            // is never missed regardless of how quickly Anvil mines the block.
             let node_connector_clone = node_connector.clone();
-            let deployment_fut = tokio::task::spawn(async move {
-                node_connector_clone
-                    .await_safe_deployment(
-                        SafeSelector::Owner(node_address),
-                        std::time::Duration::from_secs(120),
-                    )
-                    .await
+            let poll_handle = tokio::task::spawn(async move {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+                loop {
+                    if let Some(s) = node_connector_clone
+                        .safe_info(SafeSelector::Owner(node_address))
+                        .await?
+                    {
+                        return Ok::<_, anyhow::Error>(s);
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        anyhow::bail!("Node {id}: safe not indexed after 120s");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
             });
             node_connector
                 .deploy_safe(initial_token_balance)
                 .await?
                 .await?;
-            deployment_fut.await??
+            poll_handle.await??
         };
 
         let id_file = home_path
