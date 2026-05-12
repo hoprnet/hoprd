@@ -30,11 +30,11 @@ The Nix flake provides pre-configured profiling build targets:
 
 ```bash
 # Build the profiling Docker image (includes jeprof, graphviz, gdb, etc.)
-nix build .#docker-hoprd-profile-x86_64-linux
+nix build .#hoprd-profile-docker
 
 # Build just the profiling binary (without Docker packaging)
-nix build .#binary-hoprd-profile-x86_64-linux    # x86_64
-nix build .#binary-hoprd-profile-aarch64-linux   # ARM64
+nix build .#hoprd-x86_64-linux-profile    # x86_64
+nix build .#hoprd-aarch64-linux-profile   # ARM64
 ```
 
 ## Running the profiling Docker image manually

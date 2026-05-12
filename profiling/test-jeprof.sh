@@ -4,7 +4,7 @@ set -o errexit -o nounset -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Building hoprd-profile-docker image..."
-nix build .#docker-hoprd-profile-x86_64-linux -L 2>&1 | tail -20
+nix build .#hoprd-profile-docker -L 2>&1 | tail -20
 
 CONTAINER_NAME="hoprd-jeprof-test-$$"
 ANALYSIS_CONTAINER="hoprd-jeprof-analyze-$$"

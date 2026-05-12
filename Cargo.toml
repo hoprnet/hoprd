@@ -162,3 +162,10 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]
+
+# memory profiling profile — inherits release optimizations but preserves debug symbols
+# for jeprof symbol resolution
+[profile.memprof]
+inherits = "release"
+debug = 2
+strip = false
