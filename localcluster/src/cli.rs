@@ -3,16 +3,30 @@ use std::{path::PathBuf, str::FromStr};
 use clap::Parser;
 use hopr_types::primitive::prelude::HoprBalance;
 
-use crate::identity::{DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_NODES};
+use crate::identity::{
+    DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_NODES, MAX_NUM_NODES,
+};
+
+fn parse_size(s: &str) -> Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid number"))?;
+    if n < 1 || n > MAX_NUM_NODES {
+        return Err(format!(
+            "size must be between 1 and {MAX_NUM_NODES}, got {n}"
+        ));
+    }
+    Ok(n)
+}
 
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
-    about = "Run a local HOPR cluster using external processes"
+    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions."
 )]
 pub struct Args {
-    /// Number of nodes to start
-    #[arg(long, default_value_t = DEFAULT_NUM_NODES)]
+    /// Number of nodes to start (1–5)
+    #[arg(long, default_value_t = DEFAULT_NUM_NODES, value_parser = parse_size)]
     pub size: usize,
 
     /// Channel funding amount in base units (per channel)
@@ -43,13 +57,21 @@ pub struct Args {
     #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
     pub data_dir: PathBuf,
 
-    /// Docker image containing both Anvil and Blokli (required unless --chain-url is set)
+    /// Container image containing both Anvil and Blokli (required unless --chain-url is set)
     #[arg(long, env = "HOPRD_CHAIN_IMAGE", required_unless_present = "chain_url")]
     pub chain_image: Option<String>,
 
     /// Base URL for Blokli (e.g. http://chain:8080). If set, localcluster will not start the chain container.
     #[arg(long, env = "HOPRD_CHAIN_URL")]
     pub chain_url: Option<String>,
+
+    /// Container runtime CLI used to start the chain container.
+    /// Must support `run --rm --name --platform -p` and `rm -f`.
+    /// `container` (Apple native) additionally supports `ls` for direct IP
+    /// detection, which bypasses macOS NAT for long-lived SSE connections.
+    /// Common values: `docker` (default), `container` (Apple native), `podman`.
+    #[arg(long, env = "HOPRD_CONTAINER_RUNTIME", default_value = "docker")]
+    pub container_runtime: String,
 
     /// Path to the hoprd binary
     #[arg(long, default_value = "hoprd")]

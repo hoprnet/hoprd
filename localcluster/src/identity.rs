@@ -29,6 +29,7 @@ pub const DEFAULT_PRIVATE_KEY: &str =
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
+pub const MAX_NUM_NODES: usize = 5;
 // Increased tx client timeout multiplier for Anvil
 pub const DEFAULT_TX_TIMEOUT_MULTIPLIER: u32 = 10;
 
@@ -157,7 +158,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
 
         eprint!("\x1b[2K\rNode {id}: Checking Safe deployment...");
         let safe = if let Some(safe) = node_connector
-            .safe_info(SafeSelector::NodeAddress(node_address))
+            .safe_info(SafeSelector::Owner(node_address))
             .await?
         {
             safe
@@ -186,12 +187,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
+            // Subscribe before submitting the tx so the SafeDeployed event is not
+            // missed if blokli indexes the block before our subscription opens.
             let node_connector_clone = node_connector.clone();
-            let jh = tokio::task::spawn(async move {
+            let deployment_fut = tokio::task::spawn(async move {
                 node_connector_clone
                     .await_safe_deployment(
-                        SafeSelector::NodeAddress(node_address),
-                        std::time::Duration::from_secs(10),
+                        SafeSelector::Owner(node_address),
+                        std::time::Duration::from_secs(120),
                     )
                     .await
             });
@@ -199,7 +202,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<()> {
                 .deploy_safe(initial_token_balance)
                 .await?
                 .await?;
-            jh.await??
+            deployment_fut.await??
         };
 
         let id_file = home_path

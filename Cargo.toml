@@ -25,7 +25,7 @@ hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", default-featu
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet" }
 
 # crates.io HOPR deps
-hopr-api = { version = "=1.8.2" }
+hopr-api = { version = "=1.9.0" }
 hopr-types = { version = "1.5.4", features = ["use-bindings"] }
 
 # Third-party deps

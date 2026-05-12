@@ -29,14 +29,13 @@ jobs:
           - architecture: aarch64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@a178becb8c3711ae955bad477861bfefe6feceae # build-binaries-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@build-binaries-v2
     permissions:
       contents: read
     with:
       source_branch: ${{ github.event.pull_request.merge_commit_sha }}
       version_type: pr
       architecture: ${{ matrix.architecture }}
-      cachix_cache_name: hoprnet
       build_file: ./hoprd/Cargo.toml
       build_command: ${{ matrix.build_command }}
       binary: hoprd
@@ -49,7 +48,7 @@ jobs:
     name: Docker
     needs: build-binaries
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@43b03a7b5df777770d95c6524f48be34184b26fa # build-docker-v1
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@build-docker-v2
     permissions:
       contents: read
       pull-requests: write
@@ -70,7 +69,6 @@ jobs:
             "build_command": "nix build -L .#docker-hoprd-aarch64-linux"
           }
         ]
-      cachix_cache_name: hoprnet
       build_file: ./hoprd/Cargo.toml
       docker_image_name: hoprd
       docker_image_format: skopeo
@@ -91,7 +89,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Restart Hoprd
+      - name: Deploy to Gnosis Dev
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ secrets.GNOSIS_GITHUB_WORKFLOW_TOKEN }}
