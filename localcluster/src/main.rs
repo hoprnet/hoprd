@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper,
-    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER},
+    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER, GeneratedIdentity},
 };
 use tracing::{debug, error, info, warn};
 
@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
             config_home: data_dir.to_path_buf(),
             identity_password: args.identity_password.clone(),
             random_identities: true,
+            num_extras: args.extra_identities,
             ..Default::default()
         };
 
@@ -104,7 +105,7 @@ async fn main() -> Result<()> {
         }
 
         info!("generating identities and configs via hoprd-gen-test library");
-        identity::generate(&config).await?;
+        let identities = identity::generate(&config).await?;
 
         info!("starting hoprd nodes");
         cleanup.nodes = start_hoprd_nodes(&args, &data_dir, &log_dir).await?;
@@ -139,6 +140,7 @@ async fn main() -> Result<()> {
         }
 
         node_summary(&cleanup.nodes, &args);
+        extras_summary(&identities.extras);
 
         info!("localcluster running; press Ctrl+C to stop");
         tokio::signal::ctrl_c()
@@ -269,6 +271,29 @@ fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args) {
         let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
 
         println!("Node {}", node.id);
+        for (label, value) in rows {
+            println!("\t{label:<width$}: {value}", width = label_width);
+        }
+        println!();
+    }
+}
+
+fn extras_summary(extras: &[GeneratedIdentity]) {
+    if extras.is_empty() {
+        return;
+    }
+
+    for extra in extras {
+        let rows = [
+            ("Address", extra.address.clone()),
+            ("Safe address", extra.safe_address.clone()),
+            ("Module address", extra.module_address.clone()),
+            ("Identity file", extra.id_file.display().to_string()),
+            ("Password", extra.password.clone()),
+        ];
+        let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+
+        println!("Extra {}", extra.id);
         for (label, value) in rows {
             println!("\t{label:<width$}: {value}", width = label_width);
         }
