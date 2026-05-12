@@ -58,8 +58,8 @@ pub struct Args {
     #[arg(long, default_value_t = 3000)]
     pub api_port_base: u16,
 
-    /// P2P host to bind (use "auto" to detect the container interface IP)
-    #[arg(long, default_value = "localhost")]
+    /// P2P host to bind
+    #[arg(long, default_value = "127.0.0.1")]
     pub p2p_host: String,
 
     /// P2P base port (node index is added)
