@@ -139,7 +139,7 @@ async fn main() -> Result<()> {
             client_helper::open_full_mesh_channels(&cleanup.nodes, &args.funding_amount).await?;
         }
 
-        node_summary(&cleanup.nodes, &args);
+        node_summary(&cleanup.nodes, &args, &blokli_url);
         extras_summary(&identities.extras);
 
         info!("localcluster running; press Ctrl+C to stop");
@@ -243,7 +243,9 @@ async fn start_hoprd_nodes(
     Ok(nodes)
 }
 
-fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args) {
+fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args, blokli_url: &str) {
+    println!();
+    println!("Chain (Blokli): {blokli_url}");
     println!();
 
     for node in nodes {
