@@ -43,21 +43,12 @@ nix develop -c cargo build -p hoprd -p hoprd-localcluster
 
 ## Run
 
-The chain image version must match the `blokli-client` version pinned in `Cargo.lock`. Check `Cargo.lock` for the `blokli-client` entry and use the image tag that was built from the same commit. The `latest` tag may have breaking GraphQL schema changes relative to the pinned client.
-
-To find the compatible tag for the currently pinned client:
-
-```bash
-grep -A3 'name = "blokli-client"' Cargo.lock
-# note the source commit, then find the matching image tag in the registry
-```
-
 ### Default (Docker)
 
 ```bash
 rm -rf /tmp/hopr-nodes   # clear any stale state
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
 ./result-1/bin/hoprd-localcluster \
@@ -73,7 +64,7 @@ container system start   # once per boot
 
 rm -rf /tmp/hopr-nodes
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
 HOPRD_CONTAINER_RUNTIME=container \
@@ -234,8 +225,6 @@ docker pull --platform linux/amd64 <chain-image>
 # Apple container
 container image pull --platform linux/amd64 <chain-image>
 ```
-
-**`bloklid-anvil:latest` fails with a schema error** — The `latest` tag may have a breaking GraphQL schema change relative to the `blokli-client` version pinned in `Cargo.lock`. Use a version-pinned tag (e.g. `0.10.5-pr.349`) that matches the client's source commit. See the [Run](#run) section for how to identify the compatible tag.
 
 **Apple `container` system is not running** — `container run` fails immediately. Run `container system start` once after each reboot.
 
