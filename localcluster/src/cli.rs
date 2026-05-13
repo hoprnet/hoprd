@@ -20,18 +20,6 @@ fn parse_size(s: &str) -> Result<usize, String> {
     Ok(n)
 }
 
-fn parse_extras(s: &str) -> Result<usize, String> {
-    let n: usize = s
-        .parse()
-        .map_err(|_| format!("'{s}' is not a valid number"))?;
-    if n > MAX_EXTRA_IDENTITIES {
-        return Err(format!(
-            "extra-identities must be between 0 and {MAX_EXTRA_IDENTITIES}, got {n}"
-        ));
-    }
-    Ok(n)
-}
-
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
@@ -58,8 +46,8 @@ pub struct Args {
     #[arg(long, default_value_t = 3000)]
     pub api_port_base: u16,
 
-    /// P2P host to bind
-    #[arg(long, default_value = "127.0.0.1")]
+    /// P2P host to bind (use "auto" to detect the container interface IP)
+    #[arg(long, default_value = "localhost")]
     pub p2p_host: String,
 
     /// P2P base port (node index is added)
@@ -98,13 +86,22 @@ pub struct Args {
     #[arg(long)]
     pub api_token: Option<String>,
 
-    /// Number of extra pre-funded identities to create alongside the cluster (0–5).
-    ///
-    /// Each extra identity gets its own Safe + Module and is written to `--data-dir`
-    /// as an encrypted keystore (`extra_id_{i}.id`). The password is always
-    /// `local-cluster`. Extras are NOT run as hoprd nodes — they exist solely
-    /// for external tooling that needs a funded HOPR identity on the local chain.
-    /// Addresses are deterministic across runs (hardcoded keys).
+    /// Number of pre-funded extra identities to create alongside the cluster (0–5).
+    /// Each gets its own Safe + Module, is written to `--data-dir` as an encrypted
+    /// keystore (`extra_id_{i}.id`, password "local-cluster"), and is NOT run as a
+    /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+}
+
+fn parse_extras(s: &str) -> Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid number"))?;
+    if n > MAX_EXTRA_IDENTITIES {
+        return Err(format!(
+            "extra-identities must be between 0 and {MAX_EXTRA_IDENTITIES}, got {n}"
+        ));
+    }
+    Ok(n)
 }

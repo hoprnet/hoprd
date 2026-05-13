@@ -5,7 +5,7 @@ use hopr_chain_connector::{
     BlockchainConnectorConfig,
     api::*,
     blokli_client::{BlokliClient, BlokliClientConfig, BlokliQueryClient},
-    create_trustful_safeless_hopr_blokli_connector,
+    create_trustful_hopr_blokli_connector, create_trustful_safeless_hopr_blokli_connector,
     reexports::chain::exports::alloy::hex,
 };
 use hopr_lib::{
@@ -51,6 +51,11 @@ pub struct GenerationConfig {
     pub random_identities: bool,
     /// Number of extra identities to provision (0–`MAX_EXTRA_IDENTITIES`).
     pub num_extras: usize,
+    /// P2P bind/announce host. Used to pre-announce nodes so blokli indexes
+    /// the accounts before hoprd starts.
+    pub p2p_host: String,
+    /// Base P2P port; node `i` listens on `p2p_port_base + i`.
+    pub p2p_port_base: u16,
 }
 
 impl Default for GenerationConfig {
@@ -63,6 +68,8 @@ impl Default for GenerationConfig {
             identity_password: DEFAULT_IDENTITY_PASSWORD.to_string(),
             random_identities: false,
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
+            p2p_host: "127.0.0.1".to_string(),
+            p2p_port_base: 9000,
         }
     }
 }
@@ -137,8 +144,30 @@ lazy_static::lazy_static! {
     ];
 }
 
-/// Generate test node Safes and hoprd configuration files, plus optional extra
+/// Build the multiaddr that hoprd will announce on chain for a given host/port.
+///
+/// The format must match what hoprd derives from its `--host` argument so that
+/// blokli sees the same multiaddr from the pre-announce and hoprd startup,
+/// allowing hoprd to receive `AlreadyAnnounced` and skip the on-chain announce.
+///
+/// IP addresses use `/ip4/<addr>/tcp/<port>`; all other values (including
+/// "localhost") use `/dns4/<host>/tcp/<port>`.
+fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> {
+    let s = if host.parse::<std::net::IpAddr>().is_ok() {
+        format!("/ip4/{host}/tcp/{port}")
+    } else {
+        format!("/dns4/{host}/tcp/{port}")
+    };
+    s.parse().context("invalid pre-announce multiaddr")
+}
+
+/// Generate test node Safes, hoprd configuration files, and optional extra
 /// identities for external tooling.
+///
+/// Each cluster node is pre-announced on-chain using a module-aware connector
+/// before hoprd starts, ensuring blokli indexes the account during its
+/// catch-up phase rather than the live phase (where announcement events are
+/// not monitored).
 pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOutput> {
     std::fs::create_dir_all(&config.config_home)?;
     let home_path = &config.config_home;
@@ -170,6 +199,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
+    let p2p_host = &config.p2p_host;
 
     let mut nodes = Vec::with_capacity(config.num_nodes);
 
@@ -196,6 +226,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
         eprint!("Node {id}: Checking balances...");
 
+        // Send 1 xDai to the new node address from Anvil 0 account
         let node_native_balance: XDaiBalance = node_connector.balance(node_address).await?;
         if node_native_balance < initial_native_balance {
             let top_up = initial_native_balance - node_native_balance;
@@ -224,6 +255,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         {
             safe
         } else {
+            // Send 1000 wxHOPR tokens to the new node address from Anvil 0 account
             eprint!("\x1b[2K\rNode {id}: Topping up to {initial_token_balance}...");
             let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
             if node_token_balance < initial_token_balance {
@@ -247,6 +279,8 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             }
 
             eprint!("\x1b[2K\rNode {id}: Deploying Safe...");
+            // Subscribe before submitting the tx so the SafeDeployed event is not
+            // missed if blokli indexes the block before our subscription opens.
             let node_connector_clone = node_connector.clone();
             let poll_handle = tokio::task::spawn(async move {
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
@@ -278,6 +312,52 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             poll_handle.await??
         };
 
+        // Pre-announce the node's KeyBinding + multiaddr before hoprd starts.
+        //
+        // Blokli's live-phase filter does not include the announcements contract, so
+        // any KeyBinding/Announcement txs submitted by hoprd at startup may be missed.
+        // By pre-announcing here (while blokli is still processing blocks from the
+        // Safe-deployment epoch), the events land in a range that blokli's partial
+        // re-index (triggered by hoprd's RegisteredNodeSafe tx) will cover.
+        eprint!("\x1b[2K\rNode {id}: Pre-announcing on chain...");
+        let mut module_connector = create_trustful_hopr_blokli_connector(
+            &kp.chain_key,
+            BlockchainConnectorConfig {
+                tx_timeout_multiplier: DEFAULT_TX_TIMEOUT_MULTIPLIER,
+                ..Default::default()
+            },
+            blokli_client.clone(),
+            safe.module,
+        )
+        .await?;
+        module_connector.connect().await?;
+
+        // Register node↔Safe binding in HoprNodeSafeRegistry before announcing.
+        // hoprd does the same on startup; omitting this causes InvalidTokenSender()
+        // in the HoprAnnouncements keyBind call.
+        match module_connector.register_safe(&safe.address).await {
+            Ok(awaiter) => {
+                awaiter.await.context("safe registration")?;
+            }
+            Err(SafeRegistrationError::AlreadyRegistered(_)) => {}
+            Err(e) => return Err(anyhow::anyhow!("safe registration failed: {e}")),
+        }
+
+        let multiaddr = build_announce_multiaddr(p2p_host, config.p2p_port_base + id as u16)?;
+        match module_connector
+            .announce(&[multiaddr], &kp.packet_key)
+            .await
+        {
+            Ok(awaiter) => {
+                awaiter.await.context("pre-announce confirmation")?;
+                eprintln!("\x1b[2K\rNode {id}: Pre-announced");
+            }
+            Err(AnnouncementError::AlreadyAnnounced) => {
+                eprintln!("\x1b[2K\rNode {id}: Already announced, skipping pre-announce");
+            }
+            Err(e) => return Err(anyhow::anyhow!("pre-announce failed: {e}")),
+        }
+
         let id_file = home_path.join(format!("node_id_{id}.id"));
         let id_file_str = id_file
             .to_str()
@@ -290,6 +370,8 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 network: UserHoprNetworkConfig {
                     announce_local_addresses: true,
                     prefer_local_addresses: true,
+                    probe_recheck_threshold: std::time::Duration::from_secs(10),
+                    probe_interval: std::time::Duration::from_secs(3),
                     ..Default::default()
                 },
                 safe_module: SafeModule {

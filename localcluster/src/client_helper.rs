@@ -1,8 +1,6 @@
 use std::process::Child;
 
 use anyhow::{Context, Result};
-use futures::future::try_join_all;
-use futures::FutureExt;
 use hopr_lib::api::types::primitive::prelude::HoprBalance;
 use hoprd_api_client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
@@ -74,19 +72,63 @@ impl HoprdApiClient {
             amount: amount.to_string(),
             destination: destination.to_string(),
         };
-        match self.inner.open_channel(&req).await {
-            Ok(resp) => {
-                let inner = resp.into_inner();
-                debug!(destination, channel_id = %inner.channel_id, tx = %inner.transaction_receipt, "channel opened");
-                Ok(())
+        for attempt in 1..=2u32 {
+            match self.inner.open_channel(&req).await {
+                Ok(resp) => {
+                    let inner = resp.into_inner();
+                    debug!(destination, channel_id = %inner.channel_id, tx = %inner.transaction_receipt, "channel opened");
+                    return Ok(());
+                }
+                Err(hoprd_api_client::Error::UnexpectedResponse(resp)) => {
+                    let status = resp.status();
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "<body unavailable>".to_string());
+
+                    // hoprd times out after 2*expectedBlockTime waiting for blokli to deliver
+                    // the on-chain "channel opened" event. The tx was submitted (the error body
+                    // contains its hash) and is almost certainly mined. Give blokli 5s to catch
+                    // up, then verify via the channels list before deciding whether to retry.
+                    if status.as_u16() == 422 && body.contains("timed out") {
+                        warn!(
+                            destination,
+                            attempt,
+                            "channel open confirmation timed out; waiting 5s then checking channel state"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        if self.is_outgoing_channel_open(destination).await? {
+                            tracing::info!(
+                                destination,
+                                "channel confirmed open (blokli event arrived during 5s wait)"
+                            );
+                            return Ok(());
+                        }
+                        if attempt < 2 {
+                            continue;
+                        }
+                    }
+
+                    anyhow::bail!("open_channel to {destination} HTTP {status}: {body}");
+                }
+                Err(e) => return Err(anyhow::anyhow!(e)),
             }
-            Err(hoprd_api_client::Error::UnexpectedResponse(resp)) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_else(|_| "<body unavailable>".to_string());
-                anyhow::bail!("open_channel to {destination} HTTP {status}: {body}");
-            }
-            Err(e) => Err(anyhow::anyhow!(e)),
         }
+        unreachable!()
+    }
+
+    async fn is_outgoing_channel_open(&self, destination: &str) -> Result<bool> {
+        let resp = self
+            .inner
+            .list_channels(None, None)
+            .await
+            .map_err(|e| anyhow::anyhow!("list_channels: {e}"))?;
+        let dest_lower = destination.to_lowercase();
+        Ok(resp
+            .into_inner()
+            .outgoing
+            .iter()
+            .any(|ch| ch.peer_address.to_lowercase() == dest_lower && ch.status == "Open"))
     }
 
     pub async fn ping_peer(&self, address: &str) -> Result<()> {
@@ -143,11 +185,11 @@ pub async fn wait_full_mesh_reachable(
         }
 
         if start.elapsed() > timeout {
-            let pairs_str: Vec<_> = failed
-                .iter()
-                .map(|(s, d)| format!("{s}→{d}"))
-                .collect();
-            anyhow::bail!("timeout waiting for peer visibility: {}", pairs_str.join(", "));
+            let pairs_str: Vec<_> = failed.iter().map(|(s, d)| format!("{s}→{d}")).collect();
+            anyhow::bail!(
+                "timeout waiting for peer visibility: {}",
+                pairs_str.join(", ")
+            );
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -157,47 +199,27 @@ pub async fn wait_full_mesh_reachable(
 pub async fn open_full_mesh_channels(nodes: &[NodeProcess], amount: &HoprBalance) -> Result<()> {
     let amount = amount.to_string();
 
-    // Each source node shares a Safe nonce, so its channel opens must be serialized.
-    // Channel opens across different source nodes are independent and can run in parallel.
-    let per_source_tasks: Vec<_> = nodes
-        .iter()
-        .map(|src| {
-            let Some(src_addr) = src.address.clone() else {
-                return futures::future::err(anyhow::anyhow!("node {} address missing", src.id))
-                    .boxed();
+    // Serialize all channel opens globally: hoprd waits ~2s for the on-chain
+    // confirmation event; concurrent submissions overwhelm blokli's event delivery.
+    // open_channel() handles the "timed out" case by retrying after verifying
+    // the channel state via the channels list API.
+    for src in nodes {
+        let Some(src_addr) = src.address.as_deref() else {
+            anyhow::bail!("node {} address missing", src.id);
+        };
+        for dst in nodes {
+            let Some(dst_addr) = dst.address.as_deref() else {
+                anyhow::bail!("node {} address missing", dst.id);
             };
-            let destinations: Vec<_> = nodes
-                .iter()
-                .filter_map(|dst| {
-                    let dst_addr = dst.address.as_deref()?;
-                    if src_addr == dst_addr {
-                        return None;
-                    }
-                    Some((dst.id, dst_addr.to_string()))
-                })
-                .collect();
-
-            let api = src.api.clone();
-            let amount = amount.clone();
-            let src_id = src.id;
-
-            async move {
-                for (dst_id, dst_addr) in destinations {
-                    let result = api.open_channel(&dst_addr, &amount).await;
-                    match &result {
-                        Ok(()) => tracing::info!(src = src_id, dst = dst_id, "channel opened"),
-                        Err(e) => warn!(src = src_id, dst = dst_id, error = %e, "channel open failed"),
-                    }
-                    result.with_context(|| format!("node {src_id}→{dst_id}"))?;
-                }
-                Ok(())
+            if src_addr == dst_addr {
+                continue;
             }
-            .boxed()
-        })
-        .collect();
-
-    try_join_all(per_source_tasks)
-        .await
-        .context("failed to open channels")?;
+            src.api
+                .open_channel(dst_addr, &amount)
+                .await
+                .with_context(|| format!("node {}→{}", src.id, dst.id))?;
+            tracing::info!(src = src.id, dst = dst.id, "channel opened");
+        }
+    }
     Ok(())
 }
