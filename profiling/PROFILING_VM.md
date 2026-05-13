@@ -1,28 +1,32 @@
-# Setting up the jemalloc Profiling VM (OrbStack + NixOS)
+# Setting Up the jemalloc Profiling VM (OrbStack + NixOS)
 
-Since `jemalloc` profiling is Linux-only, we use a NixOS virtual machine running on OrbStack to build and run `hoprd` with heap profiling enabled on macOS hosts.
+jemalloc heap profiling is Linux-only. To profile `hoprd` on a macOS host, this workflow uses a NixOS virtual machine running under OrbStack. The VM handles building and running the profiling binary; your macOS machine drives everything via SSH and the `jeprof-vm.sh` helper script.
+
+This is a **one-time setup**. Once complete, follow [JEPROF-VM-USAGE.md](./JEPROF-VM-USAGE.md) for day-to-day profiling.
+
+---
 
 ## 1. Create the VM
 
-If you haven't already, install [OrbStack](https://orbstack.dev/). Then, create a new NixOS machine:
+Install [OrbStack](https://orbstack.dev/) if you haven't already, then create a NixOS machine:
 
 ```bash
 orb create nixos nixos-test
 ```
 
-## 2. Configure SSH
+## 2. Verify SSH Access
 
-OrbStack automatically manages SSH keys. The VM is accessible at `nixos-test@orb`. Your SSH keys are typically located at `~/.orbstack/ssh/id_ed25519`.
-
-Verify the connection:
+OrbStack automatically manages SSH keys and wires them into `~/.ssh/config`. The VM is accessible at `nixos-test@orb`. Verify the connection:
 
 ```bash
 ssh nixos-test@orb
 ```
 
-## 3. Initial NixOS Setup
+SSH keys are stored at `~/.orbstack/ssh/id_ed25519`.
 
-Once logged into the VM, perform these one-time setup steps:
+## 3. Configure NixOS
+
+Log into the VM and perform these one-time setup steps.
 
 ### Enable Nix Flakes
 
@@ -31,16 +35,15 @@ mkdir -p ~/.config/nix
 echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 ```
 
-### Configure Trusted Users
+### Add Trusted Users
 
-To allow building from the repo using Nix flakes, you need to be a trusted user. Edit `/etc/nixos/configuration.nix` (using `sudo`):
+Nix builds via flakes require the current user to be trusted. Edit `/etc/nixos/configuration.nix` with `sudo`:
 
 ```nix
-# Add this to your configuration.nix
 nix.settings.trusted-users = [ "root" "@wheel" ];
 ```
 
-Then apply the changes:
+Apply the change:
 
 ```bash
 sudo nixos-rebuild switch
@@ -48,52 +51,55 @@ sudo nixos-rebuild switch
 
 ### Install Required Tools
 
-Install the base dependencies needed for building and analyzing heap dumps:
-
 ```bash
-nix-env -iA nixos.git \
-        nixos.jemalloc \
-        nixos.graphviz \
-        nixos.perl \
-        nixos.binutils \
-        nixos.openssl \
-        nixos.python3
+nix-env -iA \
+  nixos.git \
+  nixos.jemalloc \
+  nixos.graphviz \
+  nixos.perl \
+  nixos.binutils \
+  nixos.openssl \
+  nixos.python3
 ```
 
-## 4. Networking and Port Forwarding
+This provides `jeprof`, `dot`, `objdump`, `addr2line`, `nm`, `libssl.so.3`, and `python3` — everything needed to build and analyze heap dumps.
 
-### Domain Name
+---
 
-OrbStack provides automatic local DNS. The VM is reachable from your macOS host at:
+## 4. Networking
 
-- `nixos-test.orb`
-- `nixos-test.local`
+### DNS
 
-### Port Mapping
+OrbStack provides automatic local DNS. From the macOS host, the VM is reachable at `nixos-test.orb` or `nixos-test.local`.
 
-OrbStack automatically forwards ports from the VM to the host's loopback interface. If you run a `hoprd` node on port `3000` inside the VM, it will be accessible at `http://localhost:3000` on your macOS host.
+### Port Forwarding
 
-> **Note:** For `localcluster` runs where multiple nodes use incrementing ports (3000, 3001, etc.), OrbStack handles this mapping automatically.
+OrbStack automatically forwards ports from the VM to the macOS loopback interface. A `hoprd` node running on port `3000` inside the VM is accessible at `http://localhost:3000` on macOS. For `localcluster` runs, OrbStack handles the incrementing ports (3000, 3001, …) automatically.
 
-## 5. Usage
+---
 
-Once the VM is set up, use the helper script from your macOS host to drive the profiling workflow:
+## 5. Next Steps
+
+Once the VM is set up, use the helper script from your macOS host to drive the full profiling workflow:
 
 ```bash
-# Sync repo to VM, build profiling binary, and run
+# Sync repo to VM, build profiling binary, and run a single node
 ./scripts/jeprof-vm.sh all
 ```
 
-For detailed usage of the profiling script, see [JEPROF-VM-USAGE.md](./JEPROF-VM-USAGE.md).
+See [JEPROF-VM-USAGE.md](./JEPROF-VM-USAGE.md) for the complete reference.
+
+---
 
 ## Troubleshooting
 
-### Identity Password Mismatch
+### Identity password mismatch
 
-If you see an error like:
-`An identity file is present at /tmp/hoprd/identity but the provided password is not sufficient to decrypt it`
+```
+An identity file is present at /tmp/hoprd/identity but the provided password is not sufficient to decrypt it
+```
 
-This happens if an existing identity on the VM was created with a different password. You can wipe the transient profiling data and start fresh:
+This happens when an existing identity on the VM was created with a different password. Wipe the transient profiling data and start fresh:
 
 ```bash
 ./scripts/jeprof-vm.sh clean

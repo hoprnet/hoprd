@@ -1,93 +1,114 @@
-# jemalloc profiling on OrbStack NixOS VM — usage
+# jemalloc Heap Profiling on OrbStack NixOS VM
 
-jemalloc profiling is Linux-only. macOS host builds + drives, VM runs.
+This guide covers day-to-day use of the `jeprof-vm.sh` helper script for building, running, and analyzing jemalloc heap profiles of `hoprd` on a NixOS VM hosted by OrbStack.
+
+> **Prerequisites:** Complete the one-time VM setup described in [PROFILING_VM.md](./PROFILING_VM.md) before proceeding.
+
+jemalloc profiling is Linux-only. This workflow lets macOS developers drive the full profiling cycle: source is synced to a local NixOS VM, built there, run with heap profiling enabled, and the resulting dump files are pulled back to macOS for analysis.
+
+---
 
 ## Connecting to the VM
 
-SSH key is at `~/.orbstack/ssh/id_ed25519`. Already wired into
-`~/.ssh/config` via the OrbStack include.
+OrbStack wires the SSH key at `~/.orbstack/ssh/id_ed25519` into `~/.ssh/config` automatically.
 
 ```bash
-ssh nixos-test@orb         # interactive shell
-scp file nixos-test@orb:   # copy file to VM home
-scp 'nixos-test@orb:/tmp/jeprof/*.heap' ./out/   # copy dumps back
+ssh nixos-test@orb                              # interactive shell
+scp file nixos-test@orb:                        # copy a file to the VM home directory
+scp 'nixos-test@orb:/tmp/jeprof/*.heap' ./out/  # copy heap dumps back to macOS
 ```
 
-VM user: `nixos-test` (default for the machine name). Sudo: passwordless via `wheel`. No further creds needed.
+The VM user is `nixos-test`. Sudo is passwordless via the `wheel` group — no additional credentials are needed.
 
-## Subcommands of `scripts/jeprof-vm.sh` (run from macOS, repo root)
+---
+
+## The `jeprof-vm.sh` Script
+
+Run all subcommands from the **macOS host**, at the repository root.
 
 ```bash
-./scripts/jeprof-vm.sh sync                  # tar-pipe repo to VM
-./scripts/jeprof-vm.sh build                 # build hoprd profile binary
-./scripts/jeprof-vm.sh build-localcluster    # build hoprd-localcluster
-./scripts/jeprof-vm.sh run                   # single-node hoprd vs BLOKLI_URL
-./scripts/jeprof-vm.sh localcluster N        # N-node cluster vs CHAIN_URL
-./scripts/jeprof-vm.sh clean                 # wipe transient data/dumps on VM
-./scripts/jeprof-vm.sh all                   # sync + build + run (single node)
+./scripts/jeprof-vm.sh sync                  # tar-pipe the repo to the VM
+./scripts/jeprof-vm.sh build                 # build the hoprd profiling binary on the VM
+./scripts/jeprof-vm.sh build-localcluster    # build hoprd-localcluster on the VM
+./scripts/jeprof-vm.sh run                   # run a single hoprd node against a remote blokli URL
+./scripts/jeprof-vm.sh localcluster N        # run an N-node cluster against a local anvil_blokli
+./scripts/jeprof-vm.sh clean                 # wipe transient data and heap dumps on the VM
+./scripts/jeprof-vm.sh all                   # sync + build + run (single node, convenience alias)
 ```
 
-Env overrides:
+Both `run` and `localcluster` are blocking — they follow the process until you press Ctrl-C. A final heap dump is always written on shutdown (`prof_final:true`).
+
+### Environment overrides
+
+| Variable            | Default                                          | Description                                             |
+| ------------------- | ------------------------------------------------ | ------------------------------------------------------- |
+| `VM_HOST`           | `nixos-test@orb`                                 | SSH target for the NixOS VM                             |
+| `BLOKLI_URL`        | `https://blokli.rotsee.hoprnet.link`             | Blokli endpoint used by the single-node `run` subcommand |
+| `CHAIN_URL`         | `http://host.orb.internal:8080`                  | Chain + blokli endpoint used by `localcluster`          |
+| `HOPRD_PASSWORD`    | `test-profiling-password`                        | Identity file password                                  |
+| `PROFILE_DIR`       | `/tmp/jeprof`                                    | Directory on the VM where heap dumps are written        |
+| `CLUSTER_DIR`       | `/tmp/hoprd-cluster`                             | Data directory for cluster node state on the VM         |
+| `LG_PROF_INTERVAL`  | `25`                                             | Dump every 2^N bytes of net allocation (25 ≈ 32 MB)     |
+
+### Build artifact locations (on the VM)
+
+```
+~/hoprd/result-hoprd/bin/hoprd                    # statically linked (musl), jemalloc-profiling
+~/hoprd/result-hoprd/bin/hoprd-cfg
+~/hoprd/result-localcluster/bin/hoprd-localcluster
+```
+
+Named result symlinks let both binaries coexist on the same filesystem without clobbering each other.
+
+> **First build note:** The cross-toolchain (GCC + binutils + musl) compiles from source the first time because `cache.nixos.org` has no substitutes for these custom musl-cross hashes. Expect 30–60 minutes. Subsequent incremental builds are fast — Crane only recompiles changed crates.
+
+---
+
+## Multi-Node Cluster Workflow
+
+This is the recommended path for realistic memory profiling across multiple nodes.
+
+### 1. Start `anvil_blokli` on macOS
+
+The cluster nodes need a local chain and blokli endpoint, which the `anvil_blokli` Docker image provides on port 8080. From the VM the endpoint is reachable at `http://host.orb.internal:8080`.
 
 ```bash
-VM_HOST=nixos-test@orb                          # default
-BLOKLI_URL=https://blokli.rotsee.hoprnet.link   # single-node remote testnet
-CHAIN_URL=http://host.orb.internal:8080         # cluster local anvil_blokli
-HOPRD_PASSWORD=test-profiling-password
-PROFILE_DIR=/tmp/jeprof                         # heap dumps on VM
-CLUSTER_DIR=/tmp/hoprd-cluster                  # cluster data dir on VM
-LG_PROF_INTERVAL=25                             # dump every 2^25 ≈ 32MB allocated; lower = more dumps
+docker rm -f anvil_blokli
+docker run --rm --name anvil_blokli --platform linux/amd64 -p 8080:8080 -d \
+  europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 ```
 
-`run` and `localcluster` block; Ctrl-C to stop. Final dump emitted on
-shutdown (`prof_final:true`).
+### 2. Build on the VM
 
-Build outputs use named symlinks so they don't clobber each other:
+Do this once, then only when source changes.
 
+```bash
+./scripts/jeprof-vm.sh sync
+./scripts/jeprof-vm.sh build               # hoprd profiling binary
+./scripts/jeprof-vm.sh build-localcluster  # cluster orchestrator
 ```
-~/hoprd/result-hoprd          # hoprd profile binary
-~/hoprd/result-localcluster   # hoprd-localcluster binary
+
+### 3. Run the cluster with profiling
+
+```bash
+./scripts/jeprof-vm.sh localcluster 3      # start 3 nodes
 ```
 
-## Full localcluster workflow (multi-node, jemalloc enabled)
+Each child `hoprd` process inherits `_RJEM_MALLOC_CONF` from the orchestrator (Rust's `Command::new` inherits the parent environment by default). The PID is embedded in every dump filename (`jeprof.<PID>.<seq>.iN.heap`), so all nodes write to the same `PROFILE_DIR` without filename collisions.
 
-1. **Start anvil_blokli on macOS** (provides chain + blokli on `:8080`):
+Node REST API endpoints are `http://127.0.0.1:3000`, `:3001`, `:3002`, … (one per node). These are only reachable from inside the VM unless you set up `ssh -L` port forwarding.
 
-   ```bash
-   docker rm -f anvil_blokli
-   docker run --rm --name anvil_blokli --platform linux/amd64 -p 8080:8080 -d \
-     europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
-   ```
+---
 
-   Endpoint reachable from VM at `http://host.orb.internal:8080/graphql`.
-
-2. **Build both binaries on VM** (one-time, then incremental):
-
-   ```bash
-   ./scripts/jeprof-vm.sh sync
-   ./scripts/jeprof-vm.sh build              # hoprd profile
-   ./scripts/jeprof-vm.sh build-localcluster # cluster orchestrator
-   ```
-
-3. **Run cluster with profiling**:
-
-   ```bash
-   ./scripts/jeprof-vm.sh localcluster 3     # 3 nodes
-   ```
-
-   Each spawned hoprd inherits `_RJEM_MALLOC_CONF` from the orchestrator
-   (Rust `Command::new` inherits parent env by default). PID is baked
-   into dump filename (`jeprof.<PID>.<N>.iN.heap`), so all nodes write
-   to the same `PROFILE_DIR` without colliding.
-
-   API endpoints: `http://127.0.0.1:3000`, `:3001`, `:3002`, ... (one
-   per node). Only reachable from the VM unless you `ssh -L` forward.
-
-## Single-node run (against rotsee testnet)
+## Single-Node Run (against the rotsee testnet)
 
 ```bash
 ./scripts/jeprof-vm.sh run
-# or, manual on the VM:
+```
+
+Or manually, directly on the VM:
+
+```bash
 ssh nixos-test@orb
 cd ~/hoprd
 mkdir -p /tmp/jeprof /tmp/hoprd
@@ -100,181 +121,123 @@ _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:/tmp/j
   --blokli-url https://blokli.rotsee.hoprnet.link
 ```
 
-`_RJEM_MALLOC_CONF` knobs:
+### Tuning `_RJEM_MALLOC_CONF`
 
-- `lg_prof_sample:19` → sample every 2^19 ≈ 512KB allocations
-- `lg_prof_interval:25` → dump heap every 2^25 ≈ 32MB net allocations (default)
-- `prof_final:true` → dump on exit
-- override via `LG_PROF_INTERVAL=N`; 30 ≈ 1GB, 20 ≈ 1MB (warning: 1MB
-  generates 100k+ dumps and 7+GB in a few minutes for a 3-node cluster)
+| Parameter          | Value         | Effect                                                                             |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------- |
+| `lg_prof_sample`   | `19`          | Sample every 2^19 ≈ 512 KB of allocations                                         |
+| `lg_prof_interval` | `25` (default) | Dump every 2^25 ≈ 32 MB of net allocations                                        |
+| `lg_prof_interval` | `30`          | Dump every ~1 GB — sparse dumps for long runs                                      |
+| `lg_prof_interval` | `20`          | Dump every ~1 MB — high frequency; generates 100k+ files and 7+ GB in minutes for a 3-node cluster |
+| `prof_final`       | `true`        | Always write a final dump on exit                                                  |
 
-## Observing memory live
+Override per-run with the `LG_PROF_INTERVAL` env variable.
+
+---
+
+## Observing Memory Live
 
 ```bash
 # RSS / VSZ snapshot
 ssh nixos-test@orb 'pids=$(pgrep -d, -x hoprd); [ -n "$pids" ] && ps -o pid,rss,vsz,comm -p "$pids" || echo "no hoprd processes"'
 
-# top
+# Interactive top
 ssh nixos-test@orb 'pids=$(pgrep -d, -x hoprd); [ -n "$pids" ] && top -p "$pids" || echo "no hoprd processes"'
-
-# jemalloc stats line is logged automatically by hoprd::jemalloc_stats:
-#   allocated=… active=… mapped=… retained=… arenas_active=… cache_efficiency=…
 ```
 
-## Analyzing dumps via the helper (recommended)
+When built with the `allocator-jemalloc-stats` feature, `hoprd` also logs jemalloc statistics every 60 seconds at the `INFO` level:
+
+```
+allocated=… active=… mapped=… retained=… arenas_active=… cache_efficiency=…
+```
+
+---
+
+## Analyzing Heap Dumps
+
+### Using the helper script (recommended)
+
+Run from macOS, at the repository root. The script SSHes into the VM, runs `jeprof`, and prints or writes results locally.
 
 ```bash
-./scripts/jeprof-vm.sh analyze summary       # top inuse_space allocators per PID, latest dump
-./scripts/jeprof-vm.sh analyze diff          # latest vs earliest snapshot per PID (growth)
-./scripts/jeprof-vm.sh analyze top           # cumulative alloc_space, latest dump
-./scripts/jeprof-vm.sh analyze svg           # write /tmp/jeprof_<PID>_diff.svg per PID
+./scripts/jeprof-vm.sh analyze summary        # top in-use allocators per PID, latest dump
+./scripts/jeprof-vm.sh analyze diff           # latest vs. earliest snapshot per PID (growth delta)
+./scripts/jeprof-vm.sh analyze top            # cumulative alloc_space, latest dump
+./scripts/jeprof-vm.sh analyze svg            # write /tmp/jeprof_<PID>_diff.svg per PID
 
-./scripts/jeprof-vm.sh analyze summary 284977   # restrict to one PID
-./scripts/jeprof-vm.sh pull ./jeprof-out        # scp earliest+latest+binary to macOS
+./scripts/jeprof-vm.sh analyze summary 284977  # restrict to a specific PID
+./scripts/jeprof-vm.sh pull ./jeprof-out       # scp earliest + latest dumps and binary to macOS
 ```
 
-How to read the text output:
+#### Reading the text output
 
-| col 1 | col 2 | col 3 | col 4 | col 5 | col 6    |
-| ----- | ----- | ----- | ----- | ----- | -------- |
-| self  | self% | cum%  | cum   | cum%  | function |
+| Column 1 | Column 2 | Column 3 | Column 4 | Column 5 | Column 6 |
+| -------- | -------- | -------- | -------- | -------- | -------- |
+| self     | self%    | cum      | cum%     | (unused) | function |
 
-- The first row is almost always `_rjem_je_prof_backtrace` at ~100%. That
-  is jemalloc's own per-sample metadata, not your code. Skip it and
-  read the cumulative percentages of user functions below.
-- For "what grew?" use `analyze diff` — non-zero rows are the delta.
-- For "what allocates total bytes?" use `analyze top` (alloc_space).
-- For "what is currently held?" use `analyze summary` (inuse_space).
+- The first row is almost always `_rjem_je_prof_backtrace` at ~100%. This is jemalloc's own per-sample metadata overhead — skip it and read the cumulative percentages of the user functions below.
+- **"What grew?"** → use `analyze diff`. Non-zero rows are the delta between the earliest and latest snapshot.
+- **"What allocates total bytes?"** → use `analyze top` (alloc_space).
+- **"What is currently held?"** → use `analyze summary` (inuse_space).
 
-## Analyzing dumps with jeprof (on the VM, manual)
+### Manual analysis on the VM
 
-`jeprof` + `graphviz` already installed in user profile. Binary path
-matters — must match the one that produced the dumps.
+`jeprof` and `graphviz` are already installed in the VM user profile. The binary path must match the one that produced the dumps.
 
 ```bash
 ssh nixos-test@orb
 BIN=~/hoprd/result-hoprd/bin/hoprd
 H=/tmp/jeprof
 
-# Top allocators (text):
+# Top allocators (text output):
 jeprof --text "$BIN" "$H/jeprof.<PID>.<N>.iN.heap" | head -30
 
 # SVG call graph:
 jeprof --svg "$BIN" "$H/jeprof.<PID>.<N>.iN.heap" > /tmp/heap.svg
 
-# Diff (growth between snapshots A → B):
+# Growth diff between snapshots A and B:
 jeprof --text --base="$H/jeprof.<PID>.<A>.iA.heap" \
        "$BIN" "$H/jeprof.<PID>.<B>.iB.heap"
 
 # Interactive shell:
 jeprof "$BIN" "$H"/jeprof.*.heap
-# commands inside: top, list <fn>, web, disasm <fn>, peek <fn>
+# Inside: top, list <fn>, web, disasm <fn>, peek <fn>
 ```
 
-Filter by node when running a cluster — each node's PID is distinct:
+When running a cluster, filter by PID — each node's dumps are distinct:
 
 ```bash
-ls /tmp/jeprof/                          # group by PID
+ls /tmp/jeprof/                                        # group by PID prefix
 jeprof --text "$BIN" /tmp/jeprof/jeprof.12345.*.heap | head
 ```
 
-Pull artifacts to macOS for offline analysis:
+### Pulling dumps to macOS for offline analysis
 
 ```bash
 mkdir -p ~/jeprof-out
 scp 'nixos-test@orb:/tmp/jeprof/*.heap' ~/jeprof-out/
 scp nixos-test@orb:~/hoprd/result-hoprd/bin/hoprd ~/jeprof-out/hoprd
-# install jemalloc on macOS (brew install jemalloc) then run jeprof
-# the same way against ~/jeprof-out/hoprd + heap files.
+
+# Install jemalloc on macOS (brew install jemalloc), then run jeprof the same way:
+jeprof --text ~/jeprof-out/hoprd ~/jeprof-out/jeprof.*.heap | head -30
 ```
 
-## One-time VM setup (already done)
+---
 
-- `git` installed: `nix-env -iA nixos.git` (build sandbox needs it for
-  cargo git deps).
-- `jemalloc` + `graphviz` + `perl` + `binutils` + `openssl` installed:
-  `nix-env -iA nixos.jemalloc nixos.graphviz nixos.perl nixos.binutils
-nixos.openssl nixos.python313`
-  (provides `jeprof`, `dot`, `objdump`, `addr2line`, `nm`, `libssl.so.3`,
-  `python3`).
-- `nix.settings.trusted-users = [ "root" "@wheel" ]` added to
-  `/etc/nixos/configuration.nix` and `nixos-rebuild switch` run.
-  (Optional — only needed if VM is later used as a remote nix builder.)
-
-## Build artifact locations
-
-```
-VM:
-  ~/hoprd/result-hoprd/bin/hoprd            # 50MB ELF aarch64 musl, jemalloc-profiling
-  ~/hoprd/result-hoprd/bin/hoprd-cfg
-  ~/hoprd/result-localcluster/bin/hoprd-localcluster
-```
-
-First build of the cross-toolchain compiles GCC + binutils + musl from
-source on the VM (cache.nixos.org has no substitutes for these custom
-musl-cross hashes). Expect 30–60 min on first run; later builds reuse
-`/nix/store` and are fast.
-
-## Re-syncing source after edits on macOS
+## Re-syncing After Source Changes
 
 ```bash
-./scripts/jeprof-vm.sh sync     # full re-tar
-./scripts/jeprof-vm.sh build    # incremental nix build
+./scripts/jeprof-vm.sh sync    # re-tar the repo to the VM
+./scripts/jeprof-vm.sh build   # incremental Nix build (only changed crates recompile)
 ```
 
-Crane diffs cargo inputs; only changed crates recompile.
+---
 
-## Changelog (relative to original `just test-jeprof` workflow)
+## Known Caveats
 
-- **Original `just test-jeprof` is unchanged.** Still expects a Linux
-  build environment; broken on macOS by design (`nixLib.mkDockerImage`
-  hard-requires x86_64-linux).
-- **Added** `scripts/jeprof-vm.sh` with subcommands:
-  `sync` / `build` / `build-localcluster` / `run` / `localcluster N` /
-  `all`.
-- **Added** `profiling/JEPROF-VM-USAGE.md` (this file).
-- **VM env**: installed `git`, `jemalloc`, `graphviz`, `perl` via
-  `nix-env`. Updated NixOS config to trust `@wheel`.
-- **Build outputs** moved from `result/` to `result-hoprd/` and
-  `result-localcluster/` to coexist on the same VM filesystem.
-- **`localcluster` subcommand** wires `hoprd-localcluster` to the
-  jemalloc env so all child hoprd processes profile with PID-distinct
-  dump filenames. Default chain URL is `http://host.orb.internal:8080`
-  (anvil_blokli docker on macOS host).
-- **No `flake.nix` changes kept.** Earlier exploratory edits were
-  reverted; chosen strategy does not need them.
-- **`hoprd-localcluster` runtime fix:** the orchestrator is dynamically
-  linked (glibc) and pulls in `libssl.so.3`/`libcrypto.so.3`. The
-  `localcluster` subcommand sets `LD_LIBRARY_PATH` to the
-  `nixos.openssl` store path before `exec`. (`hoprd` itself is
-  statically linked against musl, so it has no such dep.)
-- **Default `lg_prof_interval=25`** (32MB). The original
-  `test-jeprof.sh` used `20` (1MB), which is fine for a 10-second
-  smoke test but produces ~7GB and 400k+ files for a 3-node cluster
-  running 3 minutes.
-
-## Verified end-to-end (2026-05-07)
-
-Smoke test of full localcluster path on the VM:
-
-- `anvil_blokli` Docker on macOS host, `:8080/graphql` reachable from
-  VM via `host.orb.internal`.
-- 3-node `hoprd-localcluster` spawned on VM, each child got distinct
-  PID, all wrote heap dumps to `/tmp/jeprof/jeprof.<PID>.*.heap`.
-- `hoprd::jemalloc_stats` log lines emitted in each
-  `/tmp/hoprd-cluster/logs/hoprd_<N>.log` (proves jemalloc is the
-  active allocator and stats poller is running).
-- Env propagation confirmed: `_RJEM_MALLOC_CONF` set on the
-  orchestrator parent → all 3 children inherited and profiled.
-
-## Known caveats
-
-- **Ctrl-C in interactive run propagates correctly** through `ssh -t`'s
-  PTY. If you start the cluster from a script that backgrounds the
-  process, signals do _not_ always propagate; clean up manually with
-  `ssh nixos-test@orb 'pkill -INT hoprd-localcluster; pkill -INT hoprd'`.
-- **OpenTelemetry export errors** (`Connection refused 127.0.0.1:4318`)
-  appear in node logs because `hoprd-localcluster` always sets
-  `HOPRD_OTLP_ENDPOINT=http://localhost:4318` and there is no collector
-  running. Harmless; ignore.
-- **Dumps stay on the VM**; pull with `scp` for off-VM analysis.
+- **Ctrl-C propagation:** Works correctly through `ssh -t`'s PTY in interactive runs. If the cluster is started from a background script, signals may not propagate. Clean up manually:
+  ```bash
+  ssh nixos-test@orb 'pkill -INT hoprd-localcluster; pkill -INT hoprd'
+  ```
+- **OpenTelemetry errors in logs:** `Connection refused 127.0.0.1:4318` appears because `hoprd-localcluster` always sets `HOPRD_OTLP_ENDPOINT=http://localhost:4318` and no collector is running. This is harmless — ignore it.
+- **Dumps stay on the VM** until you pull them with `scp` or the `pull` subcommand.
