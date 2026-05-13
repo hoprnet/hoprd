@@ -11,7 +11,7 @@ use hopr_lib::{
     api::types::primitive::{errors::GeneralError, prelude::Address},
     errors::HoprLibError,
     exports::transport::{
-        SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
+        OffchainPublicKey, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
         SurbBalancerConfig,
     },
 };
@@ -140,6 +140,7 @@ impl From<SessionCapability> for SessionCapabilities {
 #[schema(example = json!({ "Hops": 1 }))]
 pub enum RoutingOptions {
     Hops(usize),
+    IntermediatePath(Vec<String>),
 }
 
 impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
@@ -149,13 +150,33 @@ impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
     fn try_from(value: RoutingOptions) -> Result<Self, Self::Error> {
         match value {
             RoutingOptions::Hops(hops) => HopRouting::try_from(hops),
+            RoutingOptions::IntermediatePath(nodes) => {
+                let path = nodes
+                    .into_iter()
+                    .map(|node| {
+                        OffchainPublicKey::from_str(&node).map_err(|err| {
+                            GeneralError::ParseError(format!(
+                                "invalid intermediate path node public key '{node}': {err}"
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                HopRouting::try_from(path)
+            }
         }
     }
 }
 
 impl From<hopr_lib::HopRouting> for RoutingOptions {
     fn from(opts: hopr_lib::HopRouting) -> Self {
-        RoutingOptions::Hops(opts.hop_count())
+        match opts.as_options().clone() {
+            hopr_lib::api::types::internal::routing::RoutingOptions::Hops(hops) => {
+                RoutingOptions::Hops(usize::from(hops))
+            }
+            hopr_lib::api::types::internal::routing::RoutingOptions::IntermediatePath(path) => {
+                RoutingOptions::IntermediatePath(path.into_iter().map(|id| id.to_string()).collect())
+            }
+        }
     }
 }
 
@@ -547,8 +568,8 @@ pub(crate) async fn list_clients<H: Send + Sync + 'static>(
         .map(|v| {
             let ListenerId(_, addr) = *v.key();
             let entry = v.value();
-            let forward_path = entry.forward_path;
-            let return_path = entry.return_path;
+            let forward_path = entry.forward_path.clone();
+            let return_path = entry.return_path.clone();
             SessionClientResponse {
                 protocol,
                 ip: addr.ip().to_string(),
