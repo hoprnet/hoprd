@@ -1,24 +1,31 @@
-# jemalloc Heap Profiling on OrbStack NixOS VM
+# jemalloc Heap Profiling via Linux VM
 
-This guide covers day-to-day use of the `jeprof-vm.sh` helper script for building, running, and analyzing jemalloc heap profiles of `hoprd` on a NixOS VM hosted by OrbStack.
+This guide covers day-to-day use of the `jeprof-vm.sh` helper script for building, running, and analyzing jemalloc heap profiles of `hoprd` on a Linux VM (or any remote Linux host).
 
-> **Prerequisites:** Complete the one-time VM setup described in [PROFILING_VM.md](./PROFILING_VM.md) before proceeding.
+> **Prerequisites:** Complete the one-time VM setup described in [profiling_vm.md](./profiling_vm.md) before proceeding.
 
-jemalloc profiling is Linux-only. This workflow lets macOS developers drive the full profiling cycle: source is synced to a local NixOS VM, built there, run with heap profiling enabled, and the resulting dump files are pulled back to macOS for analysis.
+jemalloc profiling is Linux-only. This workflow lets macOS developers drive the full profiling cycle: source is synced to a Linux host via SSH, built there with Nix, run with heap profiling enabled, and the resulting dump files are pulled back to macOS for analysis.
+
+The examples below use **OrbStack + NixOS** as the reference setup. Any Linux host reachable by SSH works — set `VM_HOST` and `CHAIN_URL` to match your environment (see the environment overrides table).
 
 ---
 
 ## Connecting to the VM
 
-OrbStack wires the SSH key at `~/.orbstack/ssh/id_ed25519` into `~/.ssh/config` automatically.
+All communication with the VM happens over plain SSH. Set `VM_HOST` to your SSH target before running any subcommand (or export it in your shell):
 
 ```bash
-ssh nixos-test@orb                              # interactive shell
-scp file nixos-test@orb:                        # copy a file to the VM home directory
-scp 'nixos-test@orb:/tmp/jeprof/*.heap' ./out/  # copy heap dumps back to macOS
+export VM_HOST=user@<your-vm-ip>   # any Linux host
+export VM_HOST=nixos-test@orb      # OrbStack default
 ```
 
-The VM user is `nixos-test`. Sudo is passwordless via the `wheel` group — no additional credentials are needed.
+```bash
+ssh "$VM_HOST"                                          # interactive shell
+scp file "$VM_HOST":                                    # copy a file to the VM home directory
+scp "${VM_HOST}:/tmp/jeprof/*.heap" ./out/              # copy heap dumps back to macOS
+```
+
+**OrbStack note:** SSH keys are managed automatically at `~/.orbstack/ssh/id_ed25519` and wired into `~/.ssh/config`. The default VM user is `nixos-test` with passwordless sudo via the `wheel` group.
 
 ---
 
@@ -27,7 +34,7 @@ The VM user is `nixos-test`. Sudo is passwordless via the `wheel` group — no a
 Run all subcommands from the **macOS host**, at the repository root.
 
 ```bash
-./scripts/jeprof-vm.sh sync                  # tar-pipe the repo to the VM
+./scripts/jeprof-vm.sh sync                  # rsync the repo to the VM (incremental)
 ./scripts/jeprof-vm.sh build                 # build the hoprd profiling binary on the VM
 ./scripts/jeprof-vm.sh build-localcluster    # build hoprd-localcluster on the VM
 ./scripts/jeprof-vm.sh run                   # run a single hoprd node against a remote blokli URL
@@ -40,15 +47,15 @@ Both `run` and `localcluster` are blocking — they follow the process until you
 
 ### Environment overrides
 
-| Variable            | Default                                          | Description                                             |
-| ------------------- | ------------------------------------------------ | ------------------------------------------------------- |
-| `VM_HOST`           | `nixos-test@orb`                                 | SSH target for the NixOS VM                             |
-| `BLOKLI_URL`        | `https://blokli.rotsee.hoprnet.link`             | Blokli endpoint used by the single-node `run` subcommand |
-| `CHAIN_URL`         | `http://host.orb.internal:8080`                  | Chain + blokli endpoint used by `localcluster`          |
-| `HOPRD_PASSWORD`    | `test-profiling-password`                        | Identity file password                                  |
-| `PROFILE_DIR`       | `/tmp/jeprof`                                    | Directory on the VM where heap dumps are written        |
-| `CLUSTER_DIR`       | `/tmp/hoprd-cluster`                             | Data directory for cluster node state on the VM         |
-| `LG_PROF_INTERVAL`  | `25`                                             | Dump every 2^N bytes of net allocation (25 ≈ 32 MB)     |
+| Variable           | Default                              | Description                                              |
+| ------------------ | ------------------------------------ | -------------------------------------------------------- |
+| `VM_HOST`          | `nixos-test@orb`                     | SSH target for the NixOS VM                              |
+| `BLOKLI_URL`       | `https://blokli.rotsee.hoprnet.link` | Blokli endpoint used by the single-node `run` subcommand |
+| `CHAIN_URL`        | `http://host.orb.internal:8080`      | Chain + blokli endpoint used by `localcluster`           |
+| `HOPRD_PASSWORD`   | `test-profiling-password`            | Identity file password                                   |
+| `PROFILE_DIR`      | `/tmp/jeprof`                        | Directory on the VM where heap dumps are written         |
+| `CLUSTER_DIR`      | `/tmp/hoprd-cluster`                 | Data directory for cluster node state on the VM          |
+| `LG_PROF_INTERVAL` | `25`                                 | Dump every 2^N bytes of net allocation (25 ≈ 32 MB)      |
 
 ### Build artifact locations (on the VM)
 
@@ -123,13 +130,13 @@ _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:/tmp/j
 
 ### Tuning `_RJEM_MALLOC_CONF`
 
-| Parameter          | Value         | Effect                                                                             |
-| ------------------ | ------------- | ---------------------------------------------------------------------------------- |
-| `lg_prof_sample`   | `19`          | Sample every 2^19 ≈ 512 KB of allocations                                         |
-| `lg_prof_interval` | `25` (default) | Dump every 2^25 ≈ 32 MB of net allocations                                        |
-| `lg_prof_interval` | `30`          | Dump every ~1 GB — sparse dumps for long runs                                      |
-| `lg_prof_interval` | `20`          | Dump every ~1 MB — high frequency; generates 100k+ files and 7+ GB in minutes for a 3-node cluster |
-| `prof_final`       | `true`        | Always write a final dump on exit                                                  |
+| Parameter          | Value          | Effect                                                                                             |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------------------- |
+| `lg_prof_sample`   | `19`           | Sample every 2^19 ≈ 512 KB of allocations                                                          |
+| `lg_prof_interval` | `25` (default) | Dump every 2^25 ≈ 32 MB of net allocations                                                         |
+| `lg_prof_interval` | `30`           | Dump every ~1 GB — sparse dumps for long runs                                                      |
+| `lg_prof_interval` | `20`           | Dump every ~1 MB — high frequency; generates 100k+ files and 7+ GB in minutes for a 3-node cluster |
+| `prof_final`       | `true`         | Always write a final dump on exit                                                                  |
 
 Override per-run with the `LG_PROF_INTERVAL` env variable.
 
@@ -227,7 +234,7 @@ jeprof --text ~/jeprof-out/hoprd ~/jeprof-out/jeprof.*.heap | head -30
 ## Re-syncing After Source Changes
 
 ```bash
-./scripts/jeprof-vm.sh sync    # re-tar the repo to the VM
+./scripts/jeprof-vm.sh sync    # rsync the repo to the VM (incremental)
 ./scripts/jeprof-vm.sh build   # incremental Nix build (only changed crates recompile)
 ```
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Run hoprd (single node or full localcluster) with jemalloc profiling
-# on a Linux OrbStack VM. jemalloc profiling is Linux-only, so on macOS
-# we sync the repo to the OrbStack NixOS VM (aarch64-linux), build
-# there, and run there.
+# on any Linux host reachable via SSH. jemalloc profiling is Linux-only,
+# so source is synced to the Linux host, built there with Nix, and run there.
+#
+# Defaults assume an OrbStack NixOS VM. Override VM_HOST and CHAIN_URL
+# for other setups (Lima, UTM, remote machine, etc.).
 #
 # Usage:
-#   scripts/jeprof-vm.sh sync                # tar-pipe repo to VM
+#   scripts/jeprof-vm.sh sync                # rsync repo to VM (incremental)
 #   scripts/jeprof-vm.sh build               # build hoprd profile binary
 #   scripts/jeprof-vm.sh build-localcluster  # build hoprd-localcluster
 #   scripts/jeprof-vm.sh run                 # single-node hoprd vs BLOKLI_URL
@@ -13,9 +15,9 @@
 #   scripts/jeprof-vm.sh all                 # sync + build + run (single node)
 #
 # Env overrides:
-#   VM_HOST          SSH target              (default: nixos-test@orb)
+#   VM_HOST          SSH target              (default: nixos-test@orb  — OrbStack)
 #   BLOKLI_URL       single-node blokli URL  (default: rotsee testnet)
-#   CHAIN_URL        cluster blokli URL      (default: http://host.orb.internal:8080)
+#   CHAIN_URL        cluster blokli URL      (default: http://host.orb.internal:8080  — OrbStack; use host bridge IP for other hypervisors)
 #   HOPRD_PASSWORD   identity password       (default: test-profiling-password)
 #   PROFILE_DIR      heap dump dir on VM     (default: /tmp/jeprof)
 #   CLUSTER_DIR      cluster data dir on VM  (default: /tmp/hoprd-cluster)
@@ -27,9 +29,9 @@
 
 set -o errexit -o nounset -o pipefail
 
-VM_HOST="${VM_HOST:-nixos-test@orb}"
+VM_HOST="${VM_HOST:-nixos-test@orb}" # OrbStack default; override for other setups
 BLOKLI_URL="${BLOKLI_URL:-https://blokli.rotsee.hoprnet.link}"
-CHAIN_URL="${CHAIN_URL:-http://host.orb.internal:8080}"
+CHAIN_URL="${CHAIN_URL:-http://host.orb.internal:8080}" # OrbStack host address; Lima: 192.168.5.2, UTM: 192.168.64.1
 HOPRD_PASSWORD="${HOPRD_PASSWORD:-test-profiling-password}"
 PROFILE_DIR="${PROFILE_DIR:-/tmp/jeprof}"
 CLUSTER_DIR="${CLUSTER_DIR:-/tmp/hoprd-cluster}"
@@ -51,17 +53,16 @@ ensure_git_on_vm() {
 }
 
 cmd_sync() {
-  echo "==> Syncing repo to ${VM_HOST}:~/${VM_REPO} (tar pipe)..."
-  ssh "$VM_HOST" "rm -rf ~/${VM_REPO} && mkdir -p ~/${VM_REPO}"
-  tar -C "$REPO_ROOT" \
-    --exclude='./target' \
-    --exclude='./.direnv' \
-    --exclude='./result' \
-    --exclude='./result-*' \
-    --exclude='./node_modules' \
-    --exclude='./.cache' \
-    -cf - . |
-    ssh "$VM_HOST" "tar -xf - -C ~/${VM_REPO}" 2>&1 | grep -v 'Ignoring unknown extended header' || true
+  echo "==> Syncing repo to ${VM_HOST}:~/${VM_REPO} (rsync)..."
+  rsync -az --delete \
+    --exclude='target/' \
+    --exclude='.direnv/' \
+    --exclude='result' \
+    --exclude='result-*' \
+    --exclude='node_modules/' \
+    --exclude='.cache/' \
+    --rsync-path='rsync' \
+    "$REPO_ROOT/" "${VM_HOST}:~/${VM_REPO}/"
   echo "==> Sync complete: $(ssh "$VM_HOST" "du -sh ~/${VM_REPO}")"
 }
 

@@ -104,5 +104,5 @@ Spin up a multi-node HOPR network locally with `hoprd-localcluster`. See [`docs/
 `hoprd` supports detailed heap profiling using `jemalloc` and `jeprof`.
 
 - **[General Profiling Guide](profiling/memory-profiling.md)**: How to build and run the profiling variants.
-- **[macOS VM Setup](profiling/PROFILING_VM.md)**: Setting up a NixOS VM via OrbStack for profiling on macOS.
-- **[VM Usage Helper](profiling/JEPROF-VM-USAGE.md)**: Using the `jeprof-vm.sh` script to drive builds and analysis.
+- **[VM Setup](profiling/profiling_vm.md)**: Setting up a Linux VM (OrbStack example) for profiling on macOS.
+- **[VM Usage Helper](profiling/jeprof-vm-usage.md)**: Using the `jeprof-vm.sh` script to drive builds and analysis.
