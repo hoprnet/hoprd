@@ -208,10 +208,24 @@ async fn start_hoprd_nodes(
             .arg(format!("{}:{}", &args.p2p_host, p2p_port))
             .arg("--password")
             .arg(&args.identity_password)
-            .env("HOPRD_USE_OPENTELEMETRY", "true")
-            .env("HOPRD_OTEL_SIGNALS", "metrics")
-            .env("HOPRD_OTLP_ENDPOINT", "http://localhost:4318")
-            .env("HOPRD_METRIC_EXPORT_INTERVAL", "15000,hopr_session=1000")
+            .env(
+                "HOPRD_USE_OPENTELEMETRY",
+                std::env::var("HOPRD_USE_OPENTELEMETRY").unwrap_or_else(|_| "true".to_string()),
+            )
+            .env(
+                "HOPRD_OTEL_SIGNALS",
+                std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
+            )
+            .env(
+                "HOPRD_OTLP_ENDPOINT",
+                std::env::var("HOPRD_OTLP_ENDPOINT")
+                    .unwrap_or_else(|_| "http://localhost:4318".to_string()),
+            )
+            .env(
+                "HOPRD_METRIC_EXPORT_INTERVAL",
+                std::env::var("HOPRD_METRIC_EXPORT_INTERVAL")
+                    .unwrap_or_else(|_| "15000,hopr_session=1000".to_string()),
+            )
             .env(
                 "HOPR_TX_TIMEOUT_MULTIPLIER",
                 DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
