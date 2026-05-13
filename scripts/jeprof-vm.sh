@@ -95,19 +95,19 @@ cmd_run() {
   echo "    blokli: ${BLOKLI_URL}"
   echo "    Heap dumps: ${PROFILE_DIR}/jeprof.*.heap"
   echo "    Stop with Ctrl-C; final dump emitted on shutdown."
-  ssh -t "$VM_HOST" "
-    set -e
-    mkdir -p '${PROFILE_DIR}' /tmp/hoprd
-    cd ~/${VM_REPO}
-    bin=\$(ls -d result-hoprd 2>/dev/null || echo result)/bin/hoprd
-    export HOPRD_PASSWORD='${HOPRD_PASSWORD}'
-    export _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:${PROFILE_DIR}/jeprof,lg_prof_sample:19,lg_prof_interval:${LG_PROF_INTERVAL}'
-    exec \"\$bin\" \
-      --data /tmp/hoprd \
-      --identity /tmp/hoprd/identity \
-      --apiHost 127.0.0.1 \
-      --blokli-url '${BLOKLI_URL}'
-  "
+  ssh "$VM_HOST" bash -s -- "$VM_REPO" "$PROFILE_DIR" "$HOPRD_PASSWORD" "$LG_PROF_INTERVAL" "$BLOKLI_URL" <<'REMOTE'
+set -e
+mkdir -p "$2" /tmp/hoprd
+cd ~/"$1"
+bin=$(ls -d result-hoprd 2>/dev/null || echo result)/bin/hoprd
+export HOPRD_PASSWORD="$3"
+export _RJEM_MALLOC_CONF="prof:true,prof_active:true,prof_final:true,prof_prefix:$2/jeprof,lg_prof_sample:19,lg_prof_interval:$4"
+exec "$bin" \
+  --data /tmp/hoprd \
+  --identity /tmp/hoprd/identity \
+  --apiHost 127.0.0.1 \
+  --blokli-url "$5"
+REMOTE
 }
 
 cmd_analyze() {
@@ -157,7 +157,7 @@ cmd_analyze() {
           jeprof --pdf --base=\"\$first\" --inuse_space \"\$BIN\" \"\$last\" 2>/dev/null > \"\$out\"
           ls -lh \"\$out\"
           ;;
-        *) echo \"Unknown mode '${mode}'. Use: summary | diff | top | svg\" >&2; exit 1 ;;
+        *) echo \"Unknown mode '${mode}'. Use: summary | diff | top | svg | pdf\" >&2; exit 1 ;;
       esac
     done
   "

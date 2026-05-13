@@ -164,16 +164,24 @@ allocated=… active=… mapped=… retained=… arenas_active=… cache_efficie
 
 ### Using the helper script (recommended)
 
-Run from macOS, at the repository root. The script SSHes into the VM, runs `jeprof`, and prints or writes results locally.
+Run from macOS, at the repository root. The `summary`, `diff`, and `top` modes stream text output to the local terminal. The `svg` and `pdf` modes write files to the VM at `/tmp/jeprof_<PID>_diff.svg` and `/tmp/jeprof_<PID>_diff.pdf` respectively — they are not automatically copied to the local machine.
 
 ```bash
 ./scripts/jeprof-vm.sh analyze summary        # top in-use allocators per PID, latest dump
 ./scripts/jeprof-vm.sh analyze diff           # latest vs. earliest snapshot per PID (growth delta)
 ./scripts/jeprof-vm.sh analyze top            # cumulative alloc_space, latest dump
-./scripts/jeprof-vm.sh analyze svg            # write /tmp/jeprof_<PID>_diff.svg per PID
+./scripts/jeprof-vm.sh analyze svg            # write /tmp/jeprof_<PID>_diff.svg on the VM
+./scripts/jeprof-vm.sh analyze pdf            # write /tmp/jeprof_<PID>_diff.pdf on the VM
 
 ./scripts/jeprof-vm.sh analyze summary 284977  # restrict to a specific PID
 ./scripts/jeprof-vm.sh pull ./jeprof-out       # scp earliest + latest dumps and binary to macOS
+```
+
+To retrieve SVG or PDF files after running the analyze step:
+
+```bash
+scp "${VM_HOST}:/tmp/jeprof_*_diff.svg" .     # copy all SVG files to current directory
+scp "${VM_HOST}:/tmp/jeprof_*_diff.pdf" .     # copy all PDF files to current directory
 ```
 
 #### Reading the text output
