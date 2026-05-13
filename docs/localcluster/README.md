@@ -43,21 +43,12 @@ nix develop -c cargo build -p hoprd -p hoprd-localcluster
 
 ## Run
 
-The chain image version must match the `blokli-client` version pinned in `Cargo.lock`. Check `Cargo.lock` for the `blokli-client` entry and use the image tag that was built from the same commit. The `latest` tag may have breaking GraphQL schema changes relative to the pinned client.
-
-To find the compatible tag for the currently pinned client:
-
-```bash
-grep -A3 'name = "blokli-client"' Cargo.lock
-# note the source commit, then find the matching image tag in the registry
-```
-
 ### Default (Docker)
 
 ```bash
 rm -rf /tmp/hopr-nodes   # clear any stale state
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
 ./result-1/bin/hoprd-localcluster \
@@ -73,7 +64,7 @@ container system start   # once per boot
 
 rm -rf /tmp/hopr-nodes
 
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
 HOPRD_CONTAINER_RUNTIME=container \
@@ -97,6 +88,23 @@ HOPRD_CHAIN_URL=http://localhost:8080 \
 ```
 
 Press **Ctrl-C** to stop — the orchestrator kills all `hoprd` processes and removes the chain container on exit.
+
+### Docker Compose
+
+`localcluster/docker-compose.yml` bundles the chain and the orchestrator into a single `docker compose up`. The `hoprd-localcluster` image must be built first (it is not published; it bundles both `hoprd` and `hoprd-localcluster`):
+
+```bash
+# Build and load the image (x86_64 Linux only)
+docker load < $(nix build -L .#docker-hoprd-localcluster-x86_64-linux --print-out-paths)
+
+# Start the cluster (default: 3 nodes)
+docker compose -f localcluster/docker-compose.yml up -d
+
+# Override the node count
+CLUSTER_SIZE=5 docker compose -f localcluster/docker-compose.yml up -d
+```
+
+API ports `3001–3005` are mapped to the host; node `i` listens on port `3001 + i - 1`. Stop with `docker compose -f localcluster/docker-compose.yml down`.
 
 ---
 
@@ -126,22 +134,23 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                  | Env var                   | Default           | Description                                        |
-| --------------------- | ------------------------- | ----------------- | -------------------------------------------------- |
-| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                     |
-| `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                       |
-| `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)          |
-| `--p2p-host`          | —                         | `localhost`       | Host to bind P2P on                                |
-| `--p2p-port-base`     | —                         | `9000`            | First P2P port                                     |
-| `--data-dir`          | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs            |
-| `--chain-image`       | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                 |
-| `--chain-url`         | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step      |
-| `--container-runtime` | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …) |
-| `--hoprd-bin`         | —                         | `hoprd`           | Path to the `hoprd` binary                         |
-| `--identity-password` | —                         | `password`        | Password for identity encryption                   |
-| `--api-token`         | —                         | none              | Bearer token for the REST API                      |
-| `--funding-amount`    | —                         | `1 wxHOPR`        | Per-channel funding amount                         |
-| `--skip-channels`     | —                         | `false`           | Skip opening payment channels                      |
+| Flag                  | Env var                   | Default           | Description                                            |
+| --------------------- | ------------------------- | ----------------- | ------------------------------------------------------ |
+| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                         |
+| `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                           |
+| `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)              |
+| `--p2p-host`          | —                         | `127.0.0.1`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
+| `--p2p-port-base`     | —                         | `9000`            | First P2P port                                         |
+| `--data-dir`          | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                |
+| `--chain-image`       | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                     |
+| `--chain-url`         | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step          |
+| `--container-runtime` | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)     |
+| `--hoprd-bin`         | —                         | `hoprd`           | Path to the `hoprd` binary                             |
+| `--identity-password` | —                         | `password`        | Password for identity encryption                       |
+| `--api-token`         | —                         | none              | Bearer token for the REST API                          |
+| `--funding-amount`    | —                         | `1 wxHOPR`        | Per-channel funding amount                             |
+| `--skip-channels`     | —                         | `false`           | Skip opening payment channels                          |
+| `--extra-identities`  | —                         | `0`               | Extra pre-funded identities for external tooling (0–5) |
 
 ---
 
@@ -157,6 +166,8 @@ Everything lands under `--data-dir` (default `/tmp/hopr-nodes`):
   node_id_0.id           # encrypted identity keystore
   node_id_1.id
   node_id_2.id
+  extra_id_0.id          # extra identity keystore (if --extra-identities > 0)
+  extra_id_1.id
   db_0/                  # node 0 database
   db_1/
   db_2/
@@ -165,6 +176,40 @@ Everything lands under `--data-dir` (default `/tmp/hopr-nodes`):
     hoprd_1.log
     hoprd_2.log
     chain.log            # chain container output
+```
+
+---
+
+## Extra identities
+
+Pass `--extra-identities <N>` (1–5) to provision additional HOPR identities alongside the cluster. Each extra identity:
+
+- Uses a **hardcoded keypair** (`EXTRA_KEYS` in `localcluster/src/identity.rs`), so the EVM address, Safe address, and Module address are the **same on every run** against a fresh Anvil chain.
+- Gets funded with xDai and wxHOPR, and has its own Safe + Module deployed.
+- Is written to `--data-dir` as `extra_id_{i}.id` — an encrypted Ethereum keystore.
+- Uses the password `local-cluster` (a known constant; safe to hardcode in tooling).
+- Is **not** started as a `hoprd` node.
+
+When the cluster is ready the orchestrator prints a summary for each extra identity:
+
+```
+Extra 0
+    Address       : 0x…
+    Safe address  : 0x…
+    Module address: 0x…
+    Identity file : /tmp/hopr-nodes/extra_id_0.id
+    Password      : local-cluster
+```
+
+Example:
+
+```bash
+RUST_LOG=info \
+./result-1/bin/hoprd-localcluster \
+  --hoprd-bin ./result/bin/hoprd \
+  --chain-image "$CHAIN_IMAGE" \
+  --size 3 \
+  --extra-identities 2
 ```
 
 ---
@@ -181,11 +226,12 @@ docker pull --platform linux/amd64 <chain-image>
 container image pull --platform linux/amd64 <chain-image>
 ```
 
-**`bloklid-anvil:latest` fails with a schema error** — The `latest` tag may have a breaking GraphQL schema change relative to the `blokli-client` version pinned in `Cargo.lock`. Use a version-pinned tag (e.g. `0.10.5-pr.349`) that matches the client's source commit. See the [Run](#run) section for how to identify the compatible tag.
-
 **Apple `container` system is not running** — `container run` fails immediately. Run `container system start` once after each reboot.
 
-**`/readyz` returns 412 forever** — The chain check is failing. The indexer may need more than the 10s warmup. Inspect `logs/hoprd_*.log` and `logs/chain.log` for errors.
+**`/readyz` returns 412 forever** — Two possible causes:
+
+1. *Network health Red* — Nodes are not becoming minimally connected. This usually means P2P peers can't dial each other. Verify `--p2p-host` is an IP address (e.g. `127.0.0.1`), not a hostname. libp2p resolves hostname-based multiaddrs (like `/dns4/localhost/...`) at dial time — if DNS lookup fails or is slow the dial is silently dropped.
+2. *Chain check failing* — The chain indexer (blokli) is unreachable. Inspect `logs/hoprd_*.log` and `logs/chain.log` for errors. The indexer may need more than the 10s warmup.
 
 **Port collisions** — Use `lsof -i :<port>` to find conflicts. Override with `--api-port-base` and `--p2p-port-base`.
 
