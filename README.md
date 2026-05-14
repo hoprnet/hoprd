@@ -55,9 +55,15 @@ cargo build --profile release
 
 ## Configuration
 
-Default config template: [`deploy/compose/hoprd/conf/hoprd.cfg.yaml`](deploy/compose/hoprd/conf/hoprd.cfg.yaml)
+Generate default config:
 
-Example config: [`hoprd/example_cfg.yaml`](hoprd/example_cfg.yaml)
+```bash
+# Print default YAML config
+cargo run --release -p hoprd --bin hoprd-cfg -- --default
+
+# Validate existing config
+cargo run --release -p hoprd --bin hoprd-cfg -- --validate /path/to/hoprd.yaml
+```
 
 Key config options:
 
