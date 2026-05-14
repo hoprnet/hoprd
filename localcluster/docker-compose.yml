@@ -7,12 +7,19 @@ services:
     image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
   cluster:
     container_name: hoprd-localcluster
     platform: linux/amd64
     image: hoprd-localcluster:latest
     depends_on:
-      - chain
+      chain:
+        condition: service_healthy
     environment:
       HOPRD_CHAIN_URL: http://chain:8080
       RUST_LOG: debug

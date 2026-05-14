@@ -103,7 +103,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
   build-binaries:
-    name: Binary ${{ matrix.architecture }}
+    name: Binary ${{ matrix.binary }} ${{ matrix.architecture }}
     strategy:
       fail-fast: false
       matrix:
@@ -111,19 +111,33 @@ jobs:
           - architecture: x86_64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-x86_64-linux
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
             required_label: ""
           - architecture: aarch64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
             required_label: "binary:aarch64-linux"
           - architecture: aarch64-darwin
             runner: depot-macos-15
             build_command: nix build -L .#binary-hoprd-aarch64-darwin
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
             required_label: binary:aarch64-darwin
           - architecture: x86_64-darwin
             runner: depot-macos-15
             build_command: nix build -L .#binary-hoprd-x86_64-darwin
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
             required_label: binary:x86_64-darwin
+          - architecture: x86_64-linux
+            runner: depot-ubuntu-24.04-8
+            build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
+            build_file: ./localcluster/Cargo.toml
+            binary: hoprd-localcluster
+            required_label: ""
     uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@build-binaries-v2
     permissions:
       contents: read
@@ -131,9 +145,9 @@ jobs:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
       version_type: commit
       architecture: ${{ matrix.architecture }}
-      build_file: ./hoprd/Cargo.toml
+      build_file: ${{ matrix.build_file }}
       build_command: ${{ matrix.build_command }}
-      binary: hoprd
+      binary: ${{ matrix.binary }}
       runner: ${{ matrix.runner }}
       enabled: ${{ matrix.required_label == '' || contains(github.event.pull_request.labels.*.name, matrix.required_label) }}
     secrets:
