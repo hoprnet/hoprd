@@ -80,6 +80,24 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
       docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
+  build-localcluster-binary:
+    name: Binary localcluster x86_64-linux
+    if: github.event.pull_request.merged == true
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@build-binaries-v2
+    permissions:
+      contents: read
+    with:
+      source_branch: ${{ github.event.pull_request.merge_commit_sha }}
+      version_type: pr
+      architecture: x86_64-linux
+      build_file: ./localcluster/Cargo.toml
+      build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
+      binary: hoprd-localcluster
+      runner: depot-ubuntu-24.04-8
+    secrets:
+      gcp_service_account: ${{ secrets.GCP_SA_GITHUB_RUNNER }}
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
   deploy-dev:
     name: Deploy Gnosis Dev
     runs-on: depot-ubuntu-24.04
@@ -156,6 +174,7 @@ jobs:
     needs:
       - build-binaries
       - build-docker
+      - build-localcluster-binary
       - docs
     if: ${{ always() && github.event.pull_request.merged == true && !success() }}
     runs-on: depot-ubuntu-24.04
