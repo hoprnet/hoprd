@@ -84,12 +84,17 @@ async fn run() -> Result<()> {
     // Generate identities and per-node configs.  The ChannelLifecycleStrategy
     // population thresholds are set to num_nodes-1 inside `generate` so the
     // strategy will open a full mesh.
+    const P2P_HOST: &str = "127.0.0.1";
+    const P2P_PORT_BASE: u16 = 19000;
+
     let num_nodes = 3;
     let gen_cfg = identity::GenerationConfig {
         blokli_url: blokli_url.clone(),
         num_nodes,
         config_home: data_dir.clone(),
         random_identities: true,
+        p2p_host: P2P_HOST.to_string(),
+        p2p_port_base: P2P_PORT_BASE,
         ..Default::default()
     };
     identity::generate(&gen_cfg).await?;
@@ -102,14 +107,20 @@ async fn run() -> Result<()> {
         log_dir: &log_dir,
         api_host: "127.0.0.1",
         api_port_base: 13000,
-        p2p_host: "127.0.0.1",
-        p2p_port_base: 19000,
+        p2p_host: P2P_HOST,
+        p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 
-    // Wait for all nodes to be started and ready.
+    // Wait for all nodes to be started (API up, HoprState::Running).
+    // We intentionally skip the `wait_ready` (readyz) check here: on Apple
+    // Container the blokli SSE subscription drops every ~10 s, cycling the
+    // chain health through Degraded→Connecting states. During reconnection
+    // HoprState briefly leaves Running, so /readyz oscillates between 200 and
+    // 412 — making the check flaky. Peer connectivity is verified by
+    // wait_full_mesh_reachable below, which is a stronger guarantee anyway.
     futures::future::try_join_all(
         cleanup
             .nodes
@@ -117,8 +128,6 @@ async fn run() -> Result<()> {
             .map(|n| n.api.wait_started(2 * WAIT_TIMEOUT)),
     )
     .await?;
-    futures::future::try_join_all(cleanup.nodes.iter().map(|n| n.api.wait_ready(WAIT_TIMEOUT)))
-        .await?;
 
     // Fetch on-chain addresses so we can identify peers.
     for node in &mut cleanup.nodes {

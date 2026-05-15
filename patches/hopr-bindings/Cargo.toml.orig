@@ -1,0 +1,24 @@
+[package]
+name = "hopr-bindings"
+version = "4.8.0"
+description = "This package only exists to automate the export and generation of Rust bindings into the HOPR project"
+edition = "2024"
+homepage = "https://hoprnet.org/"
+authors = ["HOPR Association <tech@hoprnet.org>"]
+repository = "https://github.com/hoprnet/contracts"
+license = "GPL-3.0-only"
+
+[build-dependencies]
+anyhow = { workspace = true }
+const_format = { workspace = true }
+
+[dependencies]
+alloy = { workspace = true, default-features = false, features = ["contract"] }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+hex-literal = { workspace = true }
+serde_with = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

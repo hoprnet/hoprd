@@ -158,3 +158,9 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]
+
+# Patch hopr-bindings to add #[serde(default)] to xhopr_token so that blokli
+# servers that predate the xhopr_token contract can still deserialize contract
+# addresses. Remove once hopr-bindings >= 4.8.1 is released with the fix.
+[patch.crates-io]
+hopr-bindings = { path = "patches/hopr-bindings" }

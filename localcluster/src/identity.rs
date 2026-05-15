@@ -22,7 +22,7 @@ use hopr_lib::{
 use hopr_reference::config::SessionIpForwardingConfig;
 use hopr_strategy::{
     auto_redeeming::AutoRedeemingStrategyConfig,
-    channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},
+    channel_lifecycle::{ChannelLifecycleConfig, EligibilityConfig, PopulationConfig},
 };
 use hoprd::{
     config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
@@ -224,6 +224,11 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 population: PopulationConfig {
                     min_open_channels: mesh_target,
                     target_open_channels: mesh_target,
+                    ..Default::default()
+                },
+                // Fresh nodes have no probe history; score=0 < default threshold 0.5.
+                eligibility: EligibilityConfig {
+                    min_peer_quality_score: 0.0,
                     ..Default::default()
                 },
                 ..Default::default()
