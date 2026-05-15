@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_API_HOST","DEFAULT_API_PORT","MINIMAL_API_TOKEN_LENGTH"],"fn":["parse_api_token","parse_host"],"struct":["CliArgs"]};

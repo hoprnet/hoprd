@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["redeem_tickets","show_ticket_statistics"],"struct":["ChannelTicket","NodeTicketStatisticsResponse","RedeemTicketsRequest"]};

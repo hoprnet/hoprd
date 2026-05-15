@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["IpProtocol","RoutingOptions","SessionCapability","SessionTargetSpec"],"fn":["adjust_session","close_client","create_client","list_clients","session_config"],"struct":["SessionCapabilityIter","SessionClientRequest","SessionClientResponse","SessionCloseClientQuery","SessionConfig"]};

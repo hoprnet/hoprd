@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["hoprd_api",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"enum\" href=\"hoprd_api/channels/enum.ChannelDirection.html\" title=\"enum hoprd_api::channels::ChannelDirection\">ChannelDirection</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"enum\" href=\"hoprd_api/network/enum.AnnouncementOriginResponse.html\" title=\"enum hoprd_api::network::AnnouncementOriginResponse\">AnnouncementOriginResponse</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"enum\" href=\"hoprd_api/session/enum.IpProtocol.html\" title=\"enum hoprd_api::session::IpProtocol\">IpProtocol</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"struct\" href=\"hoprd_api/channels/struct.ChannelsQueryRequest.html\" title=\"struct hoprd_api::channels::ChannelsQueryRequest\">ChannelsQueryRequest</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html\" title=\"trait core::marker::Copy\">Copy</a> for <a class=\"struct\" href=\"hoprd_api/network/struct.GraphQueryRequest.html\" title=\"struct hoprd_api::network::GraphQueryRequest\">GraphQueryRequest</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1528]}
