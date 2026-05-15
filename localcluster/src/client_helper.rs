@@ -1,8 +1,12 @@
-use std::process::Child;
+use std::{
+    path::Path,
+    process::{Child, Command, Stdio},
+};
 
 use anyhow::{Context, Result};
 use hoprd_api_client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct HoprdApiClient {
@@ -64,7 +68,7 @@ impl HoprdApiClient {
         Ok(response.into_inner().native)
     }
 
-    pub(crate) async fn is_outgoing_channel_open(&self, destination: &str) -> Result<bool> {
+    pub async fn is_outgoing_channel_open(&self, destination: &str) -> Result<bool> {
         let resp = self
             .inner
             .list_channels(None, None)
@@ -141,6 +145,115 @@ pub async fn wait_full_mesh_reachable(
 
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+}
+
+/// Parameters for [`start_nodes`].
+pub struct NodeStartConfig<'a> {
+    pub num_nodes: usize,
+    pub hoprd_bin: &'a Path,
+    pub data_dir: &'a Path,
+    pub log_dir: &'a Path,
+    pub api_host: &'a str,
+    pub api_port_base: u16,
+    pub p2p_host: &'a str,
+    pub p2p_port_base: u16,
+    pub identity_password: &'a str,
+    pub api_token: Option<String>,
+}
+
+/// Spawn `config.num_nodes` hoprd processes and return their handles.
+pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess>> {
+    use std::fs;
+
+    let api_client_host = if config.api_host == "0.0.0.0" {
+        "127.0.0.1"
+    } else {
+        config.api_host
+    };
+
+    let mut nodes = Vec::new();
+
+    for id in 0..config.num_nodes {
+        let api_port = config.api_port_base + id as u16;
+        let p2p_port = config.p2p_port_base + id as u16;
+        let cfg_file = config.data_dir.join(format!("hoprd_cfg_{id}.yaml"));
+        if !cfg_file.exists() {
+            anyhow::bail!("missing hoprd config file: {}", cfg_file.display());
+        }
+        let db_dir = config.data_dir.join(format!("db_{id}"));
+        fs::create_dir_all(db_dir.join("node_db")).with_context(|| {
+            format!(
+                "failed to create db directory {}",
+                db_dir.join("node_db").display()
+            )
+        })?;
+        let log_file_path = config.log_dir.join(format!("hoprd_{id}.log"));
+        let log_file =
+            std::fs::File::create(&log_file_path).context("failed to create hoprd log file")?;
+        let log_err = log_file
+            .try_clone()
+            .context("failed to clone hoprd log file handle")?;
+
+        let mut cmd = Command::new(config.hoprd_bin);
+        cmd.arg("--configurationFilePath")
+            .arg(&cfg_file)
+            .arg("--api")
+            .arg("--apiHost")
+            .arg(config.api_host)
+            .arg("--apiPort")
+            .arg(api_port.to_string())
+            .arg("--host")
+            .arg(format!("{}:{}", config.p2p_host, p2p_port))
+            .arg("--password")
+            .arg(config.identity_password)
+            .env(
+                "HOPRD_USE_OPENTELEMETRY",
+                std::env::var("HOPRD_USE_OPENTELEMETRY").unwrap_or_else(|_| "true".to_string()),
+            )
+            .env(
+                "HOPRD_OTEL_SIGNALS",
+                std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
+            )
+            .env(
+                "HOPRD_OTLP_ENDPOINT",
+                std::env::var("HOPRD_OTLP_ENDPOINT")
+                    .unwrap_or_else(|_| "http://localhost:4318".to_string()),
+            )
+            .env(
+                "HOPRD_METRIC_EXPORT_INTERVAL",
+                std::env::var("HOPRD_METRIC_EXPORT_INTERVAL")
+                    .unwrap_or_else(|_| "15000,hopr_session=1000".to_string()),
+            )
+            .env(
+                "HOPR_TX_TIMEOUT_MULTIPLIER",
+                crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
+            )
+            .env("HOPR_BLOKLI_NO_COMPAT_CHECK", "1")
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(log_err));
+
+        if let Some(token) = &config.api_token {
+            cmd.arg("--apiToken").arg(token);
+        }
+
+        debug!("starting hoprd node {} with command: {:?}", id, cmd);
+        let child = cmd.spawn().context("failed to start hoprd")?;
+        let api = HoprdApiClient::new(
+            format!("http://{}:{}", api_client_host, api_port),
+            config.api_token.clone(),
+        )?;
+
+        nodes.push(NodeProcess {
+            id,
+            api_port,
+            p2p_port,
+            api,
+            child,
+            address: None,
+        });
+    }
+
+    Ok(nodes)
 }
 
 /// Poll until every node has an outgoing `Open` channel to every other node.

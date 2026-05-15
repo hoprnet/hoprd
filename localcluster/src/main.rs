@@ -10,20 +10,15 @@
 //!
 //! See `docs/localcluster/README.md` for full setup and usage instructions.
 
-use std::{
-    fs::{self, File},
-    path::Path,
-    process::{Command, Stdio},
-    time::Duration,
-};
+use std::{fs, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper,
-    identity::{self, DEFAULT_TX_TIMEOUT_MULTIPLIER, GeneratedIdentity},
+    identity::{self, GeneratedIdentity},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -103,7 +98,19 @@ async fn main() -> Result<()> {
         let identities = identity::generate(&config).await?;
 
         info!("starting hoprd nodes");
-        cleanup.nodes = start_hoprd_nodes(&args, &data_dir, &log_dir).await?;
+        let start_cfg = client_helper::NodeStartConfig {
+            num_nodes: args.size,
+            hoprd_bin: &args.hoprd_bin,
+            data_dir: &data_dir,
+            log_dir: &log_dir,
+            api_host: &args.api_host,
+            api_port_base: args.api_port_base,
+            p2p_host: &args.p2p_host,
+            p2p_port_base: args.p2p_port_base,
+            identity_password: &args.identity_password,
+            api_token: args.api_token.clone(),
+        };
+        cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 
         info!("waiting for nodes to start");
         futures::future::try_join_all(
@@ -161,102 +168,6 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-async fn start_hoprd_nodes(
-    args: &cli::Args,
-    data_dir: &Path,
-    log_dir: &Path,
-) -> Result<Vec<client_helper::NodeProcess>> {
-    let mut nodes = Vec::new();
-    let api_host = &args.api_host;
-    let api_client_host = if api_host == "0.0.0.0" {
-        "127.0.0.1"
-    } else {
-        api_host
-    };
-
-    for id in 0..args.size {
-        let api_port = args.api_port_base + id as u16;
-        let p2p_port = args.p2p_port_base + id as u16;
-        let cfg_file = data_dir.join(format!("hoprd_cfg_{id}.yaml"));
-        if !cfg_file.exists() {
-            anyhow::bail!("missing hoprd config file: {}", cfg_file.display());
-        }
-        let db_dir = data_dir.join(format!("db_{id}"));
-        fs::create_dir_all(db_dir.join("node_db")).with_context(|| {
-            format!(
-                "failed to create db directory {}",
-                db_dir.join("node_db").display()
-            )
-        })?;
-        let log_file = log_dir.join(format!("hoprd_{id}.log"));
-
-        let log_file = File::create(&log_file).context("failed to create hoprd log file")?;
-        let log_err = log_file
-            .try_clone()
-            .context("failed to clone hoprd log file handle")?;
-
-        let mut cmd = Command::new(&args.hoprd_bin);
-        cmd.arg("--configurationFilePath")
-            .arg(cfg_file)
-            .arg("--api")
-            .arg("--apiHost")
-            .arg(api_host)
-            .arg("--apiPort")
-            .arg(api_port.to_string())
-            .arg("--host")
-            .arg(format!("{}:{}", &args.p2p_host, p2p_port))
-            .arg("--password")
-            .arg(&args.identity_password)
-            .env(
-                "HOPRD_USE_OPENTELEMETRY",
-                std::env::var("HOPRD_USE_OPENTELEMETRY").unwrap_or_else(|_| "true".to_string()),
-            )
-            .env(
-                "HOPRD_OTEL_SIGNALS",
-                std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
-            )
-            .env(
-                "HOPRD_OTLP_ENDPOINT",
-                std::env::var("HOPRD_OTLP_ENDPOINT")
-                    .unwrap_or_else(|_| "http://localhost:4318".to_string()),
-            )
-            .env(
-                "HOPRD_METRIC_EXPORT_INTERVAL",
-                std::env::var("HOPRD_METRIC_EXPORT_INTERVAL")
-                    .unwrap_or_else(|_| "15000,hopr_session=1000".to_string()),
-            )
-            .env(
-                "HOPR_TX_TIMEOUT_MULTIPLIER",
-                DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
-            )
-            .env("HOPR_BLOKLI_NO_COMPAT_CHECK", "1")
-            .stdout(Stdio::from(log_file))
-            .stderr(Stdio::from(log_err));
-
-        if let Some(token) = &args.api_token {
-            cmd.arg("--apiToken").arg(token);
-        }
-
-        debug!("starting hoprd node {} with command: {:?}", id, cmd);
-        let child = cmd.spawn().context("failed to start hoprd")?;
-        let api = client_helper::HoprdApiClient::new(
-            format!("http://{}:{}", api_client_host, api_port),
-            args.api_token.clone(),
-        )?;
-
-        nodes.push(client_helper::NodeProcess {
-            id,
-            api_port,
-            p2p_port,
-            api,
-            child,
-            address: None,
-        });
-    }
-
-    Ok(nodes)
 }
 
 fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args, blokli_url: &str) {

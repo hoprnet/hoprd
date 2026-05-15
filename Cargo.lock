@@ -5133,6 +5133,7 @@ dependencies = [
  "lazy_static",
  "reqwest 0.13.3",
  "serde-saphyr",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
