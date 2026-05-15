@@ -173,7 +173,8 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
 
     let mut nodes = Vec::new();
 
-    for id in 0..config.num_nodes {
+    let effective_num_nodes = config.num_nodes.clamp(1, crate::identity::MAX_NUM_NODES);
+    for id in 0..effective_num_nodes {
         let api_port = config.api_port_base + id as u16;
         let p2p_port = config.p2p_port_base + id as u16;
         let cfg_file = config.data_dir.join(format!("hoprd_cfg_{id}.yaml"));
@@ -264,6 +265,13 @@ pub async fn wait_full_mesh_channels(
     nodes: &[NodeProcess],
     timeout: std::time::Duration,
 ) -> Result<()> {
+    if let Some(node) = nodes.iter().find(|n| n.address.is_none()) {
+        anyhow::bail!(
+            "node {} address not resolved before waiting for full-mesh channels",
+            node.id
+        );
+    }
+
     let start = std::time::Instant::now();
     loop {
         let pairs: Vec<_> = nodes

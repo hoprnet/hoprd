@@ -238,6 +238,9 @@ where
                 )
                 .build(Arc::clone(&node)),
             ),
+            // ChannelLifecycle owns its own tick cadence via
+            // ChannelLifecycleConfig::tick_interval and runs as an independent
+            // async task; cfg.execution_interval does not apply to it.
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
                 hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(sub_cfg.clone())
