@@ -20,7 +20,14 @@ use hopr_lib::{
     config::SafeModule,
 };
 use hopr_reference::config::SessionIpForwardingConfig;
-use hoprd::config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig};
+use hopr_strategy::{
+    auto_redeeming::AutoRedeemingStrategyConfig,
+    channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},
+};
+use hoprd::{
+    config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
+    strategy::{MultiStrategyConfig, StrategyKind},
+};
 use hoprd_api::config::{Api, Auth};
 
 pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
@@ -200,6 +207,28 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
     let p2p_host = &config.p2p_host;
+
+    // Set population thresholds to the exact cluster mesh size so the
+    // ChannelLifecycleStrategy opens a channel to every other node.
+    let mesh_target = config.num_nodes.saturating_sub(1);
+    let node_strategy = MultiStrategyConfig {
+        allow_recursive: false,
+        execution_interval: std::time::Duration::from_secs(60),
+        strategies: vec![
+            StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+                redeem_on_winning: true,
+                ..Default::default()
+            }),
+            StrategyKind::ChannelLifecycle(ChannelLifecycleConfig {
+                population: PopulationConfig {
+                    min_open_channels: mesh_target,
+                    target_open_channels: mesh_target,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        ],
+    };
 
     let mut nodes = Vec::with_capacity(config.num_nodes);
 
@@ -404,6 +433,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 use_target_allow_list: false,
                 ..Default::default()
             },
+            strategy: node_strategy.clone(),
             ..Default::default()
         };
 

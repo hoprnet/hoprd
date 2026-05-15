@@ -2,10 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use hopr_lib::api::{
     chain::{
-        ChainReadChannelOperations, ChainReadSafeOperations, ChainValues,
-        ChainWriteChannelOperations, ChainWriteTicketOperations,
+        ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
+        ChainValues, ChainWriteChannelOperations, ChainWriteTicketOperations,
     },
-    node::{ActionableEventSource, HasChainApi, HasTicketManagement},
+    node::{ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement},
     tickets::TicketManagement,
 };
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
@@ -55,7 +55,7 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 /// This is a pure serde config type — it is used for YAML deserialization and
 /// carries no runtime behaviour. The runtime combinator is [`hopr_strategy::strategy::MultiStrategy`],
 /// which accepts any `Box<dyn Strategy + Send>`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, StrumDisplay, VariantNames)]
+#[derive(Debug, Clone, Serialize, Deserialize, StrumDisplay, VariantNames)]
 #[strum(serialize_all = "snake_case")]
 pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
@@ -64,6 +64,8 @@ pub enum StrategyKind {
     AutoFunding(hopr_strategy::auto_funding::AutoFundingStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
+    #[cfg(feature = "runtime-tokio")]
+    ChannelLifecycle(hopr_strategy::channel_lifecycle::ChannelLifecycleConfig),
     Multi(MultiStrategyConfig),
     Passive,
 }
@@ -77,8 +79,32 @@ impl validator::Validate for StrategyKind {
             Self::AutoFunding(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
             Self::ClosureFinalizer(cfg) => cfg.validate(),
+            #[cfg(feature = "runtime-tokio")]
+            Self::ChannelLifecycle(cfg) => cfg.validate(),
             Self::Multi(cfg) => cfg.validate(),
             Self::Passive => Ok(()),
+        }
+    }
+}
+
+impl PartialEq for StrategyKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            #[cfg(feature = "runtime-tokio")]
+            (Self::AutoRedeeming(a), Self::AutoRedeeming(b)) => a == b,
+            #[cfg(feature = "runtime-tokio")]
+            (Self::AutoFunding(a), Self::AutoFunding(b)) => a == b,
+            #[cfg(feature = "runtime-tokio")]
+            (Self::ClosureFinalizer(a), Self::ClosureFinalizer(b)) => a == b,
+            #[cfg(feature = "runtime-tokio")]
+            (Self::ChannelLifecycle(a), Self::ChannelLifecycle(b)) => {
+                // ChannelLifecycleConfig does not implement PartialEq; compare via
+                // serialised JSON which is deterministic for identical configs.
+                serde_json::to_value(a).ok() == serde_json::to_value(b).ok()
+            }
+            (Self::Multi(a), Self::Multi(b)) => a == b,
+            (Self::Passive, Self::Passive) => true,
+            _ => false,
         }
     }
 }
@@ -117,18 +143,27 @@ pub struct MultiStrategyConfig {
 ///
 /// ## Strategies included
 /// - `AutoRedeeming` *(requires `runtime-tokio` feature)*: redeems single tickets on channel close if worth at least 1
-///   wxHOPR. When `runtime-tokio` is not enabled, returns an empty `MultiStrategyConfig` (passive behaviour).
+///   wxHOPR.
+/// - `ChannelLifecycle` *(requires `runtime-tokio` feature)*: unified strategy that automatically opens, funds,
+///   tops up, closes, and finalizes outgoing payment channels based on peer connectivity and quality.
+///
+/// When `runtime-tokio` is not enabled, returns an empty `MultiStrategyConfig` (passive behaviour).
 pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
-        use hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig;
+        use hopr_strategy::{
+            auto_redeeming::AutoRedeemingStrategyConfig, channel_lifecycle::ChannelLifecycleConfig,
+        };
         return MultiStrategyConfig {
             allow_recursive: false,
             execution_interval: Duration::from_secs(60),
-            strategies: vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
-                redeem_on_winning: true,
-                ..Default::default()
-            })],
+            strategies: vec![
+                StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+                    redeem_on_winning: true,
+                    ..Default::default()
+                }),
+                StrategyKind::ChannelLifecycle(ChannelLifecycleConfig::default()),
+            ],
         };
     }
     #[allow(unreachable_code)]
@@ -148,7 +183,8 @@ pub fn build_strategies<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn S
 where
     N: ActionableEventSource
         + HasChainApi<
-            ChainApi: ChainReadChannelOperations
+            ChainApi: ChainReadAccountOperations
+                          + ChainReadChannelOperations
                           + ChainReadSafeOperations
                           + ChainValues
                           + ChainWriteChannelOperations
@@ -157,7 +193,9 @@ where
                           + Send
                           + Sync
                           + 'static,
-        > + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        > + HasGraphView
+        + HasNetworkView
+        + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
         + Send
         + Sync
         + 'static,
@@ -177,7 +215,8 @@ fn build_strategies_inner<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn
 where
     N: ActionableEventSource
         + HasChainApi<
-            ChainApi: ChainReadChannelOperations
+            ChainApi: ChainReadAccountOperations
+                          + ChainReadChannelOperations
                           + ChainReadSafeOperations
                           + ChainValues
                           + ChainWriteChannelOperations
@@ -186,7 +225,9 @@ where
                           + Send
                           + Sync
                           + 'static,
-        > + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        > + HasGraphView
+        + HasNetworkView
+        + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
         + Send
         + Sync
         + 'static,
@@ -218,6 +259,11 @@ where
                     cfg.execution_interval,
                 )
                 .build(Arc::clone(&node)),
+            ),
+            #[cfg(feature = "runtime-tokio")]
+            StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
+                hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(sub_cfg.clone())
+                    .build(Arc::clone(&node)),
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {

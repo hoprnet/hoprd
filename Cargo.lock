@@ -5009,7 +5009,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "4.0.2-rc.2"
+version = "4.0.2-rc.3"
 dependencies = [
  "anyhow",
  "async-signal",
@@ -5126,7 +5126,7 @@ dependencies = [
  "hopr-chain-connector",
  "hopr-lib",
  "hopr-reference",
- "hopr-types",
+ "hopr-strategy",
  "hoprd",
  "hoprd-api",
  "hoprd-api-client",

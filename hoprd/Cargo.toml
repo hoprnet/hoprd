@@ -1,6 +1,6 @@
 [package]
 name = "hoprd"
-version = "4.0.2-rc.2"
+version = "4.0.2-rc.3"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -28,6 +28,7 @@ runtime-tokio = [
   "hopr-strategy/strategy-auto-funding",
   "hopr-strategy/strategy-auto-redeeming",
   "hopr-strategy/strategy-closure-finalizer",
+  "hopr-strategy/strategy-channel-lifecycle",
   "hopr-transport-p2p/runtime-tokio",
 ]
 telemetry = [

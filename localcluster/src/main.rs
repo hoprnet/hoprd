@@ -5,7 +5,7 @@
 //! 2. Generate node identities and fund Safes on-chain (`identity::generate`).
 //! 3. Spawn `hoprd` processes, one per node.
 //! 4. Wait for each node to pass `/startedz` then `/readyz`.
-//! 5. Open full-mesh payment channels between all nodes.
+//! 5. Wait for the `ChannelLifecycleStrategy` to open the full-mesh channel topology.
 //! 6. Block until Ctrl-C, then shut everything down.
 //!
 //! See `docs/localcluster/README.md` for full setup and usage instructions.
@@ -128,12 +128,13 @@ async fn main() -> Result<()> {
         }
 
         if args.skip_channels {
-            warn!("skipping channel creation");
+            warn!("skipping channel topology wait");
         } else {
-            info!("waiting for full-mesh peer visibility before opening channels");
+            info!("waiting for full-mesh peer visibility");
             client_helper::wait_full_mesh_reachable(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT).await?;
-            info!("opening channels to every other node");
-            client_helper::open_full_mesh_channels(&cleanup.nodes, &args.funding_amount).await?;
+            info!("waiting for channel-lifecycle strategy to open the full mesh");
+            client_helper::wait_full_mesh_channels(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT * 4)
+                .await?;
         }
 
         node_summary(&cleanup.nodes, &args, &blokli_url);
