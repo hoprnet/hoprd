@@ -52,8 +52,8 @@ strategy:
           max_concurrent_actions: 4
 hopr:
   network:
-    probe_interval: "5s"
-    probe_recheck_threshold: "30s"
+    probe_interval: "3s"
+    probe_recheck_threshold: "10s"
   host:
     address:
       IPv4: 127.0.0.1 # NOTE: adapt this to reflect your public IP

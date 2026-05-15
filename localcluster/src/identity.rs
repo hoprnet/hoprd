@@ -226,10 +226,9 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     target_open_channels: mesh_target,
                     ..Default::default()
                 },
-                // Tick every 20 s so the second eval fires after probing has built
-                // up edge scores (probe_recheck_threshold=10s → first probe at ~10s
-                // → EMA converges → peer_score ≥ 0.5 by t=20s).
-                tick_interval: std::time::Duration::from_secs(20),
+                // probe_recheck_threshold=3s → first probe within 3s → EMA converges
+                // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
+                tick_interval: std::time::Duration::from_secs(10),
                 ..Default::default()
             }),
         ],
@@ -404,7 +403,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 network: UserHoprNetworkConfig {
                     announce_local_addresses: true,
                     prefer_local_addresses: true,
-                    probe_recheck_threshold: std::time::Duration::from_secs(10),
+                    probe_recheck_threshold: std::time::Duration::from_secs(3),
                     probe_interval: std::time::Duration::from_secs(3),
                     ..Default::default()
                 },
