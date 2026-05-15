@@ -43,4 +43,4 @@ os = [
 # Disabled: `core2` 0.4.0 is yanked but hard-pinned by `multihash` 0.19.3 → `libp2p-identity` 0.2.13 (latest).
 # cargo-audit has no per-crate yanked ignore; re-enable once libp2p drops the core2 dependency.
 enabled = false
-update_index = true # Auto-update the crates.io index (default: true)
+update_index = false # No-op while enabled = false; re-enable when yanked auditing is restored
