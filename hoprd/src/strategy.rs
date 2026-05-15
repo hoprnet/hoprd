@@ -16,8 +16,8 @@ use validator::{Validate, ValidationError};
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
-    static ref METRIC_ENABLED_STRATEGIES: hopr_metrics::MultiGauge =
-        hopr_metrics::MultiGauge::new(
+    static ref METRIC_ENABLED_STRATEGIES: hopr_lib::api::types::telemetry::MultiGauge =
+        hopr_lib::api::types::telemetry::MultiGauge::new(
             "hopr_strategy_enabled_strategies",
             "List of enabled strategies",
             &["strategy"],

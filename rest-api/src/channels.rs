@@ -437,7 +437,7 @@ pub(super) async fn show_channel<
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
 
-    match hopr_async_runtime::prelude::spawn_blocking(move || {
+    match hopr_utils::runtime::prelude::spawn_blocking(move || {
         resolve_channel(&*hopr, &address, direction)
     })
     .await
