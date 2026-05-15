@@ -203,7 +203,7 @@ pub(super) async fn redeem_tickets<
                 }
             };
 
-            hopr_async_runtime::prelude::spawn(async move {
+            hopr_utils::runtime::prelude::spawn(async move {
                 match hopr.redeem_tickets_with_counterparty(address, 0).await {
                     Ok(_) => {
                         tracing::info!(%channel_id, "tickets in channel redeemed on API request");
@@ -217,7 +217,7 @@ pub(super) async fn redeem_tickets<
             (StatusCode::ACCEPTED, "").into_response()
         }
         None => {
-            hopr_async_runtime::prelude::spawn(async move {
+            hopr_utils::runtime::prelude::spawn(async move {
                 match hopr.redeem_all_tickets(0).await {
                     Ok(_) => {
                         tracing::info!("all tickets redeemed on API request");

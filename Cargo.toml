@@ -13,11 +13,10 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-async-runtime = { git = "https://github.com/hoprnet/hoprnet" }
+hopr-utils = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
-hopr-metrics = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-reference = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
@@ -26,7 +25,7 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet" }
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.9.0" }
-hopr-types = { version = "1.5.4", features = ["use-bindings"] }
+hopr-types = { version = "1.8.0", features = ["use-bindings"] }
 
 # Third-party deps
 anyhow = "1.0.102"
@@ -162,10 +161,3 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]
-
-# memory profiling profile — inherits release optimizations but preserves debug symbols
-# for jeprof symbol resolution
-[profile.memprof]
-inherits = "release"
-debug = 2
-strip = false

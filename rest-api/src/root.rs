@@ -4,7 +4,7 @@ use crate::{ApiError, ApiErrorStatus};
 
 #[cfg(feature = "telemetry")]
 fn collect_hopr_metrics() -> Result<String, ApiErrorStatus> {
-    hopr_metrics::gather_all_metrics()
+    hopr_types::telemetry::gather_all_metrics()
         .map(|metrics| {
             metrics
                 .lines()
@@ -62,13 +62,13 @@ mod tests {
         let session_metric_name = "hopr_session_metrics_endpoint_test".to_string();
         let non_session_metric_name = "hopr_metrics_endpoint_test".to_string();
 
-        let session_metric = hopr_metrics::MultiCounter::new(
+        let session_metric = hopr_types::telemetry::MultiCounter::new(
             &session_metric_name,
             "session endpoint filtering test",
             &["session_id"],
         )?;
 
-        let non_session_metric = hopr_metrics::MultiCounter::new(
+        let non_session_metric = hopr_types::telemetry::MultiCounter::new(
             &non_session_metric_name,
             "endpoint non-session metric test",
             &["kind"],
