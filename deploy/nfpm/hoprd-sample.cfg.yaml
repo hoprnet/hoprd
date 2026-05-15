@@ -46,5 +46,8 @@ strategy:
         concurrency:
           max_concurrent_actions: 4
 hopr:
+  network:
+    probe_interval: "5s"
+    probe_recheck_threshold: "30s"
   safe_module:
     safe_transaction_service_provider: https://safe-transaction.prod.hoprnet.link/

@@ -22,7 +22,7 @@ use hopr_lib::{
 use hopr_reference::config::SessionIpForwardingConfig;
 use hopr_strategy::{
     auto_redeeming::AutoRedeemingStrategyConfig,
-    channel_lifecycle::{ChannelLifecycleConfig, EligibilityConfig, PopulationConfig},
+    channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},
 };
 use hoprd::{
     config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
@@ -226,11 +226,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     target_open_channels: mesh_target,
                     ..Default::default()
                 },
-                // Fresh nodes have no probe history; score=0 < default threshold 0.5.
-                eligibility: EligibilityConfig {
-                    min_peer_quality_score: 0.0,
-                    ..Default::default()
-                },
+                // Tick every 20 s so the second eval fires after probing has built
+                // up edge scores (probe_recheck_threshold=10s → first probe at ~10s
+                // → EMA converges → peer_score ≥ 0.5 by t=20s).
+                tick_interval: std::time::Duration::from_secs(20),
                 ..Default::default()
             }),
         ],
