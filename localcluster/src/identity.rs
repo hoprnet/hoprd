@@ -20,7 +20,14 @@ use hopr_lib::{
     config::SafeModule,
 };
 use hopr_reference::config::SessionIpForwardingConfig;
-use hoprd::config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig};
+use hopr_strategy::{
+    auto_redeeming::AutoRedeemingStrategyConfig,
+    channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},
+};
+use hoprd::{
+    config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
+    strategy::{MultiStrategyConfig, StrategyKind},
+};
 use hoprd_api::config::{Api, Auth};
 
 pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
@@ -201,9 +208,35 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
     let p2p_host = &config.p2p_host;
 
-    let mut nodes = Vec::with_capacity(config.num_nodes);
+    // Set population thresholds to the exact cluster mesh size so the
+    // ChannelLifecycleStrategy opens a channel to every other node.
+    let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
+    let mesh_target = effective_num_nodes.saturating_sub(1);
+    let node_strategy = MultiStrategyConfig {
+        allow_recursive: false,
+        execution_interval: std::time::Duration::from_secs(60),
+        strategies: vec![
+            StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+                redeem_on_winning: true,
+                ..Default::default()
+            }),
+            StrategyKind::ChannelLifecycle(ChannelLifecycleConfig {
+                population: PopulationConfig {
+                    min_open_channels: mesh_target,
+                    target_open_channels: mesh_target,
+                    ..Default::default()
+                },
+                // probe_recheck_threshold=3s → first probe within 3s → EMA converges
+                // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
+                tick_interval: std::time::Duration::from_secs(10),
+                ..Default::default()
+            }),
+        ],
+    };
 
-    for id in 0..config.num_nodes.clamp(1, NODE_KEYS.len()) {
+    let mut nodes = Vec::with_capacity(effective_num_nodes);
+
+    for id in 0..effective_num_nodes {
         let kp = if config.random_identities {
             HoprKeys::random()
         } else {
@@ -370,7 +403,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 network: UserHoprNetworkConfig {
                     announce_local_addresses: true,
                     prefer_local_addresses: true,
-                    probe_recheck_threshold: std::time::Duration::from_secs(10),
+                    probe_recheck_threshold: std::time::Duration::from_secs(3),
                     probe_interval: std::time::Duration::from_secs(3),
                     ..Default::default()
                 },
@@ -404,6 +437,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 use_target_allow_list: false,
                 ..Default::default()
             },
+            strategy: node_strategy.clone(),
             ..Default::default()
         };
 

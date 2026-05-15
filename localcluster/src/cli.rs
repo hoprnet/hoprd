@@ -1,7 +1,6 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use clap::Parser;
-use hopr_types::primitive::prelude::HoprBalance;
 
 use crate::identity::{
     DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
@@ -30,11 +29,7 @@ pub struct Args {
     #[arg(long, default_value_t = DEFAULT_NUM_NODES, value_parser = parse_size)]
     pub size: usize,
 
-    /// Channel funding amount in base units (per channel)
-    #[arg(long, default_value = "1 wxHOPR", value_parser = HoprBalance::from_str)]
-    pub funding_amount: HoprBalance,
-
-    /// Skip channel creation
+    /// Skip waiting for the channel-lifecycle strategy to open the full mesh
     #[arg(long, default_value_t = false)]
     pub skip_channels: bool,
 

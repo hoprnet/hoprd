@@ -437,11 +437,7 @@ pub(super) async fn show_channel<
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
 
-    match hopr_async_runtime::prelude::spawn_blocking(move || {
-        resolve_channel(&*hopr, &address, direction)
-    })
-    .await
-    {
+    match tokio::task::spawn_blocking(move || resolve_channel(&*hopr, &address, direction)).await {
         Ok(Ok(channel)) => {
             (StatusCode::OK, Json(channel_to_topology_info(&channel))).into_response()
         }
