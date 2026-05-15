@@ -11,6 +11,9 @@ pub mod cli;
 pub mod config;
 pub mod strategy;
 
+#[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
+mod jemalloc_stats;
+
 use async_signal::{Signal, Signals};
 use futures::{FutureExt, StreamExt, future::abortable};
 use signal_hook::low_level;

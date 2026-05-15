@@ -58,6 +58,10 @@ allocator-mimalloc = [
 allocator-jemalloc = [
   "dep:tikv-jemallocator",
 ] # Use jemalloc as the global allocator on Linux
+allocator-jemalloc-profiling = [
+  "allocator-jemalloc",
+  "tikv-jemallocator/profiling",
+] # Compile jemalloc with --enable-prof for heap profiling
 allocator-jemalloc-stats = [
   "allocator-jemalloc",
   "dep:tikv-jemalloc-ctl",
@@ -129,7 +133,10 @@ hopr-transport-p2p = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 mimalloc = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true, optional = true }
-tikv-jemalloc-ctl = { workspace = true, features = ["stats"], optional = true }
+tikv-jemalloc-ctl = { workspace = true, features = [
+  "stats",
+  "profiling",
+], optional = true }
 
 [build-dependencies]
 vergen-gix = { workspace = true, features = ["build"] }

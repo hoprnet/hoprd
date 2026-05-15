@@ -134,23 +134,23 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                  | Env var                   | Default           | Description                                            |
-| --------------------- | ------------------------- | ----------------- | ------------------------------------------------------ |
-| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                         |
-| `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                           |
-| `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)              |
+| Flag                  | Env var                   | Default           | Description                                                                                                               |
+| --------------------- | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                                                                                            |
+| `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                                                                                              |
+| `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)                                                                                 |
 | `--p2p-host`          | —                         | `127.0.0.1`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
-| `--p2p-port-base`     | —                         | `9000`            | First P2P port                                         |
-| `--data-dir`          | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                |
-| `--chain-image`       | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                     |
-| `--chain-url`         | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step          |
-| `--container-runtime` | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)     |
-| `--hoprd-bin`         | —                         | `hoprd`           | Path to the `hoprd` binary                             |
-| `--identity-password` | —                         | `password`        | Password for identity encryption                       |
-| `--api-token`         | —                         | none              | Bearer token for the REST API                          |
-| `--funding-amount`    | —                         | `1 wxHOPR`        | Per-channel funding amount                             |
-| `--skip-channels`     | —                         | `false`           | Skip opening payment channels                          |
-| `--extra-identities`  | —                         | `0`               | Extra pre-funded identities for external tooling (0–5) |
+| `--p2p-port-base`     | —                         | `9000`            | First P2P port                                                                                                            |
+| `--data-dir`          | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                                                                                   |
+| `--chain-image`       | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                                                                                        |
+| `--chain-url`         | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step                                                                             |
+| `--container-runtime` | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
+| `--hoprd-bin`         | —                         | `hoprd`           | Path to the `hoprd` binary                                                                                                |
+| `--identity-password` | —                         | `password`        | Password for identity encryption                                                                                          |
+| `--api-token`         | —                         | none              | Bearer token for the REST API                                                                                             |
+| `--funding-amount`    | —                         | `1 wxHOPR`        | Per-channel funding amount                                                                                                |
+| `--skip-channels`     | —                         | `false`           | Skip opening payment channels                                                                                             |
+| `--extra-identities`  | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
 
 ---
 
@@ -230,8 +230,8 @@ container image pull --platform linux/amd64 <chain-image>
 
 **`/readyz` returns 412 forever** — Two possible causes:
 
-1. *Network health Red* — Nodes are not becoming minimally connected. This usually means P2P peers can't dial each other. Verify `--p2p-host` is an IP address (e.g. `127.0.0.1`), not a hostname. libp2p resolves hostname-based multiaddrs (like `/dns4/localhost/...`) at dial time — if DNS lookup fails or is slow the dial is silently dropped.
-2. *Chain check failing* — The chain indexer (blokli) is unreachable. Inspect `logs/hoprd_*.log` and `logs/chain.log` for errors. The indexer may need more than the 10s warmup.
+1. _Network health Red_ — Nodes are not becoming minimally connected. This usually means P2P peers can't dial each other. Verify `--p2p-host` is an IP address (e.g. `127.0.0.1`), not a hostname. libp2p resolves hostname-based multiaddrs (like `/dns4/localhost/...`) at dial time — if DNS lookup fails or is slow the dial is silently dropped.
+2. _Chain check failing_ — The chain indexer (blokli) is unreachable. Inspect `logs/hoprd_*.log` and `logs/chain.log` for errors. The indexer may need more than the 10s warmup.
 
 **Port collisions** — Use `lsof -i :<port>` to find conflicts. Override with `--api-port-base` and `--p2p-port-base`.
 
