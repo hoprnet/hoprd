@@ -37,7 +37,6 @@ telemetry = [
   "dep:opentelemetry-prometheus-text-exporter",
   "dep:flagset",
   "dep:tracing-opentelemetry",
-  "hopr-types/telemetry",
   "hopr-lib/telemetry",
   "hoprd-api/telemetry",
   "hopr-strategy/telemetry",
@@ -124,7 +123,6 @@ hopr-reference = { workspace = true, features = [
   "session-server",
 ] }
 hopr-chain-connector = { workspace = true }
-hopr-types = { workspace = true }
 hopr-ct-full-network = { workspace = true }
 hopr-network-graph = { workspace = true, features = ["petgraph"] }
 hopr-transport-p2p = { workspace = true }

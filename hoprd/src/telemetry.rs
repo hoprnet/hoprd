@@ -606,7 +606,7 @@ pub(super) fn init_logger(
 
             // Initialize hopr-metrics with this unified provider so all instruments
             // feed into both OTLP and the Prometheus text endpoint
-            if !hopr_types::telemetry::init_with_provider(
+            if !hopr_lib::api::types::telemetry::init_with_provider(
                 prometheus_exporter,
                 meter_provider.clone(),
             ) {
@@ -621,7 +621,7 @@ pub(super) fn init_logger(
             );
 
             for (prefix, interval, prefixed_meter_provider) in prefixed_meter_providers {
-                if !hopr_types::telemetry::register_prefix_provider(
+                if !hopr_lib::api::types::telemetry::register_prefix_provider(
                     &prefix,
                     prefixed_meter_provider.clone(),
                 ) {
@@ -656,7 +656,7 @@ pub(super) fn init_logger(
                 .with_reader(prometheus_exporter.clone())
                 .with_resource(resource.clone())
                 .build();
-            if !hopr_types::telemetry::init_with_provider(
+            if !hopr_lib::api::types::telemetry::init_with_provider(
                 prometheus_exporter,
                 meter_provider.clone(),
             ) {
@@ -692,7 +692,10 @@ pub(super) fn init_logger(
         let meter_provider = SdkMeterProvider::builder()
             .with_reader(prometheus_exporter.clone())
             .build();
-        if !hopr_types::telemetry::init_with_provider(prometheus_exporter, meter_provider.clone()) {
+        if !hopr_lib::api::types::telemetry::init_with_provider(
+            prometheus_exporter,
+            meter_provider.clone(),
+        ) {
             tracing::warn!(
                 "hopr-metrics global state was already initialized; custom provider not applied"
             );

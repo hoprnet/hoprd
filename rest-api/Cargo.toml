@@ -14,12 +14,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["telemetry", "runtime-tokio"]
-telemetry = [
-  "hopr-lib/telemetry",
-  "hopr-types/telemetry",
-  "dep:lazy_static",
-  "dep:regex",
-]
+telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
 runtime-tokio = ["hopr-lib/runtime-tokio", "hopr-utils/runtime-tokio"]
 
 [dependencies]
@@ -52,7 +47,6 @@ hopr-lib = { workspace = true, features = [
 ] }
 
 hopr-utils = { workspace = true }
-hopr-types = { workspace = true }
 hopr-utils-session = { workspace = true }
 
 [dev-dependencies]

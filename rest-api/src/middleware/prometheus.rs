@@ -4,20 +4,20 @@ use hopr_lib::api::types::primitive::prelude::AsUnixTimestamp;
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
-    static ref METRIC_COUNT_API_CALLS:  hopr_types::telemetry::MultiCounter =  hopr_types::telemetry::MultiCounter::new(
+    static ref METRIC_COUNT_API_CALLS:  hopr_lib::api::types::telemetry::MultiCounter =  hopr_lib::api::types::telemetry::MultiCounter::new(
         "hoprd_http_api_call_count",
         "Number of different REST API calls and their statuses",
         &["path", "method", "status"]
     )
     .unwrap();
-    static ref METRIC_COUNT_API_CALLS_TIMING:  hopr_types::telemetry::MultiHistogram =  hopr_types::telemetry::MultiHistogram::new(
+    static ref METRIC_COUNT_API_CALLS_TIMING:  hopr_lib::api::types::telemetry::MultiHistogram =  hopr_lib::api::types::telemetry::MultiHistogram::new(
         "hoprd_http_api_call_timing_sec",
         "Timing of different REST API calls in seconds",
         vec![0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0],
         &["path", "method"]
     )
     .unwrap();
-    static ref METRIC_API_LAST_TIME:  hopr_types::telemetry::SimpleGauge =  hopr_types::telemetry::SimpleGauge::new(
+    static ref METRIC_API_LAST_TIME:  hopr_lib::api::types::telemetry::SimpleGauge =  hopr_lib::api::types::telemetry::SimpleGauge::new(
         "hoprd_http_api_last_used_time",
         "The unix timestamp in seconds at which any API endpoint was last fetched"
     ).unwrap();

@@ -11,7 +11,7 @@ and `scripts/jeprof-vm.sh`. All dump directories live under `hoprnet/jeprof-pull
 | **SURB store** (`MemorySurbStore`)               | **Fixed** — defaults lowered, bounded    |
 | **SessionManager cache** (DELETE invalidation)   | **Partially fixed** — 17% reduction only |
 | **FrameInspector scaffolding** (Fix 1, deferred) | **Not yet fixed** — still 93–95% of leak |
-| Idle baseline (no traffic)                       | **Healthy** — ~73 MB, flat over 6.3 h   |
+| Idle baseline (no traffic)                       | **Healthy** — ~73 MB, flat over 6.3 h    |
 
 The primary open issue is that `FrameInspector::new` preallocates approximately 500 KB
 per session. The fix is to lower the `SocketConfig::capacity` default from 8192 to 256.
@@ -223,14 +223,14 @@ previous runs is driven entirely by session allocation.
 
 ## Progression Summary
 
-| Run | Directory                            | Code         | Load                |    Total Δ | Top suspect                            | Outcome                       |
-| --- | ------------------------------------ | ------------ | ------------------- | ---------: | -------------------------------------- | ----------------------------- |
-| 1   | `20260507-152514`                    | pre-rebase   | 1000 iter           |    ~652 MB | `handle_incoming` 46% + `insert_surbs` | Leak found                    |
-| 2   | `20260508-124517-postrebase`         | post-rebase  | 200 iter            |    ~482 MB | `insert_surbs` 85–91%                  | Leak worsened 3.7×/session    |
-| 3   | `20260508-131142-sleep100`           | post-rebase  | longer, 100ms pace  |   ~1265 MB | `insert_surbs` 47–52% + REST 12%       | REST path visible             |
-| 4   | `20260508-150153/150400-lowdefaults` | low SURB cfg | 2000 iter           |   ~3511 MB | **`FrameInspector::new` 93–94%**       | SURB fixed; new leak unmasked |
-| 5   | `20260508-172539-fix2`               | Fix 2+3      | 2000 iter, 200ms    |   ~2912 MB | `FrameInspector::new` 93–95%           | −17% only                     |
-| 6   | `20260508-235000-longrun`            | Fix 2+3      | **idle 6.3 h**      | **~39 MB** | OTel buffers + tokio warmup            | Baseline healthy              |
+| Run | Directory                            | Code         | Load               |    Total Δ | Top suspect                            | Outcome                       |
+| --- | ------------------------------------ | ------------ | ------------------ | ---------: | -------------------------------------- | ----------------------------- |
+| 1   | `20260507-152514`                    | pre-rebase   | 1000 iter          |    ~652 MB | `handle_incoming` 46% + `insert_surbs` | Leak found                    |
+| 2   | `20260508-124517-postrebase`         | post-rebase  | 200 iter           |    ~482 MB | `insert_surbs` 85–91%                  | Leak worsened 3.7×/session    |
+| 3   | `20260508-131142-sleep100`           | post-rebase  | longer, 100ms pace |   ~1265 MB | `insert_surbs` 47–52% + REST 12%       | REST path visible             |
+| 4   | `20260508-150153/150400-lowdefaults` | low SURB cfg | 2000 iter          |   ~3511 MB | **`FrameInspector::new` 93–94%**       | SURB fixed; new leak unmasked |
+| 5   | `20260508-172539-fix2`               | Fix 2+3      | 2000 iter, 200ms   |   ~2912 MB | `FrameInspector::new` 93–95%           | −17% only                     |
+| 6   | `20260508-235000-longrun`            | Fix 2+3      | **idle 6.3 h**     | **~39 MB** | OTel buffers + tokio warmup            | Baseline healthy              |
 
 ---
 
@@ -286,6 +286,7 @@ Apply Fix 1 (`#[default(256)]`), rebuild, and rerun with 2000 iterations at 200 
 pacing.
 
 Expected outcome:
+
 - Total leak approximately 100 MB cluster-wide (32 MB × 3 nodes ≈ 96 MB).
 - If growth remains higher, there is per-session state accumulating outside
   `FrameInspector` — reassembly buffers, control-channel buffers (size 2048), or
