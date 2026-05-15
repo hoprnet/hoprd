@@ -15,7 +15,7 @@ Run from macOS with port-forwards (3000/3001/3002 → VM), or from the VM.
   ./scripts/session_loop.py --iterations 1000
 
 Or directly on the VM:
-  ssh nixos-test@orb 'cd ~/hoprnet && ./scripts/session_loop.py'
+  ssh nixos-test@orb 'cd ~/hoprd && ./scripts/session_loop.py'
 
 Defaults assume 3-node cluster from `scripts/jeprof-vm.sh localcluster 3`.
 """
@@ -118,9 +118,9 @@ def close_session(entry: str, protocol: str, ip: str, port: int,
 def push_traffic(ip: str, port: int, protocol: str, payload: bytes,
                  connect_timeout: float = 3.0, send_timeout: float = 3.0) -> int:
     """Open socket, write payload, close. Returns bytes written."""
-    sock_type = socket.SOCK_STREAM if protocol == "tcp" else socket.SOCK_DGRAM
     sent = 0
     if protocol == "tcp":
+        # socket.create_connection handles IPv4/IPv6 automatically
         with socket.create_connection((ip, port), timeout=connect_timeout) as s:
             s.settimeout(send_timeout)
             s.sendall(payload)
@@ -134,10 +134,16 @@ def push_traffic(ip: str, port: int, protocol: str, payload: bytes,
             except (TimeoutError, OSError):
                 pass
     else:  # udp
-        with socket.socket(socket.AF_INET, sock_type) as s:
+        # Resolve address family for UDP
+        addr_info = socket.getaddrinfo(ip, port, 0, socket.SOCK_DGRAM)
+        if not addr_info:
+            raise HttpError(f"could not resolve address {ip}")
+        family, sock_type, proto, _canonname, sockaddr = addr_info[0]
+
+        with socket.socket(family, sock_type) as s:
             s.settimeout(send_timeout)
-            # UDP MTU concern; keep payload bounded by caller (PAYLOAD_MAX < 1500 typically).
-            s.sendto(payload, (ip, port))
+            # sockaddr is the resolved (ip, port, ...) tuple
+            s.sendto(payload, sockaddr)
             sent = len(payload)
     return sent
 
@@ -148,21 +154,26 @@ def one_iteration(entry: str, dest: str, protocol: str, hops: int,
                   sleep_s: float = 0.0) -> tuple[Stats, str | None]:
     s = Stats()
     t0 = time.monotonic()
+    iter_err: str | None = None
+
     try:
         ip, port = open_session(entry, protocol, dest, hops, token, http_timeout)
     except Exception as e:
         s.fail_open += 1
         s.durations_ms.append((time.monotonic() - t0) * 1000.0)
         return s, f"open: {e!r}"
+
     if sleep_s:
         time.sleep(sleep_s)
+
     try:
         payload = os.urandom(payload_size)
         try:
             s.bytes_sent = push_traffic(ip, port, protocol, payload)
         except Exception as e:
             s.fail_send += 1
-            return s, f"send: {e!r}"
+            iter_err = f"send: {e!r}"
+
         if sleep_s:
             time.sleep(sleep_s)
     finally:
@@ -170,13 +181,16 @@ def one_iteration(entry: str, dest: str, protocol: str, hops: int,
             close_session(entry, protocol, ip, port, token, http_timeout)
         except Exception as e:
             s.fail_close += 1
-            s.durations_ms.append((time.monotonic() - t0) * 1000.0)
-            return s, f"close: {e!r}"
+            if not iter_err:
+                iter_err = f"close: {e!r}"
+
         if sleep_s:
             time.sleep(sleep_s)
-    s.ok += 1
+
     s.durations_ms.append((time.monotonic() - t0) * 1000.0)
-    return s, None
+    if not iter_err:
+        s.ok += 1
+    return s, iter_err
 
 
 def summary(s: Stats, total: int, wall_s: float) -> str:
@@ -211,6 +225,17 @@ def main() -> int:
     ap.add_argument("--sleep-ms", type=int, default=100,
                     help="Sleep between each HTTP call (open/send/close). Default 100ms.")
     args = ap.parse_args()
+
+    if args.iterations < 1:
+        ap.error("iterations must be >= 1")
+    if args.concurrency <= 0:
+        ap.error("concurrency must be > 0")
+    if args.progress_every <= 0:
+        ap.error("progress-every must be > 0")
+    if args.payload_min < 0:
+        ap.error("payload-min must be >= 0")
+    if args.payload_min > args.payload_max:
+        ap.error("payload-min must be <= payload-max")
 
     if args.seed is not None:
         random.seed(args.seed)

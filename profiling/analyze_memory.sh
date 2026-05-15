@@ -32,11 +32,23 @@ echo "Generating comprehensive analysis for $DUMP_FILE..."
 run_jeprof() {
   local output_file="$1"
   shift
-  if ! jeprof "$@" >"$output_file" 2>/dev/null; then
+  local stderr_tmp
+  stderr_tmp=$(mktemp)
+  if ! jeprof "$@" >"$output_file" 2>"$stderr_tmp"; then
+    if grep -q "No nodes to print" "$stderr_tmp"; then
+      echo "    (skipped: no matching nodes)"
+      rm -f "$output_file"
+    else
+      echo "Error running jeprof for $(basename "$output_file"):" >&2
+      cat "$stderr_tmp" >&2
+      rm -f "$output_file" "$stderr_tmp"
+      return 1
+    fi
+  elif grep -q "No nodes to print" "$output_file"; then
     echo "    (skipped: no matching nodes)"
     rm -f "$output_file"
-    return 0
   fi
+  rm -f "$stderr_tmp"
 }
 
 # 1. Overall memory usage

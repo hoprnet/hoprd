@@ -1,29 +1,29 @@
-# hoprd memory leak — investigation synthesis
+# hoprd Memory Leak — Investigation Synthesis
 
-7 profiling runs on OrbStack NixOS VM (aarch64 Linux, jemalloc profiling
-enabled). Tool stack: `jeprof`, `scripts/jeprof_plot.py`, `scripts/jeprof-vm.sh`.
-All dump dirs under `hoprnet/jeprof-pull-*/`.
+Seven profiling runs were conducted on an OrbStack NixOS VM (aarch64 Linux, jemalloc
+profiling enabled). The tooling stack consists of `jeprof`, `scripts/jeprof_plot.py`,
+and `scripts/jeprof-vm.sh`. All dump directories live under `hoprnet/jeprof-pull-*/`.
 
-## TL;DR current state
+## Current State (TL;DR)
 
 | Layer                                            | Status                                   |
 | ------------------------------------------------ | ---------------------------------------- |
 | **SURB store** (`MemorySurbStore`)               | **Fixed** — defaults lowered, bounded    |
 | **SessionManager cache** (DELETE invalidation)   | **Partially fixed** — 17% reduction only |
-| **FrameInspector scaffolding** (Fix 1, deferred) | **Not yet fixed** — still 93-95% of leak |
-| Idle baseline (no traffic)                       | **Healthy** — ~73 MB, flat for 6.3 h     |
+| **FrameInspector scaffolding** (Fix 1, deferred) | **Not yet fixed** — still 93–95% of leak |
+| Idle baseline (no traffic)                       | **Healthy** — ~73 MB, flat over 6.3 h   |
 
-Primary open issue: `FrameInspector::new` preallocates ~500 KB per session.
-Fix: lower `SocketConfig::capacity` default 8192 → 256.
+The primary open issue is that `FrameInspector::new` preallocates approximately 500 KB
+per session. The fix is to lower the `SocketConfig::capacity` default from 8192 to 256.
 
 ---
 
-## Run timeline
+## Run Timeline
 
-### Run 1 — pre-rebase, 1000 iterations
+### Run 1 — Pre-rebase, 1000 iterations
 
-**Dir:** `jeprof-pull-20260507-152514/`
-**Code:** pre-master-rebase
+**Directory:** `jeprof-pull-20260507-152514/`  
+**Codebase:** pre-master-rebase
 
 | PID       |  Net growth |
 | --------- | ----------: |
@@ -32,16 +32,17 @@ Fix: lower `SocketConfig::capacity` default 8192 → 256.
 | 284979    |    210.0 MB |
 | **total** | **~652 MB** |
 
-Top suspect: `SessionManager::handle_incoming_session_initiation` 46% on PID 1,
-`insert_surbs` 52% on PIDs 2/3. Shape: flat plateau at 436 MB, then sharp ramp
-when session_loop hammered. Per-session cost: ~217 KB/node.
+The top suspect was `SessionManager::handle_incoming_session_initiation` at 46% on
+PID 1, and `insert_surbs` at 52% on PIDs 2 and 3. The memory profile showed a flat
+plateau at 436 MB followed by a sharp ramp when `session_loop` hammered the nodes.
+Per-session cost: approximately 217 KB per node.
 
 ---
 
-### Run 2 — post-rebase, 200 iterations
+### Run 2 — Post-rebase, 200 iterations
 
-**Dir:** `jeprof-pull-20260508-124517-postrebase/`
-**Code:** post-master-rebase
+**Directory:** `jeprof-pull-20260508-124517-postrebase/`  
+**Codebase:** post-master-rebase
 
 | PID       |  Net growth |
 | --------- | ----------: |
@@ -50,17 +51,18 @@ when session_loop hammered. Per-session cost: ~217 KB/node.
 | 593635    |    155.4 MB |
 | **total** | **~482 MB** |
 
-Top: `insert_surbs` 85–91%, `decode` 89–97%. No plateau — monotonically linear.
-Stack root shifted from tokio to **rayon workers** (rebase changed SURB insertion
-codepath from async to sync/rayon). Per-session cost jumped to **~803 KB/node
-(3.7× worse than pre-rebase)**.
+`insert_surbs` dominated at 85–91% and `decode` at 89–97%. Unlike Run 1, there was
+no plateau — growth was monotonically linear throughout. The stack root shifted from
+tokio to **rayon workers**, because the rebase changed the SURB insertion codepath
+from async to sync/rayon. Per-session cost jumped to **~803 KB per node, a 3.7×
+regression compared to pre-rebase**.
 
 ---
 
-### Run 3 — post-rebase, 100 ms sleep between HTTP calls
+### Run 3 — Post-rebase, 100 ms sleep between HTTP calls
 
-**Dir:** `jeprof-pull-20260508-131142-sleep100/`
-**Code:** same as Run 2
+**Directory:** `jeprof-pull-20260508-131142-sleep100/`  
+**Codebase:** same as Run 2
 
 | PID       |   Net growth |
 | --------- | -----------: |
@@ -69,17 +71,18 @@ codepath from async to sync/rayon). Per-session cost jumped to **~803 KB/node
 | 595906    |     433.8 MB |
 | **total** | **~1265 MB** |
 
-Slowing requests exposed two additional suspects previously drowned by SURB noise:
+Pacing requests more slowly exposed two additional suspects that had been drowned out
+by SURB noise in the previous runs:
 
 - `create_session::{{closure}}` REST handler: 11–13% / ~50 MB per node
 - `poll@9e67d4` anonymous future: 21–26% / ~100 MB per node
 
-Larger total than Run 2 because more iterations ran (longer test), not a
-regression — per-session cost unchanged.
+The larger absolute total compared to Run 2 is because more iterations completed over
+the longer test duration — per-session cost was unchanged.
 
 ---
 
-### Root cause confirmed after Runs 1–3: `MemorySurbStore`
+### Root Cause Confirmed After Runs 1–3: `MemorySurbStore`
 
 `protocols/hopr/src/surb_store.rs:162`. Two `moka::sync::Cache` instances keyed
 by `HoprPseudonym`:
@@ -89,29 +92,30 @@ pseudonym_openers:   moka::sync::Cache<HoprPseudonym, moka::sync::Cache<HoprSurb
 surbs_per_pseudonym: moka::sync::Cache<HoprPseudonym, SurbRingBuffer<HoprSurb>>
 ```
 
-Each session uses a new pseudonym (privacy guarantee). On first packet:
+Each session uses a fresh pseudonym as a privacy guarantee. On the first packet,
+the store inserts a `SurbRingBuffer` with capacity `rb_capacity = 15_000` (≈6 MB
+when fully loaded) and an inner cache with `max_openers_per_pseudonym = 100_000`.
 
-- Inserts a `SurbRingBuffer` with capacity `rb_capacity = 15_000` (≈6 MB fully loaded)
-- Inserts an inner cache with `max_openers_per_pseudonym = 100_000`
-
-`DELETE /api/v4/session` does **not** invalidate pseudonym entries. Only eviction:
+`DELETE /api/v4/session` does **not** invalidate pseudonym entries. The only eviction
+paths are:
 
 - `time_to_idle = 600 s`
-- `max_capacity = 10_000` pseudonyms LRU
+- `max_capacity = 10_000` pseudonyms (LRU)
 
-A session_loop creating N sessions in T < 600 s accumulates all N simultaneously.
-Bounded but the bound is enormous (10k × 6 MB = 60 GB potential).
+A `session_loop` that creates N sessions in less than 600 seconds accumulates all N
+simultaneously. The store is technically bounded, but the bound is enormous:
+10,000 pseudonyms × 6 MB = up to 60 GB.
 
-**Experiment:** Lowering defaults should produce a plateau (LRU caps). If no
-plateau → second leak path exists outside the SURB store.
+**Hypothesis for Run 4:** Lowering the defaults should produce a plateau once LRU
+kicks in. If no plateau appears, a second leak path exists outside the SURB store.
 
 ---
 
-### Run 4 — lowered SURB defaults (2000 iterations, 200 ms sleep)
+### Run 4 — Lowered SURB Defaults (2000 iterations, 200 ms sleep)
 
-**Dirs:** `jeprof-pull-20260508-150153-lowdefaults/` (dumps) +
-`jeprof-pull-20260508-150400-lowdefaults/` (annotated findings)
-**Code:** SURB defaults: `max_pseudonyms 10000→100`, `rb_capacity 15000→1024`,
+**Directories:** `jeprof-pull-20260508-150153-lowdefaults/` (dumps) and
+`jeprof-pull-20260508-150400-lowdefaults/` (annotated findings)  
+**Changes applied:** `max_pseudonyms 10000→100`, `rb_capacity 15000→1024`,
 `pseudonyms_lifetime 600s→60s`, `reply_opener_lifetime 3600s→300s`
 
 | PID       |   Net growth |
@@ -121,8 +125,9 @@ plateau → second leak path exists outside the SURB store.
 | 601076    |      1204 MB |
 | **total** | **~3511 MB** |
 
-**SURB store leak eliminated** — `insert_surbs`, `insert_reply_opener`, moka
-`value_initializer` all gone from top. But a new dominant leak appeared:
+**The SURB store leak was eliminated** — `insert_surbs`, `insert_reply_opener`, and
+`moka::value_initializer` all disappeared from the top of the profile. However, a
+new dominant leak became visible:
 
 ```
 FrameInspector::new                            93–94%  ~1100 MB/node
@@ -130,10 +135,11 @@ handle_incoming_session_initiation             61–65%   ~730 MB/node
 new_session / create_session REST              35–40%   ~460 MB/node
 ```
 
-Larger absolute total because the test ran longer (2000 iter vs ~700 in Run 3)
-and `FrameInspector` is more expensive per session than the now-bounded SURB path.
+The larger absolute total compared to Run 3 is because the test ran longer (2000
+iterations vs. ~700) and `FrameInspector` is more expensive per session than the
+now-bounded SURB path.
 
-**Diagnosis:** `protocols/session/src/processing/types.rs:120`:
+**Diagnosis — `protocols/session/src/processing/types.rs:120`:**
 
 ```rust
 pub fn new(capacity: usize) -> Self {
@@ -142,28 +148,31 @@ pub fn new(capacity: usize) -> Self {
 }
 ```
 
-Default capacity = 8192 (`protocols/session/src/socket/mod.rs:62–63`). DashMap
-preallocates shards for 16385 slots ≈ **~500 KB per session**. At 2000 sessions
-(all under `SessionManager.sessions.max_capacity = 2048` cap, not idle-timed out)
-= ~1 GB per node. Matches exactly.
+The default capacity is 8192 (`protocols/session/src/socket/mod.rs:62–63`). DashMap
+preallocates shards for 16,385 slots, which comes to approximately **500 KB per
+session**. At 2000 sessions — all fitting within `SessionManager.sessions.max_capacity
+= 2048`, so none have been idle-evicted — that is roughly 1 GB per node, which
+matches the observed numbers exactly.
 
-Same anti-pattern as SURB store: session slot kept in moka cache (3 min idle TTL),
-never explicitly invalidated on `DELETE /session`.
+This is the same anti-pattern as the SURB store: the session slot is held in a moka
+cache with a 3-minute idle TTL and is never explicitly invalidated when
+`DELETE /session` is called.
 
 ---
 
-### Run 5 — Fix 2 + Fix 3 (session-cache invalidation on DELETE)
+### Run 5 — Fix 2 + Fix 3 (Session Cache Invalidation on DELETE)
 
-**Dir:** `jeprof-pull-20260508-172539-fix2/`
+**Directory:** `jeprof-pull-20260508-172539-fix2/`  
 **Fixes applied:**
 
-- Fix 2: `transport/session/src/manager.rs` — added `close_session()` calling
-  `self.sessions.remove(id).await` and the existing private close with `ClosureReason::Eviction`.
+- **Fix 2:** `transport/session/src/manager.rs` — added `close_session()`, which
+  calls `self.sessions.remove(id).await` and then the existing private close with
+  `ClosureReason::Eviction`.
 - `transport/api/src/lib.rs` — `HoprSessionConfigurator::close()` proxies to it.
-- `hoprd/rest-api/src/session.rs` — DELETE handler calls `cfg.close().await` on each
-  configurator before aborting the listener task.
-- Fix 3: moka cache audit — 20 sites checked; only `SessionManager.sessions` is
-  per-session. All others (per-peer, per-key) have appropriate TTL+capacity.
+- `hoprd/rest-api/src/session.rs` — the DELETE handler now calls `cfg.close().await`
+  on every configurator before aborting the listener task.
+- **Fix 3:** Audited all 20 moka cache sites; only `SessionManager.sessions` is
+  per-session. All other caches (per-peer, per-key) have appropriate TTL and capacity.
 
 | PID       |   Net growth |
 | --------- | -----------: |
@@ -172,21 +181,24 @@ never explicitly invalidated on `DELETE /session`.
 | 606261    |     864.7 MB |
 | **total** | **~2912 MB** |
 
-Fix 2 saved **−17 %** vs Run 4. `FrameInspector::new` still 93–95% — unchanged.
+Fix 2 achieved a **−17%** reduction compared to Run 4. `FrameInspector::new` still
+accounts for 93–95% of growth and is effectively unchanged.
 
-**Why modest impact:** Fix 2 removes the SessionSlot from the moka cache on DELETE,
-but `FrameInspector` lives inside per-session tokio tasks spawned by
-`new_session` / `handle_incoming_session_initiation`. Aborting them doesn't
-synchronously drop the DashMap — runtime polls the Drop, and the hot session-create
-loop outpaces drop reclamation. The accumulation is in-flight aborted futures whose
-Drop hasn't completed yet, or Arc cycles keeping `FrameInspector` alive.
+**Why the impact was modest:** Fix 2 removes the `SessionSlot` from the moka cache
+on DELETE, but `FrameInspector` lives inside per-session tokio tasks spawned by
+`new_session` and `handle_incoming_session_initiation`. Aborting those tasks does not
+synchronously drop the DashMap — the runtime schedules the Drop, and the
+high-frequency session-creation loop outpaces drop reclamation. The accumulation is
+either in-flight aborted futures whose Drop has not yet completed, or Arc cycles that
+keep `FrameInspector` alive after `sessions.remove()`.
 
 ---
 
-### Run 6 — idle baseline, 6.3 h (no session traffic)
+### Run 6 — Idle Baseline, 6.3 Hours (No Session Traffic)
 
-**Dir:** `jeprof-pull-20260508-235000-longrun/`
-**Code:** same as Run 5 (Fix 2+3 + lowered SURB defaults; FrameInspector capacity = 8192)
+**Directory:** `jeprof-pull-20260508-235000-longrun/`  
+**Codebase:** same as Run 5 (Fix 2+3 with lowered SURB defaults; FrameInspector
+capacity still 8192)
 
 | PID       | Net delta (6.3 h) |
 | --------- | ----------------: |
@@ -195,50 +207,54 @@ Drop hasn't completed yet, or Arc cycles keeping `FrameInspector` alive.
 | 608121    |          +13.0 MB |
 | **total** |        **~39 MB** |
 
-`jemalloc_stats` from node 0: allocated = 72.75 MB at 60s, 73.11 MB at 6113s.
-**Flat.** No `POST /api/v4/session` calls in the entire run.
+`jemalloc_stats` from node 0: allocated = 72.75 MB at t=60s, 73.11 MB at t=6113s.
+**The baseline is flat.** No `POST /api/v4/session` calls were issued during the
+entire run.
 
-Top diff contributors: tokio worker spawns (~7 MB), OTLP metric buffers (collector
-unreachable → retained, ~5–8 MB), chain-key warmup (`insert_reply_opener` < 1 MB).
-No `FrameInspector`, no `handle_incoming_session_initiation`, no `create_session`.
+The small growth seen in the diff comes from: tokio worker spawns (~7 MB), OTLP
+metric buffers retained because the collector was unreachable (~5–8 MB), and
+chain-key warmup (`insert_reply_opener` < 1 MB). There is no `FrameInspector`,
+no `handle_incoming_session_initiation`, and no `create_session` in the profile.
 
-**Conclusion:** Background housekeeping does not leak. All observed growth in
-prior runs is session-allocation–driven.
-
----
-
-## Progression summary
-
-| Run | Dir                                  | Code         | Load               |    Total Δ | Top suspect                            | Status                        |
-| --- | ------------------------------------ | ------------ | ------------------ | ---------: | -------------------------------------- | ----------------------------- |
-| 1   | `20260507-152514`                    | pre-rebase   | 1000 iter          |    ~652 MB | `handle_incoming` 46% + `insert_surbs` | leak found                    |
-| 2   | `20260508-124517-postrebase`         | post-rebase  | 200 iter           |    ~482 MB | `insert_surbs` 85–91%                  | leak worsened 3.7×/session    |
-| 3   | `20260508-131142-sleep100`           | post-rebase  | longer, 100ms pace |   ~1265 MB | `insert_surbs` 47–52% + REST 12%       | REST path visible             |
-| 4   | `20260508-150153/150400-lowdefaults` | low SURB cfg | 2000 iter          |   ~3511 MB | **`FrameInspector::new` 93–94%**       | SURB fixed; new leak unmasked |
-| 5   | `20260508-172539-fix2`               | Fix 2+3      | 2000 iter, 200ms   |   ~2912 MB | `FrameInspector::new` 93–95%           | −17% only                     |
-| 6   | `20260508-235000-longrun`            | Fix 2+3      | **idle 6.3 h**     | **~39 MB** | otel buffers + tokio warmup            | baseline healthy              |
+**Conclusion:** Background housekeeping does not leak. All growth observed in the
+previous runs is driven entirely by session allocation.
 
 ---
 
-## Two root causes
+## Progression Summary
 
-### RC-1: `MemorySurbStore` — per-pseudonym caches never invalidated on session close
+| Run | Directory                            | Code         | Load                |    Total Δ | Top suspect                            | Outcome                       |
+| --- | ------------------------------------ | ------------ | ------------------- | ---------: | -------------------------------------- | ----------------------------- |
+| 1   | `20260507-152514`                    | pre-rebase   | 1000 iter           |    ~652 MB | `handle_incoming` 46% + `insert_surbs` | Leak found                    |
+| 2   | `20260508-124517-postrebase`         | post-rebase  | 200 iter            |    ~482 MB | `insert_surbs` 85–91%                  | Leak worsened 3.7×/session    |
+| 3   | `20260508-131142-sleep100`           | post-rebase  | longer, 100ms pace  |   ~1265 MB | `insert_surbs` 47–52% + REST 12%       | REST path visible             |
+| 4   | `20260508-150153/150400-lowdefaults` | low SURB cfg | 2000 iter           |   ~3511 MB | **`FrameInspector::new` 93–94%**       | SURB fixed; new leak unmasked |
+| 5   | `20260508-172539-fix2`               | Fix 2+3      | 2000 iter, 200ms    |   ~2912 MB | `FrameInspector::new` 93–95%           | −17% only                     |
+| 6   | `20260508-235000-longrun`            | Fix 2+3      | **idle 6.3 h**      | **~39 MB** | OTel buffers + tokio warmup            | Baseline healthy              |
+
+---
+
+## Two Root Causes
+
+### RC-1: `MemorySurbStore` — Per-pseudonym Caches Never Invalidated on Session Close
 
 **File:** `protocols/hopr/src/surb_store.rs`  
-**Fixed by:** lowering defaults (Run 4). Should also add explicit invalidation on
-session close for correctness, not just bounded growth.
+**Status:** Fixed by lowering defaults (Run 4). Explicit invalidation on session
+close should also be added for correctness — the current fix only bounds growth
+rather than eliminating it.
 
 ```bash
 rg -n 'invalidate' protocols/hopr/src/surb_store.rs
 # Add: pub fn invalidate_pseudonym(&self, p: &HoprPseudonym)
-# Wire into DELETE /session close path
+# Wire into the DELETE /session close path
 ```
 
-### RC-2: `FrameInspector` — 500 KB DashMap scaffolding per session, slow Drop
+### RC-2: `FrameInspector` — 500 KB DashMap Scaffolding per Session, Slow Drop
 
-**File:** `protocols/session/src/processing/types.rs`,
+**Files:** `protocols/session/src/processing/types.rs`,
 `protocols/session/src/socket/mod.rs`  
-**Not yet fixed.** Fix 2 (cache invalidation) helps 17%; Fix 1 (capacity) needed.
+**Status:** Not yet fixed. Fix 2 (cache invalidation) contributes −17%; Fix 1
+(capacity reduction) is still required.
 
 ```rust
 // protocols/session/src/socket/mod.rs:62
@@ -247,15 +263,16 @@ rg -n 'invalidate' protocols/hopr/src/surb_store.rs
 pub capacity: usize,
 ```
 
-Change to `#[default(256)]`. Each `FrameDashMap::with_capacity(2*256+1 = 513)`
-≈ 16 KB vs ~500 KB. Per-node cost for 2000 sessions: ~32 MB vs ~1 GB.
+Change to `#[default(256)]`. Each `FrameDashMap::with_capacity(2×256+1 = 513)` will
+occupy approximately 16 KB instead of ~500 KB. For 2000 sessions per node, that
+reduces the footprint from ~1 GB to ~32 MB.
 
-Secondary: audit Drop ordering for spawned tasks from `SessionManager::new_session`
-and `handle_incoming_session_initiation` — ensure no `Arc` cycle keeps
-`FrameInspector` alive after `sessions.remove()`.
+As a secondary step, audit the Drop ordering for tasks spawned by
+`SessionManager::new_session` and `handle_incoming_session_initiation` to confirm
+there are no Arc cycles keeping `FrameInspector` alive after `sessions.remove()`.
 
 ```bash
-rg -n 'spawn|Arc.*FrameInspector\|FrameInspector.*Arc' \
+rg -n 'spawn|Arc.*FrameInspector|FrameInspector.*Arc' \
    transport/session/src/manager.rs \
    protocols/session/src/socket/ \
    protocols/session/src/processing/
@@ -263,26 +280,27 @@ rg -n 'spawn|Arc.*FrameInspector\|FrameInspector.*Arc' \
 
 ---
 
-## Next experiment
+## Next Experiment
 
-Apply Fix 1 (`#[default(256)]`), rebuild, rerun 2000 iter + 200 ms sleep.
+Apply Fix 1 (`#[default(256)]`), rebuild, and rerun with 2000 iterations at 200 ms
+pacing.
 
-Expected:
-
-- Total leak ~100 MB cluster-wide (32 MB × 3 nodes ≈ 96 MB).
-- If still higher, per-session state outside `FrameInspector` accumulates
-  (reassembly buffers, control-channel buffers of size 2048, segment channel
-  of size 8192 in `socket/mod.rs`). Audit all `with_capacity` calls there.
+Expected outcome:
+- Total leak approximately 100 MB cluster-wide (32 MB × 3 nodes ≈ 96 MB).
+- If growth remains higher, there is per-session state accumulating outside
+  `FrameInspector` — reassembly buffers, control-channel buffers (size 2048), or
+  the segment channel (size 8192 in `socket/mod.rs`). Audit all `with_capacity`
+  calls there.
 
 ```bash
-rg -n 'with_capacity\|channel.*capacity\|bounded' \
+rg -n 'with_capacity|channel.*capacity|bounded' \
    protocols/session/src/socket/mod.rs \
    protocols/session/src/processing/
 ```
 
 ---
 
-## Quick reference — open artifacts
+## Quick Reference — Open Artifacts
 
 ```bash
 BASE=/Users/emil/Documents/hopr/hoprnet
