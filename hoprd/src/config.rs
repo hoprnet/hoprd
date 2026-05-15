@@ -119,11 +119,11 @@ fn default_session_establish_max_retries() -> usize {
 }
 
 fn default_probe_recheck_threshold() -> Duration {
-    HoprLibConfig::default().protocol.probe.recheck_threshold
+    Duration::from_secs(10)
 }
 
 fn default_probe_interval() -> Duration {
-    HoprLibConfig::default().protocol.probe.interval
+    Duration::from_secs(3)
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
