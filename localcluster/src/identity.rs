@@ -210,7 +210,8 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     // Set population thresholds to the exact cluster mesh size so the
     // ChannelLifecycleStrategy opens a channel to every other node.
-    let mesh_target = config.num_nodes.saturating_sub(1);
+    let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
+    let mesh_target = effective_num_nodes.saturating_sub(1);
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
         execution_interval: std::time::Duration::from_secs(60),
@@ -230,9 +231,9 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         ],
     };
 
-    let mut nodes = Vec::with_capacity(config.num_nodes);
+    let mut nodes = Vec::with_capacity(effective_num_nodes);
 
-    for id in 0..config.num_nodes.clamp(1, NODE_KEYS.len()) {
+    for id in 0..effective_num_nodes {
         let kp = if config.random_identities {
             HoprKeys::random()
         } else {
