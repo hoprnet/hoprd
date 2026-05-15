@@ -129,7 +129,7 @@ kicks in. If no plateau appears, a second leak path exists outside the SURB stor
 `moka::value_initializer` all disappeared from the top of the profile. However, a
 new dominant leak became visible:
 
-```
+```text
 FrameInspector::new                            93–94%  ~1100 MB/node
 handle_incoming_session_initiation             61–65%   ~730 MB/node
 new_session / create_session REST              35–40%   ~460 MB/node
@@ -303,7 +303,7 @@ rg -n 'with_capacity|channel.*capacity|bounded' \
 ## Quick Reference — Open Artifacts
 
 ```bash
-BASE=/Users/emil/Documents/hopr/hoprnet
+BASE="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
 # Idle baseline (healthy)
 open "$BASE/jeprof-pull-20260508-235000-longrun/plots/total_inuse.png"
