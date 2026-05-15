@@ -43,7 +43,8 @@ async fn run() -> Result<()> {
         "set HOPRD_CHAIN_URL (existing chain) or HOPRD_CHAIN_IMAGE (to start a container)"
     );
 
-    let data_dir = tempfile::tempdir()?.into_path();
+    let temp_dir = tempfile::tempdir()?;
+    let data_dir = temp_dir.path().to_path_buf();
     let log_dir = data_dir.join("logs");
     std::fs::create_dir_all(&log_dir)?;
 
