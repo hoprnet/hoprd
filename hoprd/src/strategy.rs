@@ -16,8 +16,8 @@ use validator::{Validate, ValidationError};
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
-    static ref METRIC_ENABLED_STRATEGIES: hopr_metrics::MultiGauge =
-        hopr_metrics::MultiGauge::new(
+    static ref METRIC_ENABLED_STRATEGIES: hopr_lib::api::types::telemetry::MultiGauge =
+        hopr_lib::api::types::telemetry::MultiGauge::new(
             "hopr_strategy_enabled_strategies",
             "List of enabled strategies",
             &["strategy"],
@@ -55,7 +55,7 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 /// This is a pure serde config type — it is used for YAML deserialization and
 /// carries no runtime behaviour. The runtime combinator is [`hopr_strategy::strategy::MultiStrategy`],
 /// which accepts any `Box<dyn Strategy + Send>`.
-#[derive(Debug, Clone, Serialize, Deserialize, StrumDisplay, VariantNames)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, StrumDisplay, VariantNames)]
 #[strum(serialize_all = "snake_case")]
 pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
@@ -83,28 +83,6 @@ impl validator::Validate for StrategyKind {
             Self::ChannelLifecycle(cfg) => cfg.validate(),
             Self::Multi(cfg) => cfg.validate(),
             Self::Passive => Ok(()),
-        }
-    }
-}
-
-impl PartialEq for StrategyKind {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            #[cfg(feature = "runtime-tokio")]
-            (Self::AutoRedeeming(a), Self::AutoRedeeming(b)) => a == b,
-            #[cfg(feature = "runtime-tokio")]
-            (Self::AutoFunding(a), Self::AutoFunding(b)) => a == b,
-            #[cfg(feature = "runtime-tokio")]
-            (Self::ClosureFinalizer(a), Self::ClosureFinalizer(b)) => a == b,
-            #[cfg(feature = "runtime-tokio")]
-            (Self::ChannelLifecycle(a), Self::ChannelLifecycle(b)) => {
-                // ChannelLifecycleConfig does not implement PartialEq; compare via
-                // serialised JSON which is deterministic for identical configs.
-                serde_json::to_value(a).ok() == serde_json::to_value(b).ok()
-            }
-            (Self::Multi(a), Self::Multi(b)) => a == b,
-            (Self::Passive, Self::Passive) => true,
-            _ => false,
         }
     }
 }
