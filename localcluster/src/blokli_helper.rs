@@ -57,6 +57,8 @@ impl ChainHandle {
         let mut cmd = Command::new(runtime);
         cmd.arg("run")
             .arg("--rm")
+            .arg("--pull")
+            .arg("always")
             .arg("--name")
             .arg(name)
             .arg("--platform")
