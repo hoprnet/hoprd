@@ -860,6 +860,19 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
                 .remove(&bound_addr)
                 .ok_or((StatusCode::NOT_FOUND, ApiErrorStatus::InvalidInput))?;
 
+            // Explicitly close every client session bound to this listener so the
+            // SessionManager invalidates its cache entries immediately. Otherwise
+            // the entries linger until idle-timeout / LRU eviction and per-session
+            // state (frame reassembly buffers, etc.) accumulates.
+            let configurators: Vec<_> = entry
+                .get_clients()
+                .iter()
+                .map(|c| c.value().configurator.clone())
+                .collect();
+            for cfg in configurators {
+                let _ = cfg.close().await;
+            }
+
             entry.abort_handle.abort();
         }
     }
