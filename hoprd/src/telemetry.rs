@@ -14,7 +14,7 @@ use opentelemetry_sdk::{
 use tracing::field::{Field, Visit};
 use tracing_subscriber::prelude::*;
 
-use crate::telemetry_common;
+use crate::tracing_setup;
 
 const HOPRD_OTLP_ENDPOINT_ENV_KEY: &str = "HOPRD_OTLP_ENDPOINT";
 const LEGACY_OTLP_ENDPOINT_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
@@ -680,7 +680,7 @@ pub(super) fn init_logger(
             (None, Some(logs)) => vec![logs.boxed()],
             (None, None) => Vec::new(),
         };
-        telemetry_common::install_otel_layers(otel_layers)?;
+        tracing_setup::install_otel_layers(otel_layers)?;
 
         tracing::info!(
             otel_signals = %enabled_signals,
