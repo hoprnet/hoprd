@@ -461,6 +461,11 @@ impl From<ApiErrorStatus> for ApiError {
 
 impl IntoResponse for ApiErrorStatus {
     fn into_response(self) -> Response {
+        let error_detail = match &self {
+            Self::UnknownFailure(e) | Self::PingError(e) => Some(e.as_str()),
+            _ => None,
+        };
+
         let status_code = match &self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::InvalidInput | Self::InvalidChannelId | Self::InvalidSessionId => {
@@ -478,9 +483,19 @@ impl IntoResponse for ApiErrorStatus {
         };
 
         if status_code.is_client_error() {
-            tracing::warn!(status = %status_code, error = %self, "REST API error response");
+            tracing::warn!(
+                status = %status_code,
+                error = %self,
+                detail = ?error_detail,
+                "REST API error response"
+            );
         } else if status_code.is_server_error() {
-            tracing::error!(status = %status_code, error = %self, "REST API error response");
+            tracing::error!(
+                status = %status_code,
+                error = %self,
+                detail = ?error_detail,
+                "REST API error response"
+            );
         }
 
         (status_code, Json(ApiError::from(self))).into_response()

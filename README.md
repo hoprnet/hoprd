@@ -39,6 +39,9 @@ nix build .#hoprd-candidate
 # Release build
 nix build .#binary-hoprd
 
+# Release build with explicit-path feature enabled
+nix build .#binary-hoprd-explicit-path
+
 # Docker image
 nix build .#docker-hoprd-x86_64-linux
 ```

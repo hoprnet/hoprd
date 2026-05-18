@@ -1949,16 +1949,16 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ],
     ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
     ///      "forwardPath": [
-    ///        "16Uiu2HAm...",
-    ///        "16Uiu2HAm..."
+    ///        "0x1111111111111111111111111111111111111111",
+    ///        "0x2222222222222222222222222222222222222222"
     ///      ],
     ///      "listenHost": "127.0.0.1:10000",
     ///      "maxClientSessions": 2,
     ///      "maxSurbUpstream": "2000 kb/s",
     ///      "responseBuffer": "2 MB",
     ///      "returnPath": [
-    ///        "16Uiu2HAm...",
-    ///        "16Uiu2HAm..."
+    ///        "0x1111111111111111111111111111111111111111",
+    ///        "0x2222222222222222222222222222222222222222"
     ///      ],
     ///      "sessionPool": 0,
     ///      "target": {

@@ -7,9 +7,10 @@ use axum::{
 };
 use base64::Engine;
 #[cfg(feature = "explicit-path")]
-use hopr_lib::exports::transport::OffchainPublicKey;
+use hopr_lib::api::chain::ChainKeyOperations;
 use hopr_lib::{
     HopRouting, HoprSessionClientConfig,
+    api::node::HasChainApi,
     api::types::primitive::{errors::GeneralError, prelude::Address},
     errors::HoprLibError,
     exports::transport::{
@@ -317,8 +318,8 @@ impl SessionClientRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(example = json!({
         "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
-        "forwardPath": ["16Uiu2HAm...", "16Uiu2HAm..."],
-        "returnPath": ["16Uiu2HAm...", "16Uiu2HAm..."],
+        "forwardPath": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"],
+        "returnPath": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"],
         "target": {"Plain": "localhost:8080"},
         "listenHost": "127.0.0.1:10000",
         "capabilities": ["Retransmission", "Segmentation"],
@@ -351,27 +352,34 @@ pub(crate) struct SessionClientExplicitPathRequest {
 
 #[cfg(feature = "explicit-path")]
 impl SessionClientExplicitPathRequest {
-    async fn into_protocol_session_explicit_config(
+    fn into_protocol_session_explicit_config<H>(
         self,
+        hopr: &H,
         target_protocol: IpProtocol,
-    ) -> Result<
-        (
-            Address,
-            SessionTarget,
-            HoprSessionClientExplicitPathConfig,
-            RoutingOptions,
-            RoutingOptions,
-        ),
-        ApiErrorStatus,
-    > {
-        let parse_node = |node: String| {
-            OffchainPublicKey::from_str(&node)
-                .map(NodeId::from)
+    ) -> Result<(Address, SessionTarget, HoprSessionClientExplicitPathConfig, RoutingOptions, RoutingOptions), ApiErrorStatus>
+    where
+        H: HasChainApi<ChainError = HoprLibError>,
+    {
+        let parse_node = |node: String| -> Result<NodeId, ApiErrorStatus> {
+            let address = Address::from_str(&node).map_err(|err| {
+                ApiErrorStatus::UnknownFailure(format!(
+                    "invalid intermediate path node address '{node}': {err}"
+                ))
+            })?;
+            let offchain_key = hopr
+                .chain_api()
+                .chain_key_to_packet_key(&address)
                 .map_err(|err| {
                     ApiErrorStatus::UnknownFailure(format!(
-                        "invalid intermediate path node public key '{node}': {err}"
+                        "failed to resolve intermediate path node address '{node}': {err}"
                     ))
-                })
+                })?
+                .ok_or_else(|| {
+                    ApiErrorStatus::UnknownFailure(format!(
+                        "unknown intermediate path node address '{node}'"
+                    ))
+                })?;
+            Ok(NodeId::from(offchain_key))
         };
         let forward_path = self
             .forward_path
@@ -570,7 +578,11 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
         tag = "Session"
     )]
 pub(crate) async fn create_client_explicit_path<
-    H: hopr_utils_session::SessionFactory + Send + Sync + 'static,
+    H: hopr_utils_session::SessionFactory
+        + HasChainApi<ChainError = HoprLibError>
+        + Send
+        + Sync
+        + 'static,
 >(
     State(state): State<Arc<InternalState<H>>>,
     Path(protocol): Path<IpProtocol>,
@@ -605,8 +617,7 @@ pub(crate) async fn create_client_explicit_path<
                 let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
                 let (destination, _target, config, forward_path, return_path) = args
                     .clone()
-                    .into_protocol_session_explicit_config(IpProtocol::TCP)
-                    .await
+                    .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
                     .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
                 let (bound_host, udp_session_id, max_client_sessions) =
@@ -664,8 +675,7 @@ pub(crate) async fn create_client_explicit_path<
                 let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
                 let (destination, _target, config, forward_path, return_path) = args
                     .clone()
-                    .into_protocol_session_explicit_config(IpProtocol::UDP)
-                    .await
+                    .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
                     .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
                 let (bound_host, udp_session_id, max_client_sessions) =

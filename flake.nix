@@ -155,6 +155,9 @@
             cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
           };
+          explicitPathBuildArgs = projectBuildArgs // {
+            cargoExtraArgs = "-p hoprd -p hoprd-api -F explicit-path";
+          };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
@@ -195,8 +198,11 @@
 
           hoprdPackages = {
             binary-hoprd = rust-builder-local.callPackage nixLib.mkRustPackage projectBuildArgs;
+            binary-hoprd-explicit-path = rust-builder-local.callPackage nixLib.mkRustPackage explicitPathBuildArgs;
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
+            binary-hoprd-explicit-path-x86_64-linux =
+              rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage explicitPathBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
               projectBuildArgs

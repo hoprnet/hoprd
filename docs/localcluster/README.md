@@ -34,6 +34,10 @@ Any runtime that accepts `run --rm --name <n> --platform linux/amd64 -p 8080:808
 nix build -L .#binary-hoprd .#binary-hoprd-localcluster
 # binaries: ./result/bin/hoprd  and  ./result-1/bin/hoprd-localcluster
 
+# Nix with explicit-path feature enabled for hoprd
+nix build -L .#binary-hoprd-explicit-path .#binary-hoprd-localcluster
+# binaries: ./result/bin/hoprd  and  ./result-1/bin/hoprd-localcluster
+
 # Cargo (inside the dev shell)
 nix develop -c cargo build -p hoprd -p hoprd-localcluster
 # binaries: target/debug/hoprd  and  target/debug/hoprd-localcluster
