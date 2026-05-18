@@ -23,14 +23,14 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(feature = "telemetry")]
 mod telemetry;
-mod telemetry_common;
+mod tracing_setup;
 
 #[cfg(not(feature = "runtime-tokio"))]
 compile_error!("The 'runtime-tokio' feature must be enabled");
 
 #[cfg(feature = "runtime-tokio")]
 fn main() -> ExitCode {
-    if let Err(e) = telemetry_common::install_base_subscriber() {
+    if let Err(e) = tracing_setup::install_base_subscriber() {
         eprintln!("ERROR: failed to initialize base log subscriber: {e}");
         return ExitCode::FAILURE;
     }
