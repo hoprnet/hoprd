@@ -443,20 +443,42 @@ enum ApiErrorStatus {
 
 impl From<ApiErrorStatus> for ApiError {
     fn from(value: ApiErrorStatus) -> Self {
+        let error = match &value {
+            ApiErrorStatus::UnknownFailure(e) | ApiErrorStatus::PingError(e) => Some(e.clone()),
+            _ => None,
+        };
         Self {
             status: value.to_string(),
-            error: if let ApiErrorStatus::UnknownFailure(e) = value {
-                Some(e)
-            } else {
-                None
-            },
+            error,
         }
     }
 }
 
 impl IntoResponse for ApiErrorStatus {
     fn into_response(self) -> Response {
-        Json(ApiError::from(self)).into_response()
+        let status_code = match &self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::InvalidInput | Self::InvalidChannelId | Self::InvalidSessionId => {
+                StatusCode::BAD_REQUEST
+            }
+            Self::PeerNotFound
+            | Self::ChannelNotFound
+            | Self::TicketsNotFound
+            | Self::SessionNotFound => StatusCode::NOT_FOUND,
+            Self::Timeout => StatusCode::REQUEST_TIMEOUT,
+            Self::ListenHostAlreadyUsed => StatusCode::CONFLICT,
+            Self::NotReady => StatusCode::PRECONDITION_FAILED,
+            Self::InvalidQuality | Self::PingError(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::UnknownFailure(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        if status_code.is_client_error() {
+            tracing::warn!(status = %status_code, error = %self, "REST API error response");
+        } else if status_code.is_server_error() {
+            tracing::error!(status = %status_code, error = %self, "REST API error response");
+        }
+
+        (status_code, Json(ApiError::from(self))).into_response()
     }
 }
 
@@ -490,7 +512,7 @@ where
 mod tests {
     use axum::{http::StatusCode, response::IntoResponse};
 
-    use super::ApiError;
+    use super::{ApiError, ApiErrorStatus};
 
     #[test]
     fn test_api_error_to_response() {
@@ -501,5 +523,49 @@ mod tests {
 
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_api_error_status_4xx_codes() {
+        let cases = [
+            (ApiErrorStatus::Unauthorized, StatusCode::UNAUTHORIZED),
+            (ApiErrorStatus::InvalidInput, StatusCode::BAD_REQUEST),
+            (ApiErrorStatus::InvalidChannelId, StatusCode::BAD_REQUEST),
+            (ApiErrorStatus::InvalidSessionId, StatusCode::BAD_REQUEST),
+            (ApiErrorStatus::PeerNotFound, StatusCode::NOT_FOUND),
+            (ApiErrorStatus::ChannelNotFound, StatusCode::NOT_FOUND),
+            (ApiErrorStatus::TicketsNotFound, StatusCode::NOT_FOUND),
+            (ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND),
+            (ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT),
+            (ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT),
+            (ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED),
+            (
+                ApiErrorStatus::InvalidQuality,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                ApiErrorStatus::PingError("fail".into()),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ];
+        for (status, expected_code) in cases {
+            assert_eq!(status.into_response().status(), expected_code);
+        }
+    }
+
+    #[test]
+    fn test_api_error_status_5xx_codes() {
+        assert_eq!(
+            ApiErrorStatus::UnknownFailure("oops".into())
+                .into_response()
+                .status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn test_ping_error_message_surfaced() {
+        let api_error = ApiError::from(ApiErrorStatus::PingError("connection refused".into()));
+        assert_eq!(api_error.error.as_deref(), Some("connection refused"));
     }
 }
