@@ -18,7 +18,7 @@ telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
 runtime-tokio = ["hopr-lib/runtime-tokio"]
 
 [dependencies]
-axum = { workspace = true }
+axum = { workspace = true, features = ["http2"] }
 human-bandwidth = { workspace = true }
 base64 = { workspace = true }
 bytesize = { workspace = true }

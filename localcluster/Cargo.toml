@@ -12,7 +12,7 @@ description = "Local HOPR cluster runner using external hoprd processes"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
 hoprd = { workspace = true, features = [
   "runtime-tokio",
@@ -33,7 +33,7 @@ hopr-reference = { workspace = true, features = [
 hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }
 lazy_static = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 serde-saphyr = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",

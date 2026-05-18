@@ -17,8 +17,8 @@ http = { workspace = true }
 percent-encoding = { workspace = true }
 serde_urlencoded = { workspace = true }
 progenitor-client = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
