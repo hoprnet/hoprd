@@ -152,6 +152,17 @@ Flags take precedence over env vars. Only the flags marked with an env var below
 | `--channel-management` | —                         | `api`             | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
 | `--extra-identities`   | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
 
+### Channel management modes
+
+`--channel-management` controls how payment channels are opened during cluster startup:
+
+- `api` (default): Localcluster opens channels explicitly via REST API calls (`POST /api/v4/channels`) and waits for full-mesh channels to become open.
+- `strategy`: Localcluster enables the node channel strategy in generated `hoprd` configs, does not make manual REST `open_channel` calls, and waits for full-mesh channels to become open.
+- `both`: Localcluster enables strategy and also performs manual REST channel opening, then waits for full-mesh channels.
+- `none`: Localcluster disables both strategy-driven and manual startup channel opening, and skips channel topology waiting.
+
+Use `api` for deterministic startup behavior, `strategy` for strategy-only testing, `both` for mixed behavior checks, and `none` when you want to manage channels manually after startup.
+
 ---
 
 ## Cluster data layout
