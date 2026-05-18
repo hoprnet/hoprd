@@ -21,19 +21,16 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
-mod jemalloc_stats;
-
 #[cfg(feature = "telemetry")]
 mod telemetry;
-mod telemetry_common;
+mod tracing_setup;
 
 #[cfg(not(feature = "runtime-tokio"))]
 compile_error!("The 'runtime-tokio' feature must be enabled");
 
 #[cfg(feature = "runtime-tokio")]
 fn main() -> ExitCode {
-    if let Err(e) = telemetry_common::install_base_subscriber() {
+    if let Err(e) = tracing_setup::install_base_subscriber() {
         eprintln!("ERROR: failed to initialize base log subscriber: {e}");
         return ExitCode::FAILURE;
     }
@@ -91,8 +88,28 @@ fn main() -> ExitCode {
             .unwrap_or_default()
             .split(',')
             .filter_map(|pair| {
-                let (k, v) = pair.trim().split_once('=')?;
-                Some((k.trim().to_string(), v.trim().to_string()))
+                let pair = pair.trim();
+                match pair.split_once('=') {
+                    Some((k, v)) => {
+                        let k = k.trim();
+                        let v = v.trim();
+                        if k.is_empty() || v.is_empty() {
+                            tracing::warn!(
+                                "malformed HOPRD_OTEL_EXPORT_LABELS entry (empty key or value): {pair}"
+                            );
+                            None
+                        } else {
+                            Some((k.to_string(), v.to_string()))
+                        }
+                    }
+                    None if !pair.is_empty() => {
+                        tracing::warn!(
+                            "malformed HOPRD_OTEL_EXPORT_LABELS entry (missing '='): {pair}"
+                        );
+                        None
+                    }
+                    None => None,
+                }
             })
             .collect(),
     };

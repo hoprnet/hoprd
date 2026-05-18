@@ -8,12 +8,10 @@ authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
 
 [workspace.dependencies]
-# Intra-workspace path deps
 hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-async-runtime = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8", default-features = false }
@@ -26,7 +24,6 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8bfcde
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.9.0" }
-hopr-types = { version = "1.5.4", features = ["use-bindings"] }
 
 # Third-party deps
 anyhow = "1.0.102"
@@ -42,8 +39,8 @@ chrono = { version = "0.4.44", default-features = false, features = [
   "clock",
 ] }
 clap = { version = "4.6.1", features = ["derive", "env", "string"] }
-console-subscriber = "0.5.0"
 const_format = "0.2.36"
+console-subscriber = "0.5.0"
 flagset = "0.4.7"
 futures = { version = "0.3.32", default-features = false, features = [
   "std",
@@ -55,10 +52,11 @@ human-bandwidth = { version = "0.1.4", features = ["serde"] }
 humansize = "2.1.3"
 humantime-serde = "1.1.1"
 lazy_static = "1.5.0"
+mockall = "0.14.0"
 mimalloc = { version = "0.1.50", default-features = false, features = [
   "secure",
 ] }
-mockall = "0.14.0"
+rstest = "0.26.1"
 oas3 = "0.21.0"
 openapiv3 = "2.2.0"
 opentelemetry = { version = "0.31.0" }
@@ -150,6 +148,15 @@ strip = false
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
+
+# memory profiling profile — inherits release optimizations but preserves debug symbols
+# for jeprof symbol resolution
+[profile.memprof]
+inherits = "release"
+debug = 2
+strip = false
+lto = "thin"
+codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]

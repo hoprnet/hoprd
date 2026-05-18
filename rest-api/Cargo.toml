@@ -52,12 +52,11 @@ hopr-lib = { workspace = true, features = [
   "utils_futures",
 ] }
 
-hopr-async-runtime = { workspace = true }
-hopr-metrics = { workspace = true, optional = true }
 hopr-utils-session = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
+rstest = { workspace = true }
 async-trait = { workspace = true }
 bimap = { workspace = true }
 futures = { workspace = true }

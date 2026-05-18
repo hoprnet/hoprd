@@ -2,10 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use hopr_lib::api::{
     chain::{
-        ChainReadChannelOperations, ChainReadSafeOperations, ChainValues,
-        ChainWriteChannelOperations, ChainWriteTicketOperations,
+        ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
+        ChainValues, ChainWriteChannelOperations, ChainWriteTicketOperations,
     },
-    node::{ActionableEventSource, HasChainApi, HasTicketManagement},
+    node::{ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement},
     tickets::TicketManagement,
 };
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
@@ -16,8 +16,8 @@ use validator::{Validate, ValidationError};
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
-    static ref METRIC_ENABLED_STRATEGIES: hopr_metrics::MultiGauge =
-        hopr_metrics::MultiGauge::new(
+    static ref METRIC_ENABLED_STRATEGIES: hopr_lib::api::types::telemetry::MultiGauge =
+        hopr_lib::api::types::telemetry::MultiGauge::new(
             "hopr_strategy_enabled_strategies",
             "List of enabled strategies",
             &["strategy"],
@@ -64,6 +64,8 @@ pub enum StrategyKind {
     AutoFunding(hopr_strategy::auto_funding::AutoFundingStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
+    #[cfg(feature = "runtime-tokio")]
+    ChannelLifecycle(hopr_strategy::channel_lifecycle::ChannelLifecycleConfig),
     Multi(MultiStrategyConfig),
     Passive,
 }
@@ -77,6 +79,8 @@ impl validator::Validate for StrategyKind {
             Self::AutoFunding(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
             Self::ClosureFinalizer(cfg) => cfg.validate(),
+            #[cfg(feature = "runtime-tokio")]
+            Self::ChannelLifecycle(cfg) => cfg.validate(),
             Self::Multi(cfg) => cfg.validate(),
             Self::Passive => Ok(()),
         }
@@ -117,18 +121,27 @@ pub struct MultiStrategyConfig {
 ///
 /// ## Strategies included
 /// - `AutoRedeeming` *(requires `runtime-tokio` feature)*: redeems single tickets on channel close if worth at least 1
-///   wxHOPR. When `runtime-tokio` is not enabled, returns an empty `MultiStrategyConfig` (passive behaviour).
+///   wxHOPR.
+/// - `ChannelLifecycle` *(requires `runtime-tokio` feature)*: unified strategy that automatically opens, funds,
+///   tops up, closes, and finalizes outgoing payment channels based on peer connectivity and quality.
+///
+/// When `runtime-tokio` is not enabled, returns an empty `MultiStrategyConfig` (passive behaviour).
 pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
-        use hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig;
+        use hopr_strategy::{
+            auto_redeeming::AutoRedeemingStrategyConfig, channel_lifecycle::ChannelLifecycleConfig,
+        };
         return MultiStrategyConfig {
             allow_recursive: false,
             execution_interval: Duration::from_secs(60),
-            strategies: vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
-                redeem_on_winning: true,
-                ..Default::default()
-            })],
+            strategies: vec![
+                StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+                    redeem_on_winning: true,
+                    ..Default::default()
+                }),
+                StrategyKind::ChannelLifecycle(ChannelLifecycleConfig::default()),
+            ],
         };
     }
     #[allow(unreachable_code)]
@@ -148,7 +161,8 @@ pub fn build_strategies<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn S
 where
     N: ActionableEventSource
         + HasChainApi<
-            ChainApi: ChainReadChannelOperations
+            ChainApi: ChainReadAccountOperations
+                          + ChainReadChannelOperations
                           + ChainReadSafeOperations
                           + ChainValues
                           + ChainWriteChannelOperations
@@ -157,7 +171,9 @@ where
                           + Send
                           + Sync
                           + 'static,
-        > + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        > + HasGraphView
+        + HasNetworkView
+        + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
         + Send
         + Sync
         + 'static,
@@ -177,7 +193,8 @@ fn build_strategies_inner<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn
 where
     N: ActionableEventSource
         + HasChainApi<
-            ChainApi: ChainReadChannelOperations
+            ChainApi: ChainReadAccountOperations
+                          + ChainReadChannelOperations
                           + ChainReadSafeOperations
                           + ChainValues
                           + ChainWriteChannelOperations
@@ -186,7 +203,9 @@ where
                           + Send
                           + Sync
                           + 'static,
-        > + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        > + HasGraphView
+        + HasNetworkView
+        + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
         + Send
         + Sync
         + 'static,
@@ -218,6 +237,14 @@ where
                     cfg.execution_interval,
                 )
                 .build(Arc::clone(&node)),
+            ),
+            // ChannelLifecycle owns its own tick cadence via
+            // ChannelLifecycleConfig::tick_interval and runs as an independent
+            // async task; cfg.execution_interval does not apply to it.
+            #[cfg(feature = "runtime-tokio")]
+            StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
+                hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(sub_cfg.clone())
+                    .build(Arc::clone(&node)),
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {

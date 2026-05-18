@@ -55,9 +55,15 @@ cargo build --profile release
 
 ## Configuration
 
-Default config template: [`deploy/compose/hoprd/conf/hoprd.cfg.yaml`](deploy/compose/hoprd/conf/hoprd.cfg.yaml)
+Generate default config:
 
-Example config: [`hoprd/example_cfg.yaml`](hoprd/example_cfg.yaml)
+```bash
+# Print default YAML config
+cargo run --release -p hoprd --bin hoprd-cfg -- --default
+
+# Validate existing config
+cargo run --release -p hoprd --bin hoprd-cfg -- --validate /path/to/hoprd.yaml
+```
 
 Key config options:
 
@@ -98,3 +104,11 @@ Protocol libraries (`hopr-lib`, `hopr-transport-*`, `hopr-crypto-*`, etc.) live 
 ## Local cluster
 
 Spin up a multi-node HOPR network locally with `hoprd-localcluster`. See [`docs/localcluster/README.md`](docs/localcluster/README.md) for full setup instructions.
+
+## Memory Profiling
+
+`hoprd` supports detailed heap profiling using `jemalloc` and `jeprof`.
+
+- **[General Profiling Guide](profiling/memory-profiling.md)**: How to build and run the profiling variants.
+- **[VM Setup](profiling/profiling_vm.md)**: Setting up a Linux VM (OrbStack example) for profiling on macOS.
+- **[VM Usage Helper](profiling/jeprof-vm-usage.md)**: Using the `jeprof-vm.sh` script to drive builds and analysis.

@@ -17,7 +17,7 @@ permissions:
   contents: read
 jobs:
   build-binaries:
-    name: Binary ${{ matrix.architecture }}
+    name: Binary ${{ matrix.binary }} ${{ matrix.architecture }}
     if: github.event.pull_request.merged == true
     strategy:
       fail-fast: false
@@ -26,9 +26,18 @@ jobs:
           - architecture: x86_64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-x86_64-linux
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
           - architecture: aarch64-linux
-            runner: depot-ubuntu-24.04-8
+            runner: depot-ubuntu-24.04-arm-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
+            build_file: ./hoprd/Cargo.toml
+            binary: hoprd
+          - architecture: x86_64-linux
+            runner: depot-ubuntu-24.04-8
+            build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
+            build_file: ./localcluster/Cargo.toml
+            binary: hoprd-localcluster
     uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@build-binaries-v2
     permissions:
       contents: read
@@ -36,9 +45,9 @@ jobs:
       source_branch: ${{ github.event.pull_request.merge_commit_sha }}
       version_type: pr
       architecture: ${{ matrix.architecture }}
-      build_file: ./hoprd/Cargo.toml
+      build_file: ${{ matrix.build_file }}
       build_command: ${{ matrix.build_command }}
-      binary: hoprd
+      binary: ${{ matrix.binary }}
       runner: ${{ matrix.runner }}
     secrets:
       gcp_service_account: ${{ secrets.GCP_SA_GITHUB_RUNNER }}
@@ -64,7 +73,7 @@ jobs:
             "build_command": "nix build -L .#docker-hoprd-x86_64-linux"
           },
           {
-            "runner": "depot-ubuntu-24.04-4",
+            "runner": "depot-ubuntu-24.04-arm-4",
             "architecture": "aarch64-linux",
             "build_command": "nix build -L .#docker-hoprd-aarch64-linux"
           }
@@ -156,6 +165,7 @@ jobs:
     needs:
       - build-binaries
       - build-docker
+      - deploy-dev
       - docs
     if: ${{ always() && github.event.pull_request.merged == true && !success() }}
     runs-on: depot-ubuntu-24.04
