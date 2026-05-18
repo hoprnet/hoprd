@@ -5,7 +5,7 @@
 //! 2. Generate node identities and fund Safes on-chain (`identity::generate`).
 //! 3. Spawn `hoprd` processes, one per node.
 //! 4. Wait for each node to pass `/startedz` then `/readyz`.
-//! 5. Wait for the `ChannelLifecycleStrategy` to open the full-mesh channel topology.
+//! 5. Manage channels according to `--channel-management`.
 //! 6. Block until Ctrl-C, then shut everything down.
 //!
 //! See `docs/localcluster/README.md` for full setup and usage instructions.
@@ -21,6 +21,7 @@ use hoprd_localcluster::{
 use tracing::{error, info, warn};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_CHANNEL_STAKE: &str = "1 wxHOPR";
 
 #[derive(Default)]
 struct Cleanup {
@@ -87,6 +88,10 @@ async fn main() -> Result<()> {
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,
+            enable_channel_strategy: matches!(
+                args.channel_management,
+                cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
+            ),
             ..Default::default()
         };
 
@@ -134,14 +139,42 @@ async fn main() -> Result<()> {
             node.address = Some(node.api.addresses().await?);
         }
 
-        if args.skip_channels {
-            warn!("skipping channel topology wait");
-        } else {
-            info!("waiting for full-mesh peer visibility");
-            client_helper::wait_full_mesh_reachable(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT).await?;
-            info!("waiting for channel-lifecycle strategy to open the full mesh");
-            client_helper::wait_full_mesh_channels(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT * 4)
+        match args.channel_management {
+            cli::ChannelManagement::None => {
+                warn!("channel management is disabled");
+            }
+            cli::ChannelManagement::Api => {
+                info!("opening full-mesh channels through REST API");
+                client_helper::open_full_mesh_channels(
+                    &cleanup.nodes,
+                    DEFAULT_CHANNEL_STAKE,
+                    DEFAULT_WAIT_TIMEOUT * 4,
+                )
                 .await?;
+                info!("waiting for full-mesh channels to be open");
+                client_helper::wait_full_mesh_channels(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT * 4)
+                    .await?;
+            }
+            cli::ChannelManagement::Strategy => {
+                info!("waiting for full-mesh peer visibility");
+                client_helper::wait_full_mesh_reachable(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT)
+                    .await?;
+                info!("waiting for strategy-managed full-mesh channels");
+                client_helper::wait_full_mesh_channels(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT * 4)
+                    .await?;
+            }
+            cli::ChannelManagement::Both => {
+                info!("opening full-mesh channels through REST API");
+                client_helper::open_full_mesh_channels(
+                    &cleanup.nodes,
+                    DEFAULT_CHANNEL_STAKE,
+                    DEFAULT_WAIT_TIMEOUT * 4,
+                )
+                .await?;
+                info!("waiting for full-mesh channels to be open");
+                client_helper::wait_full_mesh_channels(&cleanup.nodes, DEFAULT_WAIT_TIMEOUT * 4)
+                    .await?;
+            }
         }
 
         node_summary(&cleanup.nodes, &args, &blokli_url);
