@@ -1,13 +1,13 @@
 [package]
 name = "hoprd-api"
 version = "4.11.0"
-authors = ["HOPR Association <tech@hoprnet.org>"]
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "API enabling developers to interact with a hoprd node programatically through HTTP REST API."
-homepage = "https://hoprnet.org/"
-repository = "https://github.com/hoprnet/hoprd"
-license = "GPL-3.0-only"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 crate-type = ["rlib"]
@@ -18,7 +18,7 @@ telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
 runtime-tokio = ["hopr-lib/runtime-tokio"]
 
 [dependencies]
-axum = { workspace = true, features = ["http2"] }
+axum = { workspace = true }
 human-bandwidth = { workspace = true }
 base64 = { workspace = true }
 bytesize = { workspace = true }

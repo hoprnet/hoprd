@@ -1,16 +1,18 @@
 [package]
 name = "hoprd-localcluster"
 version = "0.2.0"
-authors = ["HOPR Association <tech@hoprnet.org>"]
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-only"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 description = "Local HOPR cluster runner using external hoprd processes"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true }
 futures = { workspace = true }
 hoprd = { workspace = true, features = [
   "runtime-tokio",
@@ -31,7 +33,7 @@ hopr-reference = { workspace = true, features = [
 hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }
 lazy_static = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true }
 serde-saphyr = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",

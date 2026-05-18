@@ -1,9 +1,12 @@
 [package]
 name = "hoprd-api-client"
 version = "0.1.2"
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-only"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 description = "Generated Rust client for hoprd REST API"
 
 [dependencies]
@@ -14,8 +17,8 @@ http = { workspace = true }
 percent-encoding = { workspace = true }
 serde_urlencoded = { workspace = true }
 progenitor-client = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream"] }
-serde = { workspace = true, features = ["derive"] }
+reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
