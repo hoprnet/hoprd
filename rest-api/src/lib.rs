@@ -443,20 +443,42 @@ enum ApiErrorStatus {
 
 impl From<ApiErrorStatus> for ApiError {
     fn from(value: ApiErrorStatus) -> Self {
+        let error = match &value {
+            ApiErrorStatus::UnknownFailure(e) | ApiErrorStatus::PingError(e) => Some(e.clone()),
+            _ => None,
+        };
         Self {
             status: value.to_string(),
-            error: if let ApiErrorStatus::UnknownFailure(e) = value {
-                Some(e)
-            } else {
-                None
-            },
+            error,
         }
     }
 }
 
 impl IntoResponse for ApiErrorStatus {
     fn into_response(self) -> Response {
-        Json(ApiError::from(self)).into_response()
+        let status_code = match &self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::InvalidInput | Self::InvalidChannelId | Self::InvalidSessionId => {
+                StatusCode::BAD_REQUEST
+            }
+            Self::PeerNotFound
+            | Self::ChannelNotFound
+            | Self::TicketsNotFound
+            | Self::SessionNotFound => StatusCode::NOT_FOUND,
+            Self::Timeout => StatusCode::REQUEST_TIMEOUT,
+            Self::ListenHostAlreadyUsed => StatusCode::CONFLICT,
+            Self::NotReady => StatusCode::PRECONDITION_FAILED,
+            Self::InvalidQuality | Self::PingError(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::UnknownFailure(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        if status_code.is_client_error() {
+            tracing::warn!(status = %status_code, error = %self, "REST API error response");
+        } else if status_code.is_server_error() {
+            tracing::error!(status = %status_code, error = %self, "REST API error response");
+        }
+
+        (status_code, Json(ApiError::from(self))).into_response()
     }
 }
 
@@ -489,17 +511,47 @@ where
 #[cfg(test)]
 mod tests {
     use axum::{http::StatusCode, response::IntoResponse};
+    use rstest::rstest;
 
-    use super::ApiError;
+    use super::{ApiError, ApiErrorStatus};
 
     #[test]
-    fn test_api_error_to_response() {
+    fn api_error_defaults_to_500() {
         let error = ApiError {
-            status: StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            status: "UNKNOWN_FAILURE".into(),
             error: Some("Invalid value passed in parameter 'XYZ'".to_string()),
         };
+        assert_eq!(
+            error.into_response().status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
 
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    #[rstest]
+    #[case(ApiErrorStatus::Unauthorized, StatusCode::UNAUTHORIZED)]
+    #[case(ApiErrorStatus::InvalidInput, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::InvalidChannelId, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::InvalidSessionId, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::PeerNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::ChannelNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::TicketsNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT)]
+    #[case(ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT)]
+    #[case(ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED)]
+    #[case(ApiErrorStatus::InvalidQuality, StatusCode::UNPROCESSABLE_ENTITY)]
+    #[case(ApiErrorStatus::PingError("fail".into()), StatusCode::UNPROCESSABLE_ENTITY)]
+    #[case(ApiErrorStatus::UnknownFailure("oops".into()), StatusCode::INTERNAL_SERVER_ERROR)]
+    fn api_error_status_maps_correct_http_code(
+        #[case] status: ApiErrorStatus,
+        #[case] expected: StatusCode,
+    ) {
+        assert_eq!(status.into_response().status(), expected);
+    }
+
+    #[test]
+    fn ping_error_message_surfaced_in_body() {
+        let api_error = ApiError::from(ApiErrorStatus::PingError("connection refused".into()));
+        assert_eq!(api_error.error.as_deref(), Some("connection refused"));
     }
 }
