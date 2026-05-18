@@ -148,6 +148,8 @@ impl From<SessionCapability> for SessionCapabilities {
 #[schema(example = json!({ "Hops": 1 }))]
 pub enum RoutingOptions {
     Hops(usize),
+    #[cfg(feature = "explicit-path")]
+    IntermediatePath(Vec<String>),
 }
 
 impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
@@ -157,6 +159,11 @@ impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
     fn try_from(value: RoutingOptions) -> Result<Self, Self::Error> {
         match value {
             RoutingOptions::Hops(hops) => HopRouting::try_from(hops),
+            #[cfg(feature = "explicit-path")]
+            RoutingOptions::IntermediatePath(_) => Err(GeneralError::ParseError(
+                "explicit path routing is only supported on /session/{protocol}/explicit-path"
+                    .into(),
+            )),
         }
     }
 }
@@ -164,6 +171,26 @@ impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
 impl From<hopr_lib::HopRouting> for RoutingOptions {
     fn from(opts: hopr_lib::HopRouting) -> Self {
         RoutingOptions::Hops(opts.hop_count())
+    }
+}
+
+impl From<hopr_lib::api::types::internal::routing::RoutingOptions> for RoutingOptions {
+    fn from(opts: hopr_lib::api::types::internal::routing::RoutingOptions) -> Self {
+        match opts {
+            hopr_lib::api::types::internal::routing::RoutingOptions::Hops(hops) => {
+                RoutingOptions::Hops(usize::from(hops))
+            }
+            #[cfg(feature = "explicit-path")]
+            hopr_lib::api::types::internal::routing::RoutingOptions::IntermediatePath(path) => {
+                RoutingOptions::IntermediatePath(
+                    path.into_iter().map(|id| id.to_string()).collect(),
+                )
+            }
+            #[cfg(not(feature = "explicit-path"))]
+            hopr_lib::api::types::internal::routing::RoutingOptions::IntermediatePath(path) => {
+                RoutingOptions::Hops(path.into_iter().count())
+            }
+        }
     }
 }
 
@@ -390,8 +417,8 @@ impl SessionClientExplicitPathRequest {
                 .into(),
                 ..Default::default()
             },
-            RoutingOptions::Hops(self.forward_path.len()),
-            RoutingOptions::Hops(self.return_path.len()),
+            RoutingOptions::IntermediatePath(self.forward_path),
+            RoutingOptions::IntermediatePath(self.return_path),
         ))
     }
 }

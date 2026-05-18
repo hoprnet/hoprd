@@ -16,11 +16,10 @@ crate-type = ["rlib"]
 default = ["telemetry", "runtime-tokio"]
 telemetry = [
   "hopr-lib/telemetry",
-  "dep:hopr-metrics",
   "dep:lazy_static",
   "dep:regex",
 ]
-runtime-tokio = ["hopr-lib/runtime-tokio", "hopr-async-runtime/runtime-tokio"]
+runtime-tokio = ["hopr-lib/runtime-tokio"]
 explicit-path = ["hopr-lib/explicit-path", "hopr-utils-session/explicit-path"]
 
 [dependencies]
