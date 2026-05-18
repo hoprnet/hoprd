@@ -88,8 +88,28 @@ fn main() -> ExitCode {
             .unwrap_or_default()
             .split(',')
             .filter_map(|pair| {
-                let (k, v) = pair.trim().split_once('=')?;
-                Some((k.trim().to_string(), v.trim().to_string()))
+                let pair = pair.trim();
+                match pair.split_once('=') {
+                    Some((k, v)) => {
+                        let k = k.trim();
+                        let v = v.trim();
+                        if k.is_empty() || v.is_empty() {
+                            tracing::warn!(
+                                "malformed HOPRD_OTEL_EXPORT_LABELS entry (empty key or value): {pair}"
+                            );
+                            None
+                        } else {
+                            Some((k.to_string(), v.to_string()))
+                        }
+                    }
+                    None if !pair.is_empty() => {
+                        tracing::warn!(
+                            "malformed HOPRD_OTEL_EXPORT_LABELS entry (missing '='): {pair}"
+                        );
+                        None
+                    }
+                    None => None,
+                }
             })
             .collect(),
     };
