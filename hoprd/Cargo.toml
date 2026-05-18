@@ -45,6 +45,7 @@ telemetry = [
 ]
 transport-quic = ["hopr-transport-p2p/transport-quic"]
 capture = ["hopr-lib/capture"]
+explicit-path = ["hoprd-api/explicit-path", "hopr-lib/explicit-path"]
 # To use profiling:
 # 1. Set RUSTFLAGS="--cfg tokio_unstable" before building
 # 2. Enable the 'prof' feature: cargo build --feature prof

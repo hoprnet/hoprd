@@ -1831,20 +1831,6 @@ If omitted, tickets in all channels are redeemed.*/
     ///          "minimum": 0.0
     ///        }
     ///      }
-    ///    },
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "IntermediatePath"
-    ///      ],
-    ///      "properties": {
-    ///        "IntermediatePath": {
-    ///          "type": "array",
-    ///          "items": {
-    ///            "type": "string"
-    ///          }
-    ///        }
-    ///      }
     ///    }
     ///  ]
     ///}
@@ -1853,17 +1839,10 @@ If omitted, tickets in all channels are redeemed.*/
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub enum RoutingOptions {
         Hops(u64),
-        IntermediatePath(::std::vec::Vec<::std::string::String>),
     }
     impl ::std::convert::From<u64> for RoutingOptions {
         fn from(value: u64) -> Self {
             Self::Hops(value)
-        }
-    }
-    impl ::std::convert::From<::std::vec::Vec<::std::string::String>>
-    for RoutingOptions {
-        fn from(value: ::std::vec::Vec<::std::string::String>) -> Self {
-            Self::IntermediatePath(value)
         }
     }
     ///Session capabilities that can be negotiated with the target peer.
@@ -1955,6 +1934,149 @@ If omitted, tickets in all channels are redeemed.*/
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
+    }
+    ///`SessionClientExplicitPathRequest`
+    ///
+    /// <details><summary>JSON schema</summary>
+    ///
+    /// ```json
+    ///{
+    ///  "examples": [
+    ///    {
+    ///      "capabilities": [
+    ///        "Retransmission",
+    ///        "Segmentation"
+    ///      ],
+    ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
+    ///      "forwardPath": [
+    ///        "16Uiu2HAm...",
+    ///        "16Uiu2HAm..."
+    ///      ],
+    ///      "listenHost": "127.0.0.1:10000",
+    ///      "maxClientSessions": 2,
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "responseBuffer": "2 MB",
+    ///      "returnPath": [
+    ///        "16Uiu2HAm...",
+    ///        "16Uiu2HAm..."
+    ///      ],
+    ///      "sessionPool": 0,
+    ///      "target": {
+    ///        "Plain": "localhost:8080"
+    ///      }
+    ///    }
+    ///  ],
+    ///  "type": "object",
+    ///  "required": [
+    ///    "destination",
+    ///    "forwardPath",
+    ///    "returnPath",
+    ///    "target"
+    ///  ],
+    ///  "properties": {
+    ///    "capabilities": {
+    ///      "type": [
+    ///        "array",
+    ///        "null"
+    ///      ],
+    ///      "items": {
+    ///        "$ref": "#/components/schemas/SessionCapability"
+    ///      }
+    ///    },
+    ///    "destination": {
+    ///      "type": "string"
+    ///    },
+    ///    "forwardPath": {
+    ///      "type": "array",
+    ///      "items": {
+    ///        "type": "string"
+    ///      }
+    ///    },
+    ///    "listenHost": {
+    ///      "type": [
+    ///        "string",
+    ///        "null"
+    ///      ]
+    ///    },
+    ///    "maxClientSessions": {
+    ///      "type": [
+    ///        "integer",
+    ///        "null"
+    ///      ],
+    ///      "minimum": 0.0
+    ///    },
+    ///    "maxSurbUpstream": {
+    ///      "type": [
+    ///        "string",
+    ///        "null"
+    ///      ]
+    ///    },
+    ///    "responseBuffer": {
+    ///      "type": [
+    ///        "string",
+    ///        "null"
+    ///      ]
+    ///    },
+    ///    "returnPath": {
+    ///      "type": "array",
+    ///      "items": {
+    ///        "type": "string"
+    ///      }
+    ///    },
+    ///    "sessionPool": {
+    ///      "type": [
+    ///        "integer",
+    ///        "null"
+    ///      ],
+    ///      "minimum": 0.0
+    ///    },
+    ///    "target": {
+    ///      "$ref": "#/components/schemas/SessionTargetSpec"
+    ///    }
+    ///  }
+    ///}
+    /// ```
+    /// </details>
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct SessionClientExplicitPathRequest {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub capabilities: ::std::option::Option<::std::vec::Vec<SessionCapability>>,
+        pub destination: ::std::string::String,
+        #[serde(rename = "forwardPath")]
+        pub forward_path: ::std::vec::Vec<::std::string::String>,
+        #[serde(
+            rename = "listenHost",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub listen_host: ::std::option::Option<::std::string::String>,
+        #[serde(
+            rename = "maxClientSessions",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub max_client_sessions: ::std::option::Option<u64>,
+        #[serde(
+            rename = "maxSurbUpstream",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub max_surb_upstream: ::std::option::Option<::std::string::String>,
+        #[serde(
+            rename = "responseBuffer",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub response_buffer: ::std::option::Option<::std::string::String>,
+        #[serde(rename = "returnPath")]
+        pub return_path: ::std::vec::Vec<::std::string::String>,
+        #[serde(
+            rename = "sessionPool",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub session_pool: ::std::option::Option<u64>,
+        pub target: SessionTargetSpec,
     }
     ///Request body for creating a new client session.
     ///
@@ -3639,6 +3761,52 @@ Arguments:
             .build()?;
         let info = OperationInfo {
             operation_id: "create_client",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => ResponseValue::from_response(response).await,
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /**Deprecated: creates a client HOPR session using explicit routing paths.
+
+Sends a `POST` request to `/api/v4/session/{protocol}/explicit-path`
+
+Arguments:
+- `protocol`: IP transport protocol
+- `body`: Deprecated explicit-path session creation endpoint.
+*/
+    pub async fn create_client_explicit_path<'a>(
+        &'a self,
+        protocol: &'a str,
+        body: &'a types::SessionClientExplicitPathRequest,
+    ) -> Result<ResponseValue<types::SessionClientResponse>, Error<()>> {
+        let url = format!(
+            "{}/api/v4/session/{}/explicit-path", self.baseurl, encode_path(& protocol
+            .to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map
+            .append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+            );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "create_client_explicit_path",
         };
         self.pre(&mut request, &info).await?;
         let result = self.exec(request, &info).await;

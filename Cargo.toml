@@ -16,13 +16,13 @@ hoprd-api-client = { path = "rest-api-client" }
 hopr-async-runtime = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch="jean/support-intermediate-path", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8", default-features = false }
 hopr-metrics = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-reference = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch="jean/support-intermediate-path" }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8" }
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.9.0" }

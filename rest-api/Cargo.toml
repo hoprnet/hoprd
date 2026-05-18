@@ -21,6 +21,7 @@ telemetry = [
   "dep:regex",
 ]
 runtime-tokio = ["hopr-lib/runtime-tokio", "hopr-async-runtime/runtime-tokio"]
+explicit-path = ["hopr-lib/explicit-path", "hopr-utils-session/explicit-path"]
 
 [dependencies]
 axum = { workspace = true, features = ["http2"] }

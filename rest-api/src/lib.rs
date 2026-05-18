@@ -151,6 +151,7 @@ impl<H> Clone for InternalState<H> {
         peers::show_peer_info,
         root::metrics,
         session::create_client,
+        session::create_client_explicit_path,
         session::list_clients,
         session::adjust_session,
         session::session_config,
@@ -172,7 +173,7 @@ impl<H> Clone for InternalState<H> {
             network::AnnouncementOriginResponse,
             node::NodeInfoResponse, node::NodeVersionResponse, node::NodeStatusResponse, node::ComponentStatusesResponse, node::ComponentStatusInfo,
             peers::MultiaddressSource, peers::NodePeerInfoResponse, peers::PeerChannelInfo, peers::PeerQosInfo, peers::PingResponse,
-            session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
+            session::SessionClientRequest, session::SessionClientExplicitPathRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
             tickets::NodeTicketStatisticsResponse, tickets::ChannelTicket, tickets::RedeemTicketsRequest,
         )
     ),
@@ -364,6 +365,10 @@ where
                 .route("/session/config/{id}", get(session::session_config::<H>))
                 .route("/session/config/{id}", post(session::adjust_session::<H>))
                 .route("/session/{protocol}", post(session::create_client::<H>))
+                .route(
+                    "/session/{protocol}/explicit-path",
+                    post(session::create_client_explicit_path::<H>),
+                )
                 .route("/session/{protocol}", get(session::list_clients::<H>))
                 .route(
                     "/session/{protocol}/{ip}/{port}",

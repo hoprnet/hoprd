@@ -4416,7 +4416,7 @@ dependencies = [
 [[package]]
 name = "hopr-crypto-packet"
 version = "1.3.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "bimap",
  "curve25519-dalek",
@@ -4491,7 +4491,7 @@ dependencies = [
 [[package]]
 name = "hopr-lib"
 version = "4.0.2-rc.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -4503,7 +4503,7 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hopr-api",
- "hopr-transport 0.28.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-transport 0.28.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "humantime-serde",
@@ -4627,9 +4627,9 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-app"
 version = "1.0.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "serde",
  "serde_bytes",
@@ -4653,7 +4653,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-hopr"
 version = "4.6.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4663,8 +4663,8 @@ dependencies = [
  "cfg_eval",
  "hex",
  "hopr-api",
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-ticket-manager 0.4.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-ticket-manager 0.4.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "humantime-serde",
@@ -4711,7 +4711,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-session"
 version = "1.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -4723,7 +4723,7 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hashbrown 0.17.1",
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "lazy_static",
@@ -4771,12 +4771,12 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "aquamarine",
  "flagset",
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "serde",
  "serde_cbor_2",
  "strum 0.28.0",
@@ -4858,7 +4858,7 @@ dependencies = [
 [[package]]
 name = "hopr-ticket-manager"
 version = "0.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4902,7 +4902,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport"
 version = "0.28.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4915,14 +4915,14 @@ dependencies = [
  "futures-time",
  "halfbrown",
  "hopr-api",
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-hopr 4.6.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-ticket-manager 0.4.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-transport-mixer 0.4.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-transport-probe 0.6.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-hopr 4.6.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-ticket-manager 0.4.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-transport-mixer 0.4.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-transport-probe 0.6.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-transport-session 0.22.0",
- "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "humantime-serde",
@@ -4981,7 +4981,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5052,7 +5052,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.6.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5060,8 +5060,8 @@ dependencies = [
  "futures-concurrency",
  "hex",
  "hopr-api",
- "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-utils",
  "humantime-serde",
  "moka",
@@ -5167,7 +5167,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-session"
 version = "0.22.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5175,11 +5175,11 @@ dependencies = [
  "flagset",
  "futures",
  "futures-time",
- "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-session 1.1.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-protocol-start 1.1.0 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-crypto-packet 1.3.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-session 1.1.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-protocol-start 1.1.0 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-transport-tag-allocator 0.1.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "humantime-serde",
@@ -5200,9 +5200,9 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
- "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-protocol-app 1.0.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "serde",
  "smart-default",
  "thiserror 2.0.18",
@@ -5278,7 +5278,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils"
 version = "0.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "arrayvec",
  "auto_impl",
@@ -5308,7 +5308,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path#6a8bdb6361eae22e68c58a4e5db115a1963baba6"
+source = "git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8#8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5318,8 +5318,8 @@ dependencies = [
  "futures",
  "futures-time",
  "hopr-api",
- "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
- "hopr-transport 0.28.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
+ "hopr-transport 0.28.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-types",
  "hopr-utils",
  "human-bandwidth",
@@ -5346,7 +5346,7 @@ dependencies = [
  "home",
  "hopr-chain-connector",
  "hopr-ct-full-network",
- "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-metrics",
  "hopr-network-graph",
  "hopr-reference",
@@ -5394,7 +5394,7 @@ dependencies = [
  "const_format",
  "futures",
  "hopr-async-runtime",
- "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-metrics",
  "hopr-utils-session",
  "human-bandwidth",
@@ -5450,7 +5450,7 @@ dependencies = [
  "clap",
  "futures",
  "hopr-chain-connector",
- "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?branch=jean%2Fsupport-intermediate-path)",
+ "hopr-lib 4.0.2-rc.1 (git+https://github.com/hoprnet/hoprnet?rev=8bfcdea3c7aef827ea0615b3ca740c6c0a96e5a8)",
  "hopr-reference",
  "hopr-types",
  "hoprd",
