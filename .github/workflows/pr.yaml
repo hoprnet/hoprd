@@ -115,7 +115,7 @@ jobs:
             binary: hoprd
             required_label: ""
           - architecture: aarch64-linux
-            runner: depot-ubuntu-24.04-8
+            runner: depot-ubuntu-24.04-arm-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
             build_file: ./hoprd/Cargo.toml
             binary: hoprd
