@@ -55,6 +55,7 @@ mockall = "0.14.0"
 mimalloc = { version = "0.1.50", default-features = false, features = [
   "secure",
 ] }
+rstest = "0.26.1"
 oas3 = "0.21.0"
 openapiv3 = "2.2.0"
 opentelemetry = { version = "0.31.0" }
@@ -158,4 +159,3 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api"]
-

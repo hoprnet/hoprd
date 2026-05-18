@@ -511,60 +511,46 @@ where
 #[cfg(test)]
 mod tests {
     use axum::{http::StatusCode, response::IntoResponse};
+    use rstest::rstest;
 
     use super::{ApiError, ApiErrorStatus};
 
     #[test]
-    fn test_api_error_to_response() {
+    fn api_error_defaults_to_500() {
         let error = ApiError {
-            status: StatusCode::INTERNAL_SERVER_ERROR.to_string(),
+            status: "UNKNOWN_FAILURE".into(),
             error: Some("Invalid value passed in parameter 'XYZ'".to_string()),
         };
-
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
-    #[test]
-    fn test_api_error_status_4xx_codes() {
-        let cases = [
-            (ApiErrorStatus::Unauthorized, StatusCode::UNAUTHORIZED),
-            (ApiErrorStatus::InvalidInput, StatusCode::BAD_REQUEST),
-            (ApiErrorStatus::InvalidChannelId, StatusCode::BAD_REQUEST),
-            (ApiErrorStatus::InvalidSessionId, StatusCode::BAD_REQUEST),
-            (ApiErrorStatus::PeerNotFound, StatusCode::NOT_FOUND),
-            (ApiErrorStatus::ChannelNotFound, StatusCode::NOT_FOUND),
-            (ApiErrorStatus::TicketsNotFound, StatusCode::NOT_FOUND),
-            (ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND),
-            (ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT),
-            (ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT),
-            (ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED),
-            (
-                ApiErrorStatus::InvalidQuality,
-                StatusCode::UNPROCESSABLE_ENTITY,
-            ),
-            (
-                ApiErrorStatus::PingError("fail".into()),
-                StatusCode::UNPROCESSABLE_ENTITY,
-            ),
-        ];
-        for (status, expected_code) in cases {
-            assert_eq!(status.into_response().status(), expected_code);
-        }
-    }
-
-    #[test]
-    fn test_api_error_status_5xx_codes() {
         assert_eq!(
-            ApiErrorStatus::UnknownFailure("oops".into())
-                .into_response()
-                .status(),
+            error.into_response().status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
     }
 
+    #[rstest]
+    #[case(ApiErrorStatus::Unauthorized, StatusCode::UNAUTHORIZED)]
+    #[case(ApiErrorStatus::InvalidInput, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::InvalidChannelId, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::InvalidSessionId, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::PeerNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::ChannelNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::TicketsNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT)]
+    #[case(ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT)]
+    #[case(ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED)]
+    #[case(ApiErrorStatus::InvalidQuality, StatusCode::UNPROCESSABLE_ENTITY)]
+    #[case(ApiErrorStatus::PingError("fail".into()), StatusCode::UNPROCESSABLE_ENTITY)]
+    #[case(ApiErrorStatus::UnknownFailure("oops".into()), StatusCode::INTERNAL_SERVER_ERROR)]
+    fn api_error_status_maps_correct_http_code(
+        #[case] status: ApiErrorStatus,
+        #[case] expected: StatusCode,
+    ) {
+        assert_eq!(status.into_response().status(), expected);
+    }
+
     #[test]
-    fn test_ping_error_message_surfaced() {
+    fn ping_error_message_surfaced_in_body() {
         let api_error = ApiError::from(ApiErrorStatus::PingError("connection refused".into()));
         assert_eq!(api_error.error.as_deref(), Some("connection refused"));
     }
