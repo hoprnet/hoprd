@@ -12,8 +12,42 @@ strategy:
     - AutoRedeeming:
         redeem_only_aggregated: false
         minimum_redeem_ticket_value: "1 wxHOPR"
-    - ClosureFinalizer:
-        max_closure_overdue: 300s
+    - ChannelLifecycle:
+        population:
+          min_open_channels: 5
+          target_open_channels: 8
+        eligibility:
+          require_currently_connected: true
+          min_peer_quality_score: 0.5
+          peer_quality_weight: 0.6
+          ticket_activity_weight: 0.4
+          require_observed_since_start: true
+          allowlist: ~
+          blocklist: []
+        funding:
+          initial_balance: "1 wxHOPR"
+          topup_balance: "1 wxHOPR"
+          lower_balance_threshold: "1 wxHOPR"
+          min_safe_balance_required: "1 wxHOPR"
+          stop_when_unfunded: true
+        proactive_funding:
+          enabled: true
+          safety_margin: 1.5
+          balance_drain_weight: 1.0
+          ticket_index_drain_weight: 1.0
+        closure:
+          close_below_quality_score: 0.3
+          close_when_drained_below: "0 wxHOPR"
+          close_max_concurrent: 2
+        finalizer:
+          enabled: true
+          finalize_max_concurrent: 4
+        restart: {}
+        concurrency:
+          max_concurrent_actions: 4
 hopr:
+  network:
+    probe_interval: "3s"
+    probe_recheck_threshold: "10s"
   safe_module:
     safe_transaction_service_provider: https://safe-transaction.prod.hoprnet.link/
