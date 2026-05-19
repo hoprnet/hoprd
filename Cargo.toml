@@ -6,6 +6,9 @@ members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 rust-version = "1.91"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
+license = "GPL-3.0-only"
+homepage = "https://hoprnet.org/"
+repository = "https://github.com/hoprnet/hoprd"
 
 [workspace.dependencies]
 hoprd = { path = "hoprd", default-features = false }
@@ -26,6 +29,7 @@ hopr-api = { version = "=1.9.0" }
 
 # Third-party deps
 anyhow = "1.0.102"
+home = "0.5.12"
 async-signal = "0.2.14"
 async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["http2"] }

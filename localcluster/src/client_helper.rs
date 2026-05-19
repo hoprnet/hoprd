@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use hoprd_api_client;
+use hoprd_api_client::types::OpenChannelBodyRequest;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
 
@@ -84,6 +85,18 @@ impl HoprdApiClient {
 
     pub async fn ping_peer(&self, address: &str) -> Result<()> {
         self.inner.ping_peer(address).await?;
+        Ok(())
+    }
+
+    pub async fn open_channel(&self, destination: &str, amount: &str) -> Result<()> {
+        let body = OpenChannelBodyRequest {
+            amount: amount.to_string(),
+            destination: destination.to_string(),
+        };
+        self.inner
+            .open_channel(&body)
+            .await
+            .map_err(|e| anyhow::anyhow!("open_channel to {destination}: {e}"))?;
         Ok(())
     }
 }
@@ -258,9 +271,6 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
 }
 
 /// Poll until every node has an outgoing `Open` channel to every other node.
-///
-/// Channels are opened by the `ChannelLifecycleStrategy` running inside each
-/// hoprd node — no explicit REST `open_channel` calls are made here.
 pub async fn wait_full_mesh_channels(
     nodes: &[NodeProcess],
     timeout: std::time::Duration,
@@ -310,6 +320,62 @@ pub async fn wait_full_mesh_channels(
             let pairs_str: Vec<_> = missing.iter().map(|(s, d)| format!("{s}→{d}")).collect();
             anyhow::bail!(
                 "timeout waiting for full-mesh channels: {}",
+                pairs_str.join(", ")
+            );
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+pub async fn open_full_mesh_channels(
+    nodes: &[NodeProcess],
+    amount: &str,
+    timeout: std::time::Duration,
+) -> Result<()> {
+    if let Some(node) = nodes.iter().find(|n| n.address.is_none()) {
+        anyhow::bail!(
+            "node {} address not resolved before opening full-mesh channels",
+            node.id
+        );
+    }
+
+    let start = std::time::Instant::now();
+    loop {
+        let pairs: Vec<_> = nodes
+            .iter()
+            .flat_map(|src| {
+                nodes.iter().filter_map(move |dst| {
+                    let src_addr = src.address.as_deref()?;
+                    let dst_addr = dst.address.as_deref()?;
+                    if src_addr == dst_addr {
+                        return None;
+                    }
+                    Some((src.id, dst.id, src.api.clone(), dst_addr.to_string()))
+                })
+            })
+            .collect();
+
+        let mut missing = Vec::new();
+        for (src, dst, api, addr) in pairs {
+            if api.is_outgoing_channel_open(addr.as_str()).await? {
+                continue;
+            }
+
+            let open_result = api.open_channel(addr.as_str(), amount).await;
+            if open_result.is_err() && !api.is_outgoing_channel_open(addr.as_str()).await? {
+                missing.push((src, dst));
+            }
+        }
+
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            let pairs_str: Vec<_> = missing.iter().map(|(s, d)| format!("{s}→{d}")).collect();
+            anyhow::bail!(
+                "timeout opening full-mesh channels: {}",
                 pairs_str.join(", ")
             );
         }

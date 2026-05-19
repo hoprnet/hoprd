@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 use crate::identity::{
     DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
@@ -29,9 +29,9 @@ pub struct Args {
     #[arg(long, default_value_t = DEFAULT_NUM_NODES, value_parser = parse_size)]
     pub size: usize,
 
-    /// Skip waiting for the channel-lifecycle strategy to open the full mesh
-    #[arg(long, default_value_t = false)]
-    pub skip_channels: bool,
+    /// Channel management mode: `api`, `strategy`, `both`, or `none`
+    #[arg(long, value_enum, default_value_t = ChannelManagement::Api)]
+    pub channel_management: ChannelManagement,
 
     /// REST API host to bind (use "auto" to bind 0.0.0.0 and advertise the container IP)
     #[arg(long, default_value = "localhost")]
@@ -81,12 +81,24 @@ pub struct Args {
     #[arg(long)]
     pub api_token: Option<String>,
 
+    /// Per-channel funding amount used for REST API channel opening
+    #[arg(long, default_value = "1 wxHOPR", value_parser = parse_funding_amount)]
+    pub funding_amount: String,
+
     /// Number of pre-funded extra identities to create alongside the cluster (0–5).
     /// Each gets its own Safe + Module, is written to `--data-dir` as an encrypted
     /// keystore (`extra_id_{i}.id`, password "local-cluster"), and is NOT run as a
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ChannelManagement {
+    Api,
+    Strategy,
+    Both,
+    None,
 }
 
 fn parse_extras(s: &str) -> Result<usize, String> {
@@ -99,4 +111,12 @@ fn parse_extras(s: &str) -> Result<usize, String> {
         ));
     }
     Ok(n)
+}
+
+fn parse_funding_amount(s: &str) -> Result<String, String> {
+    let value = s.trim();
+    if value.is_empty() {
+        return Err("funding-amount must not be empty".to_string());
+    }
+    Ok(value.to_string())
 }
