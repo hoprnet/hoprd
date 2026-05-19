@@ -337,7 +337,7 @@ pub(crate) struct SessionClientResponse {
     /// have multiple clients (defaults to 1 for UDP).
     pub max_client_sessions: usize,
     /// The maximum throughput at which artificial SURBs might be generated and sent
-    /// to the recipient of the Session.    
+    /// to the recipient of the Session.
     #[serde(default)]
     #[serde(with = "human_bandwidth::option")]
     #[schema(value_type = Option<String>)]
@@ -869,9 +869,8 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
                 .iter()
                 .map(|c| c.value().configurator.clone())
                 .collect();
-            for cfg in configurators {
-                let _ = cfg.close().await;
-            }
+
+            futures::future::join_all(configurators.iter().map(|cfg| cfg.close())).await;
 
             entry.abort_handle.abort();
         }
