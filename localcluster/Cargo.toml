@@ -1,10 +1,12 @@
 [package]
 name = "hoprd-localcluster"
 version = "0.2.0"
-authors = ["HOPR Association <tech@hoprnet.org>"]
+authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "GPL-3.0-only"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 description = "Local HOPR cluster runner using external hoprd processes"
 
