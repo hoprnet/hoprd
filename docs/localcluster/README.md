@@ -134,23 +134,34 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                  | Env var                   | Default           | Description                                                                                                               |
-| --------------------- | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--size`              | —                         | `3`               | Number of nodes to start (1–5)                                                                                            |
-| `--api-host`          | —                         | `localhost`       | Host to bind the REST API on                                                                                              |
-| `--api-port-base`     | —                         | `3000`            | First API port (each node gets base + id)                                                                                 |
-| `--p2p-host`          | —                         | `127.0.0.1`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
-| `--p2p-port-base`     | —                         | `9000`            | First P2P port                                                                                                            |
-| `--data-dir`          | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                                                                                   |
-| `--chain-image`       | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                                                                                        |
-| `--chain-url`         | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step                                                                             |
-| `--container-runtime` | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
-| `--hoprd-bin`         | —                         | `hoprd`           | Path to the `hoprd` binary                                                                                                |
-| `--identity-password` | —                         | `password`        | Password for identity encryption                                                                                          |
-| `--api-token`         | —                         | none              | Bearer token for the REST API                                                                                             |
-| `--funding-amount`    | —                         | `1 wxHOPR`        | Per-channel funding amount                                                                                                |
-| `--skip-channels`     | —                         | `false`           | Skip opening payment channels                                                                                             |
-| `--extra-identities`  | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
+| Flag                   | Env var                   | Default           | Description                                                                                                               |
+| ---------------------- | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--size`               | —                         | `3`               | Number of nodes to start (1–5)                                                                                            |
+| `--api-host`           | —                         | `localhost`       | Host to bind the REST API on                                                                                              |
+| `--api-port-base`      | —                         | `3000`            | First API port (each node gets base + id)                                                                                 |
+| `--p2p-host`           | —                         | `127.0.0.1`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
+| `--p2p-port-base`      | —                         | `9000`            | First P2P port                                                                                                            |
+| `--data-dir`           | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                                                                                   |
+| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                                                                                        |
+| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step                                                                             |
+| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
+| `--hoprd-bin`          | —                         | `hoprd`           | Path to the `hoprd` binary                                                                                                |
+| `--identity-password`  | —                         | `password`        | Password for identity encryption                                                                                          |
+| `--api-token`          | —                         | none              | Bearer token for the REST API                                                                                             |
+| `--funding-amount`     | —                         | `1 wxHOPR`        | Per-channel funding amount                                                                                                |
+| `--channel-management` | —                         | `api`             | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
+| `--extra-identities`   | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
+
+### Channel management modes
+
+`--channel-management` controls how payment channels are opened during cluster startup:
+
+- `api` (default): Localcluster opens channels explicitly via REST API calls (`POST /api/v4/channels`) and waits for full-mesh channels to become open.
+- `strategy`: Localcluster enables the node channel strategy in generated `hoprd` configs, does not make manual REST `open_channel` calls, and waits for full-mesh channels to become open.
+- `both`: Localcluster enables strategy and also performs manual REST channel opening, then waits for full-mesh channels.
+- `none`: Localcluster disables both strategy-driven and manual startup channel opening, and skips channel topology waiting.
+
+Use `api` for deterministic startup behavior, `strategy` for strategy-only testing, `both` for mixed behavior checks, and `none` when you want to manage channels manually after startup.
 
 ---
 

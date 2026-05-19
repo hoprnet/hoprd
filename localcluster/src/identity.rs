@@ -63,6 +63,8 @@ pub struct GenerationConfig {
     pub p2p_host: String,
     /// Base P2P port; node `i` listens on `p2p_port_base + i`.
     pub p2p_port_base: u16,
+    /// Enables channel lifecycle strategy in generated hoprd configs.
+    pub enable_channel_strategy: bool,
 }
 
 impl Default for GenerationConfig {
@@ -77,6 +79,7 @@ impl Default for GenerationConfig {
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
+            enable_channel_strategy: false,
         }
     }
 }
@@ -208,30 +211,29 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
     let p2p_host = &config.p2p_host;
 
-    // Set population thresholds to the exact cluster mesh size so the
-    // ChannelLifecycleStrategy opens a channel to every other node.
     let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
-    let mesh_target = effective_num_nodes.saturating_sub(1);
+    let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+        redeem_on_winning: true,
+        ..Default::default()
+    })];
+    if config.enable_channel_strategy {
+        let mesh_target = effective_num_nodes.saturating_sub(1);
+        strategies.push(StrategyKind::ChannelLifecycle(ChannelLifecycleConfig {
+            population: PopulationConfig {
+                min_open_channels: mesh_target,
+                target_open_channels: mesh_target,
+                ..Default::default()
+            },
+            // probe_recheck_threshold=3s → first probe within 3s → EMA converges
+            // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
+            tick_interval: std::time::Duration::from_secs(10),
+            ..Default::default()
+        }));
+    }
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
         execution_interval: std::time::Duration::from_secs(60),
-        strategies: vec![
-            StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
-                redeem_on_winning: true,
-                ..Default::default()
-            }),
-            StrategyKind::ChannelLifecycle(ChannelLifecycleConfig {
-                population: PopulationConfig {
-                    min_open_channels: mesh_target,
-                    target_open_channels: mesh_target,
-                    ..Default::default()
-                },
-                // probe_recheck_threshold=3s → first probe within 3s → EMA converges
-                // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
-                tick_interval: std::time::Duration::from_secs(10),
-                ..Default::default()
-            }),
-        ],
+        strategies,
     };
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
