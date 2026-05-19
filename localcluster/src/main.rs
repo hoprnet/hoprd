@@ -21,7 +21,6 @@ use hoprd_localcluster::{
 use tracing::{error, info, warn};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
-const DEFAULT_CHANNEL_STAKE: &str = "1 wxHOPR";
 
 #[derive(Default)]
 struct Cleanup {
@@ -147,7 +146,7 @@ async fn main() -> Result<()> {
                 info!("opening full-mesh channels through REST API");
                 client_helper::open_full_mesh_channels(
                     &cleanup.nodes,
-                    DEFAULT_CHANNEL_STAKE,
+                    &args.funding_amount,
                     DEFAULT_WAIT_TIMEOUT * 4,
                 )
                 .await?;
@@ -167,7 +166,7 @@ async fn main() -> Result<()> {
                 info!("opening full-mesh channels through REST API");
                 client_helper::open_full_mesh_channels(
                     &cleanup.nodes,
-                    DEFAULT_CHANNEL_STAKE,
+                    &args.funding_amount,
                     DEFAULT_WAIT_TIMEOUT * 4,
                 )
                 .await?;

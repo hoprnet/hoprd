@@ -81,6 +81,10 @@ pub struct Args {
     #[arg(long)]
     pub api_token: Option<String>,
 
+    /// Per-channel funding amount used for REST API channel opening
+    #[arg(long, default_value = "1 wxHOPR", value_parser = parse_funding_amount)]
+    pub funding_amount: String,
+
     /// Number of pre-funded extra identities to create alongside the cluster (0–5).
     /// Each gets its own Safe + Module, is written to `--data-dir` as an encrypted
     /// keystore (`extra_id_{i}.id`, password "local-cluster"), and is NOT run as a
@@ -107,4 +111,12 @@ fn parse_extras(s: &str) -> Result<usize, String> {
         ));
     }
     Ok(n)
+}
+
+fn parse_funding_amount(s: &str) -> Result<String, String> {
+    let value = s.trim();
+    if value.is_empty() {
+        return Err("funding-amount must not be empty".to_string());
+    }
+    Ok(value.to_string())
 }
