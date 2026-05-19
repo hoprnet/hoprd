@@ -5,9 +5,9 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "A complete HOPR node daemon and reference implementation of the HOPR protocol"
-homepage = "https://hoprnet.org/"
-repository = "https://github.com/hoprnet/hoprd"
-license = "GPL-3.0-only"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 build = "build.rs"
 
 [features]
@@ -76,7 +76,7 @@ lazy_static = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
 futures = { workspace = true }
 flagset = { workspace = true, optional = true }
-home = "0.5.12"
+home = { workspace = true }
 humansize = { workspace = true, optional = true, features = ["no_alloc"] }
 humantime-serde = { workspace = true }
 proc-macro-regex = { workspace = true }
