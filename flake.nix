@@ -365,7 +365,7 @@
             esac
 
             if [ -z "''${listen_host_preset_ip:-}" ]; then
-              listen_host_ip="$(hostname -i | awk '{print $1}')"
+              listen_host_ip="$(hostname -i | { read -r first _rest; echo "$first"; })"
 
               if [ -z "''${listen_host_preset_port:-}" ]; then
                 listen_host="''${listen_host_ip}:0"
