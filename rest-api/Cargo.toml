@@ -15,7 +15,11 @@ crate-type = ["rlib"]
 [features]
 default = ["telemetry", "runtime-tokio"]
 telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
-runtime-tokio = ["hopr-lib/runtime-tokio"]
+runtime-tokio = [
+  "hopr-lib/runtime-tokio",
+  "dep:hopr-utils",
+  "hopr-utils/runtime-tokio",
+]
 
 [dependencies]
 axum = { workspace = true, features = ["http2"] }
@@ -46,7 +50,14 @@ hopr-lib = { workspace = true, features = [
   "utils_futures",
 ] }
 
+hopr-utils = { workspace = true, optional = true }
 hopr-utils-session = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["hopr-utils"]
+
+[package.metadata.cargo-shear]
+ignored = ["hopr-utils"]
 
 [dev-dependencies]
 anyhow = { workspace = true }

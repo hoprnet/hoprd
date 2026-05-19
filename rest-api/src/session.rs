@@ -337,7 +337,7 @@ pub(crate) struct SessionClientResponse {
     /// have multiple clients (defaults to 1 for UDP).
     pub max_client_sessions: usize,
     /// The maximum throughput at which artificial SURBs might be generated and sent
-    /// to the recipient of the Session.    
+    /// to the recipient of the Session.
     #[serde(default)]
     #[serde(with = "human_bandwidth::option")]
     #[schema(value_type = Option<String>)]
@@ -859,6 +859,18 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
             let (_, entry) = open_listeners
                 .remove(&bound_addr)
                 .ok_or((StatusCode::NOT_FOUND, ApiErrorStatus::InvalidInput))?;
+
+            // Explicitly close every client session bound to this listener so the
+            // SessionManager invalidates its cache entries immediately. Otherwise
+            // the entries linger until idle-timeout / LRU eviction and per-session
+            // state (frame reassembly buffers, etc.) accumulates.
+            let configurators: Vec<_> = entry
+                .get_clients()
+                .iter()
+                .map(|c| c.value().configurator.clone())
+                .collect();
+
+            futures::future::join_all(configurators.iter().map(|cfg| cfg.close())).await;
 
             entry.abort_handle.abort();
         }
