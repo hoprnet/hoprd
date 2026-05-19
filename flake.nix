@@ -461,7 +461,7 @@
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
                 pkgs.cacert
               ];
-              Cmd = [ "hoprd-localcluster" ];
+              Entrypoint = [ "hoprd-localcluster" ];
               env = [ "TMPDIR=/app/.tmp" ];
             };
           };

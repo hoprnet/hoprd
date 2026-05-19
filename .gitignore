@@ -44,3 +44,5 @@ deploy/nfpm/*.1.gz
 
 # Swap files
 *.swp
+.pre-commit-config.yaml
+result
