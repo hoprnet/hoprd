@@ -156,7 +156,7 @@ fn try_get_container_ip(runtime: &str, name: &str) -> Option<String> {
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
         let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.first().map(|s| *s) == Some(name) && cols.len() >= 6 {
+        if cols.first().copied() == Some(name) && cols.len() >= 6 {
             let addr = cols[5];
             // Strip CIDR prefix (e.g. "192.168.64.2/24" → "192.168.64.2")
             let ip = addr.split('/').next()?;
