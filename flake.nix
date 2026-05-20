@@ -376,6 +376,29 @@
 
             export HOPRD_DEFAULT_SESSION_LISTEN_HOST="''${listen_host}"
 
+            resolve_config_path() {
+              local prev="" arg
+              for arg in "$@"; do
+                case "$arg" in
+                  --configurationFilePath=*) echo "''${arg#*=}"; return ;;
+                  --configurationFilePath)   prev="match"; continue ;;
+                esac
+                if [ "$prev" = "match" ]; then echo "$arg"; return; fi
+              done
+              echo "''${HOPRD_CONFIGURATION_FILE_PATH:-}"
+            }
+
+            if [ -z "''${1:-}" ] || [ ! -f "/bin/''${1:-}" ] || [ ! -x "/bin/''${1:-}" ] || [ "''${1:-}" = "hoprd" ]; then
+              cfg_path="$(resolve_config_path "$@")"
+              if [ -n "$cfg_path" ]; then
+                if [ ! -f "$cfg_path" ]; then
+                  echo "hoprd-cfg: configuration file '$cfg_path' not found" >&2
+                  exit 1
+                fi
+                /bin/hoprd-cfg --validate "$cfg_path"
+              fi
+            fi
+
             if [ -n "''${1:-}" ] && [ -f "/bin/''${1:-}" ] && [ -x "/bin/''${1:-}" ]; then
               exec "$@"
             else
@@ -399,6 +422,7 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-x86_64-linux
+                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -411,6 +435,7 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
+                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -423,6 +448,7 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-profile-x86_64-linux
+                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
                 analyzeMemoryScript
@@ -447,6 +473,7 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-aarch64-linux
+                hoprdPackages.binary-hoprd-cfg-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
