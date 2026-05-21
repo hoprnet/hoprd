@@ -409,16 +409,19 @@ impl SessionClientExplicitPathRequest {
         Ok((
             self.destination,
             target_spec.into_target(target_protocol.into())?,
-            HoprSessionClientExplicitPathConfig {
-                forward_path,
-                return_path,
-                capabilities,
-                surb_management: SessionConfig {
-                    response_buffer: self.response_buffer,
-                    max_surb_upstream: self.max_surb_upstream,
+            #[allow(deprecated)]
+            {
+                HoprSessionClientExplicitPathConfig {
+                    forward_path,
+                    return_path,
+                    capabilities,
+                    surb_management: SessionConfig {
+                        response_buffer: self.response_buffer,
+                        max_surb_upstream: self.max_surb_upstream,
+                    }
+                    .into(),
+                    ..Default::default()
                 }
-                .into(),
-                ..Default::default()
             },
             RoutingOptions::IntermediatePath(self.forward_path),
             RoutingOptions::IntermediatePath(self.return_path),

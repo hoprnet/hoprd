@@ -1831,6 +1831,20 @@ If omitted, tickets in all channels are redeemed.*/
     ///          "minimum": 0.0
     ///        }
     ///      }
+    ///    },
+    ///    {
+    ///      "type": "object",
+    ///      "required": [
+    ///        "IntermediatePath"
+    ///      ],
+    ///      "properties": {
+    ///        "IntermediatePath": {
+    ///          "type": "array",
+    ///          "items": {
+    ///            "type": "string"
+    ///          }
+    ///        }
+    ///      }
     ///    }
     ///  ]
     ///}
@@ -1839,10 +1853,17 @@ If omitted, tickets in all channels are redeemed.*/
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub enum RoutingOptions {
         Hops(u64),
+        IntermediatePath(::std::vec::Vec<::std::string::String>),
     }
     impl ::std::convert::From<u64> for RoutingOptions {
         fn from(value: u64) -> Self {
             Self::Hops(value)
+        }
+    }
+    impl ::std::convert::From<::std::vec::Vec<::std::string::String>>
+    for RoutingOptions {
+        fn from(value: ::std::vec::Vec<::std::string::String>) -> Self {
+            Self::IntermediatePath(value)
         }
     }
     ///Session capabilities that can be negotiated with the target peer.
