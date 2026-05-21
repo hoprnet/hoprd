@@ -45,6 +45,9 @@ pub struct Api {
     #[serde(default = "default_api_host")]
     #[default(default_api_host())]
     pub host: HostConfig,
+    /// Enables the deprecated explicit-path session creation endpoint.
+    #[serde(default)]
+    pub enable_explicit_path_sessions: bool,
 }
 
 #[inline]

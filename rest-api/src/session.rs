@@ -6,9 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use base64::Engine;
-#[cfg(feature = "explicit-path")]
 use hopr_lib::api::chain::ChainKeyOperations;
-#[cfg(feature = "explicit-path")]
 use hopr_lib::api::node::HasChainApi;
 use hopr_lib::{
     HopRouting, HoprSessionClientConfig,
@@ -19,7 +17,6 @@ use hopr_lib::{
         SurbBalancerConfig,
     },
 };
-#[cfg(feature = "explicit-path")]
 use hopr_lib::{HoprSessionClientExplicitPathConfig, api::types::internal::NodeId};
 use hopr_utils_session::{
     ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding,
@@ -146,7 +143,6 @@ impl From<SessionCapability> for SessionCapabilities {
 #[schema(example = json!({ "Hops": 1 }))]
 pub enum RoutingOptions {
     Hops(usize),
-    #[cfg(feature = "explicit-path")]
     IntermediatePath(Vec<String>),
 }
 
@@ -157,7 +153,6 @@ impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
     fn try_from(value: RoutingOptions) -> Result<Self, Self::Error> {
         match value {
             RoutingOptions::Hops(hops) => HopRouting::try_from(hops),
-            #[cfg(feature = "explicit-path")]
             RoutingOptions::IntermediatePath(_) => Err(GeneralError::ParseError(
                 "explicit path routing is only supported on /session/{protocol}/explicit-path"
                     .into(),
@@ -178,15 +173,10 @@ impl From<hopr_lib::api::types::internal::routing::RoutingOptions> for RoutingOp
             hopr_lib::api::types::internal::routing::RoutingOptions::Hops(hops) => {
                 RoutingOptions::Hops(usize::from(hops))
             }
-            #[cfg(feature = "explicit-path")]
             hopr_lib::api::types::internal::routing::RoutingOptions::IntermediatePath(path) => {
                 RoutingOptions::IntermediatePath(
                     path.into_iter().map(|id| id.to_string()).collect(),
                 )
-            }
-            #[cfg(not(feature = "explicit-path"))]
-            hopr_lib::api::types::internal::routing::RoutingOptions::IntermediatePath(path) => {
-                RoutingOptions::Hops(path.into_iter().count())
             }
         }
     }
@@ -311,7 +301,6 @@ impl SessionClientRequest {
     }
 }
 
-#[cfg(feature = "explicit-path")]
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(example = json!({
@@ -348,7 +337,6 @@ pub(crate) struct SessionClientExplicitPathRequest {
     pub max_client_sessions: Option<usize>,
 }
 
-#[cfg(feature = "explicit-path")]
 impl SessionClientExplicitPathRequest {
     fn into_protocol_session_explicit_config<H>(
         self,
@@ -559,7 +547,6 @@ pub(crate) async fn create_client<H: crate::RestApiSessionFactory>(
     create_client_impl(state, protocol, args).await
 }
 
-#[cfg(feature = "explicit-path")]
 #[deprecated(note = "Use POST /session/{protocol} with hop-based routing.")]
 #[utoipa::path(
         post,
@@ -595,7 +582,6 @@ pub(crate) async fn create_client_explicit_path<
     create_client_explicit_path_impl(state, protocol, args).await
 }
 
-#[cfg(feature = "explicit-path")]
 async fn create_client_explicit_path_impl<
     H: crate::RestApiSessionFactory + HasChainApi<ChainError = HoprLibError>,
 >(

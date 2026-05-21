@@ -39,9 +39,6 @@ nix build .#hoprd-candidate
 # Release build
 nix build .#binary-hoprd
 
-# Release build with explicit-path feature enabled
-nix build .#binary-hoprd-explicit-path
-
 # Docker image
 nix build .#docker-hoprd-x86_64-linux
 ```
@@ -70,15 +67,16 @@ cargo run --release -p hoprd --bin hoprd-cfg -- --validate /path/to/hoprd.yaml
 
 Key config options:
 
-| Option     | Description                           |
-| ---------- | ------------------------------------- |
-| `host`     | P2P listen address                    |
-| `apiPort`  | REST API port (default 3001)          |
-| `apiToken` | Authentication token for REST API     |
-| `identity` | Path to node identity file            |
-| `data`     | Data directory for node state         |
-| `password` | Identity file password                |
-| `network`  | Network to connect to (e.g. `dufour`) |
+| Option                       | Description                                                |
+| ---------------------------- | ---------------------------------------------------------- |
+| `host`                       | P2P listen address                                         |
+| `apiPort`                    | REST API port (default 3001)                               |
+| `apiToken`                   | Authentication token for REST API                          |
+| `enableExplicitPathSessions` | Enables the deprecated explicit-path REST session endpoint |
+| `identity`                   | Path to node identity file                                 |
+| `data`                       | Data directory for node state                              |
+| `password`                   | Identity file password                                     |
+| `network`                    | Network to connect to (e.g. `dufour`)                      |
 
 ## REST API
 

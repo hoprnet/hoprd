@@ -16,7 +16,6 @@ crate-type = ["rlib"]
 default = ["telemetry", "runtime-tokio"]
 telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
 runtime-tokio = ["hopr-lib/runtime-tokio"]
-explicit-path = ["hopr-lib/explicit-path", "hopr-utils-session/explicit-path"]
 
 [dependencies]
 axum = { workspace = true, features = ["http2"] }
@@ -42,13 +41,14 @@ utoipa-swagger-ui = { workspace = true }
 validator = { workspace = true }
 
 hopr-lib = { workspace = true, features = [
+  "explicit-path",
   "serde",
   "session-client",
   "utils_futures",
 ] }
 
 hopr-utils = { workspace = true, optional = true }
-hopr-utils-session = { workspace = true }
+hopr-utils-session = { workspace = true, features = ["explicit-path"] }
 
 [package.metadata.cargo-machete]
 ignored = ["hopr-utils"]

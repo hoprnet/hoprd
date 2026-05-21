@@ -192,7 +192,6 @@ impl<H> Clone for InternalState<H> {
 )]
 struct BaseApiDoc;
 
-#[cfg(feature = "explicit-path")]
 #[derive(OpenApi)]
 #[openapi(
     paths(session::create_client_explicit_path,),
@@ -204,19 +203,21 @@ pub struct ApiDoc;
 
 impl OpenApi for ApiDoc {
     fn openapi() -> utoipa::openapi::OpenApi {
-        let openapi = BaseApiDoc::openapi();
+        Self::openapi_with_explicit_path_sessions(false)
+    }
+}
 
-        #[cfg(feature = "explicit-path")]
-        {
-            let mut openapi = openapi;
+impl ApiDoc {
+    fn openapi_for_config(cfg: &crate::config::Api) -> utoipa::openapi::OpenApi {
+        Self::openapi_with_explicit_path_sessions(cfg.enable_explicit_path_sessions)
+    }
+
+    fn openapi_with_explicit_path_sessions(enabled: bool) -> utoipa::openapi::OpenApi {
+        let mut openapi = BaseApiDoc::openapi();
+        if enabled {
             openapi.merge(ExplicitPathApiDoc::openapi());
-            openapi
         }
-
-        #[cfg(not(feature = "explicit-path"))]
-        {
-            openapi
-        }
+        openapi
     }
 }
 
@@ -249,7 +250,6 @@ impl Modify for SecurityAddon {
     }
 }
 
-#[cfg(feature = "explicit-path")]
 pub trait RestApiSessionFactory: Send + Sync + 'static {
     type HopFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>;
     type ExplicitPathFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientExplicitPathConfig>;
@@ -258,7 +258,6 @@ pub trait RestApiSessionFactory: Send + Sync + 'static {
     fn explicit_path_session_factory(hopr: Arc<Self>) -> Self::ExplicitPathFactory;
 }
 
-#[cfg(feature = "explicit-path")]
 impl<Chain, Graph, Net, TMgr> RestApiSessionFactory for hopr_lib::Hopr<Chain, Graph, Net, TMgr>
 where
     hopr_lib::Hopr<Chain, Graph, Net, TMgr>: Send + Sync + 'static,
@@ -277,27 +276,6 @@ where
 
     fn explicit_path_session_factory(hopr: Arc<Self>) -> Self::ExplicitPathFactory {
         hopr_utils_session::ExplicitPathSessionFactory::new(hopr)
-    }
-}
-
-#[cfg(not(feature = "explicit-path"))]
-pub trait RestApiSessionFactory: Send + Sync + 'static {
-    type HopFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>;
-
-    fn hop_session_factory(hopr: Arc<Self>) -> Self::HopFactory;
-}
-
-#[cfg(not(feature = "explicit-path"))]
-impl<Chain, Graph, Net, TMgr> RestApiSessionFactory for hopr_lib::Hopr<Chain, Graph, Net, TMgr>
-where
-    hopr_lib::Hopr<Chain, Graph, Net, TMgr>: Send + Sync + 'static,
-    hopr_utils_session::HopSessionFactory<Chain, Graph, Net, TMgr>:
-        hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>,
-{
-    type HopFactory = hopr_utils_session::HopSessionFactory<Chain, Graph, Net, TMgr>;
-
-    fn hop_session_factory(hopr: Arc<Self>) -> Self::HopFactory {
-        hopr_utils_session::HopSessionFactory::new(hopr)
     }
 }
 
@@ -351,7 +329,9 @@ where
     <<H as hopr_lib::api::node::HasTransportApi>::Transport as hopr_lib::api::node::TransportOperations>::Error:
         Into<hopr_lib::errors::HoprTransportError>,
 {
+    let api_doc = ApiDoc::openapi_for_config(&cfg);
     let state = AppState { hopr };
+    let enable_explicit_path_sessions = cfg.enable_explicit_path_sessions;
     let inner_state = InternalState {
         auth: Arc::new(cfg.auth.clone()),
         hoprd_cfg,
@@ -363,10 +343,8 @@ where
     Router::new()
         .merge(
             Router::new()
-                .merge(
-                    SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()),
-                )
-                .merge(Scalar::with_url("/scalar", ApiDoc::openapi())),
+                .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api_doc.clone()))
+                .merge(Scalar::with_url("/scalar", api_doc)),
         )
         .merge(
             Router::new()
@@ -444,7 +422,7 @@ where
                 .route("/session/config/{id}", get(session::session_config::<H>))
                 .route("/session/config/{id}", post(session::adjust_session::<H>))
                 .route("/session/{protocol}", post(session::create_client::<H>))
-                .merge(explicit_path_router::<H>())
+                .merge(explicit_path_router::<H>(enable_explicit_path_sessions))
                 .route("/session/{protocol}", get(session::list_clients::<H>))
                 .route(
                     "/session/{protocol}/{ip}/{port}",
@@ -481,17 +459,17 @@ where
         )
 }
 
-#[cfg(feature = "explicit-path")]
-fn explicit_path_router<H: HoprNode + RestApiSessionFactory>() -> Router<Arc<InternalState<H>>> {
-    Router::new().route(
-        "/session/{protocol}/explicit-path",
-        post(session::create_client_explicit_path::<H>),
-    )
-}
-
-#[cfg(not(feature = "explicit-path"))]
-fn explicit_path_router<H: HoprNode + RestApiSessionFactory>() -> Router<Arc<InternalState<H>>> {
-    Router::new()
+fn explicit_path_router<H: HoprNode + RestApiSessionFactory>(
+    enabled: bool,
+) -> Router<Arc<InternalState<H>>> {
+    if enabled {
+        Router::new().route(
+            "/session/{protocol}/explicit-path",
+            post(session::create_client_explicit_path::<H>),
+        )
+    } else {
+        Router::new()
+    }
 }
 
 fn checksum_address_serializer<S: serde::Serializer>(a: &Address, s: S) -> Result<S::Ok, S::Error> {
