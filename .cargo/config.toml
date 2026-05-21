@@ -1,5 +1,19 @@
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "force-frame-pointers=yes"]
+rustflags = [
+  "-C",
+  "force-frame-pointers=yes",
+  "-C",
+  "debuginfo=2",
+  "-C",
+  "inline-threshold=0",
+]
 
 [target.x86_64-unknown-linux-musl]
-rustflags = ["-C", "force-frame-pointers=yes"]
+rustflags = [
+  "-C",
+  "force-frame-pointers=yes",
+  "-C",
+  "debuginfo=2",
+  "-C",
+  "inline-threshold=0",
+]
