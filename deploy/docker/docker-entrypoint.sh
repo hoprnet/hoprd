@@ -65,6 +65,13 @@ resolve_config_path() {
       ;;
     esac
     if [ "$prev" = "match" ]; then
+      # Treat an empty value or another flag as a missing value.
+      case "$arg" in
+      "" | --*)
+        echo "Error: --configurationFilePath requires a non-empty value" >&2
+        return 2
+        ;;
+      esac
       echo "$arg"
       return 0
     fi
@@ -81,7 +88,7 @@ resolve_config_path() {
 # The escape hatch (exec "$@" for another /bin/ binary) skips validation.
 # Missing-file errors are surfaced by hoprd-cfg itself for consistent output.
 if [ -z "${1:-}" ] || [ ! -f "/bin/${1:-}" ] || [ ! -x "/bin/${1:-}" ] || [ "${1:-}" = "hoprd" ]; then
-  cfg_path="$(resolve_config_path "$@")" || exit 1
+  cfg_path="$(resolve_config_path "$@")" || exit $?
   if [ -n "$cfg_path" ]; then
     /bin/hoprd-cfg --validate "$cfg_path"
   fi
