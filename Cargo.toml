@@ -144,10 +144,8 @@ opt-level = 1
 codegen-units = 1
 lto = "fat"
 panic = "abort"
-# Temporary production-debugging defaults:
-# keep symbols in release artifacts for postmortem analysis.
 strip = false
-debug = 2
+debug = "line-tables-only"
 opt-level = 3
 
 [profile.bench]
