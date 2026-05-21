@@ -201,8 +201,7 @@
             binary-hoprd-explicit-path = rust-builder-local.callPackage nixLib.mkRustPackage explicitPathBuildArgs;
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
-            binary-hoprd-explicit-path-x86_64-linux =
-              rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage explicitPathBuildArgs;
+            binary-hoprd-explicit-path-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage explicitPathBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
               projectBuildArgs
