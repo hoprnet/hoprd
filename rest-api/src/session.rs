@@ -8,9 +8,10 @@ use axum::{
 use base64::Engine;
 #[cfg(feature = "explicit-path")]
 use hopr_lib::api::chain::ChainKeyOperations;
+#[cfg(feature = "explicit-path")]
+use hopr_lib::api::node::HasChainApi;
 use hopr_lib::{
     HopRouting, HoprSessionClientConfig,
-    api::node::HasChainApi,
     api::types::primitive::{errors::GeneralError, prelude::Address},
     errors::HoprLibError,
     exports::transport::{
@@ -22,10 +23,6 @@ use hopr_lib::{
 use hopr_lib::{HoprSessionClientExplicitPathConfig, api::types::internal::NodeId};
 use hopr_utils_session::{
     ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding,
-};
-#[cfg(feature = "explicit-path")]
-use hopr_utils_session::{
-    create_tcp_client_binding_using_explicit_path, create_udp_client_binding_using_explicit_path,
 };
 use serde::{Deserialize, Serialize};
 // Imported for some IDEs to not treat the `json!` macro inside the `schema` macro as an error
@@ -314,6 +311,7 @@ impl SessionClientRequest {
     }
 }
 
+#[cfg(feature = "explicit-path")]
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[schema(example = json!({
@@ -356,7 +354,16 @@ impl SessionClientExplicitPathRequest {
         self,
         hopr: &H,
         target_protocol: IpProtocol,
-    ) -> Result<(Address, SessionTarget, HoprSessionClientExplicitPathConfig, RoutingOptions, RoutingOptions), ApiErrorStatus>
+    ) -> Result<
+        (
+            Address,
+            SessionTarget,
+            HoprSessionClientExplicitPathConfig,
+            RoutingOptions,
+            RoutingOptions,
+        ),
+        ApiErrorStatus,
+    >
     where
         H: HasChainApi<ChainError = HoprLibError>,
     {
@@ -544,7 +551,7 @@ pub(crate) struct SessionClientResponse {
         ),
         tag = "Session"
     )]
-pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send + Sync + 'static>(
+pub(crate) async fn create_client<H: crate::RestApiSessionFactory>(
     State(state): State<Arc<InternalState<H>>>,
     Path(protocol): Path<IpProtocol>,
     Json(args): Json<SessionClientRequest>,
@@ -552,6 +559,7 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
     create_client_impl(state, protocol, args).await
 }
 
+#[cfg(feature = "explicit-path")]
 #[deprecated(note = "Use POST /session/{protocol} with hop-based routing.")]
 #[utoipa::path(
         post,
@@ -578,160 +586,147 @@ pub(crate) async fn create_client<H: hopr_utils_session::SessionFactory + Send +
         tag = "Session"
     )]
 pub(crate) async fn create_client_explicit_path<
-    H: hopr_utils_session::SessionFactory
-        + HasChainApi<ChainError = HoprLibError>
-        + Send
-        + Sync
-        + 'static,
+    H: crate::RestApiSessionFactory + HasChainApi<ChainError = HoprLibError>,
 >(
     State(state): State<Arc<InternalState<H>>>,
     Path(protocol): Path<IpProtocol>,
     Json(args): Json<SessionClientExplicitPathRequest>,
 ) -> Result<Response, (StatusCode, ApiErrorStatus)> {
-    #[cfg(not(feature = "explicit-path"))]
-    {
-        let _ = (state, protocol, args);
-        return Err((
-            StatusCode::BAD_REQUEST,
-            ApiErrorStatus::UnknownFailure("explicit-path feature is not enabled".into()),
-        ));
+    create_client_explicit_path_impl(state, protocol, args).await
+}
+
+#[cfg(feature = "explicit-path")]
+async fn create_client_explicit_path_impl<
+    H: crate::RestApiSessionFactory + HasChainApi<ChainError = HoprLibError>,
+>(
+    state: Arc<InternalState<H>>,
+    protocol: IpProtocol,
+    args: SessionClientExplicitPathRequest,
+) -> Result<Response, (StatusCode, ApiErrorStatus)> {
+    let bind_host: std::net::SocketAddr =
+        build_binding_host(args.listen_host.as_deref(), state.default_listen_host);
+
+    let listener_id = ListenerId(protocol.into(), bind_host);
+    if bind_host.port() > 0 && state.open_listeners.0.contains_key(&listener_id) {
+        return Err((StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed));
     }
 
-    #[cfg(feature = "explicit-path")]
-    {
-        let bind_host: std::net::SocketAddr =
-            build_binding_host(args.listen_host.as_deref(), state.default_listen_host);
+    let port_range = std::env::var(crate::env::HOPRD_SESSION_PORT_RANGE).ok();
+    tracing::debug!(%protocol, %bind_host, ?port_range, "binding explicit-path session listening socket");
 
-        let listener_id = ListenerId(protocol.into(), bind_host);
-        if bind_host.port() > 0 && state.open_listeners.0.contains_key(&listener_id) {
-            return Err((StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed));
-        }
+    match protocol {
+        IpProtocol::TCP => {
+            let session_pool = args.session_pool;
+            let max_client_sessions = args.max_client_sessions;
+            let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
+            let (destination, _target, config, forward_path, return_path) = args
+                .clone()
+                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
+                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
-        let port_range = std::env::var(crate::env::HOPRD_SESSION_PORT_RANGE).ok();
-        tracing::debug!(%protocol, %bind_host, ?port_range, "binding explicit-path session listening socket");
+            let (bound_host, udp_session_id, max_client_sessions) = create_tcp_client_binding(
+                bind_host,
+                port_range,
+                H::explicit_path_session_factory(state.hopr.clone()),
+                state.open_listeners.clone(),
+                destination,
+                target_spec,
+                config,
+                session_pool,
+                max_client_sessions,
+            )
+            .await
+            .map_err(|e| match e {
+                hopr_utils_session::BindError::ListenHostAlreadyUsed => {
+                    (StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed)
+                }
+                hopr_utils_session::BindError::UnknownFailure(_) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ApiErrorStatus::UnknownFailure(format!(
+                        "failed to start TCP listener on {bind_host}: {e}"
+                    )),
+                ),
+            })?;
 
-        match protocol {
-            IpProtocol::TCP => {
-                let session_pool = args.session_pool;
-                let max_client_sessions = args.max_client_sessions;
-                let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
-                let (destination, _target, config, forward_path, return_path) = args
-                    .clone()
-                    .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
-                    .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
-
-                let (bound_host, udp_session_id, max_client_sessions) =
-                    create_tcp_client_binding_using_explicit_path(
-                        bind_host,
-                        port_range,
-                        state.hopr.clone() as Arc<dyn hopr_utils_session::SessionFactory>,
-                        state.open_listeners.clone(),
-                        destination,
-                        target_spec,
-                        config,
-                        session_pool,
+            Ok::<_, (StatusCode, ApiErrorStatus)>(
+                (
+                    StatusCode::OK,
+                    Json(SessionClientResponse {
+                        protocol,
+                        ip: bound_host.ip().to_string(),
+                        port: bound_host.port(),
+                        target: args.target.to_string(),
+                        destination: args.destination,
+                        forward_path,
+                        return_path,
+                        hopr_mtu: SESSION_MTU,
+                        surb_len: SURB_SIZE,
+                        active_clients: udp_session_id.into_iter().map(|s| s.to_string()).collect(),
                         max_client_sessions,
-                    )
-                    .await
-                    .map_err(|e| match e {
-                        hopr_utils_session::BindError::ListenHostAlreadyUsed => {
-                            (StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed)
-                        }
-                        hopr_utils_session::BindError::UnknownFailure(_) => (
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            ApiErrorStatus::UnknownFailure(format!(
-                                "failed to start TCP listener on {bind_host}: {e}"
-                            )),
-                        ),
-                    })?;
-
-                Ok::<_, (StatusCode, ApiErrorStatus)>(
-                    (
-                        StatusCode::OK,
-                        Json(SessionClientResponse {
-                            protocol,
-                            ip: bound_host.ip().to_string(),
-                            port: bound_host.port(),
-                            target: args.target.to_string(),
-                            destination: args.destination,
-                            forward_path,
-                            return_path,
-                            hopr_mtu: SESSION_MTU,
-                            surb_len: SURB_SIZE,
-                            active_clients: udp_session_id
-                                .into_iter()
-                                .map(|s| s.to_string())
-                                .collect(),
-                            max_client_sessions,
-                            max_surb_upstream: args.max_surb_upstream,
-                            response_buffer: args.response_buffer,
-                            session_pool: args.session_pool,
-                        }),
-                    )
-                        .into_response(),
+                        max_surb_upstream: args.max_surb_upstream,
+                        response_buffer: args.response_buffer,
+                        session_pool: args.session_pool,
+                    }),
                 )
-            }
-            IpProtocol::UDP => {
-                let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
-                let (destination, _target, config, forward_path, return_path) = args
-                    .clone()
-                    .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
-                    .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
+                    .into_response(),
+            )
+        }
+        IpProtocol::UDP => {
+            let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
+            let (destination, _target, config, forward_path, return_path) = args
+                .clone()
+                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
+                .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
-                let (bound_host, udp_session_id, max_client_sessions) =
-                    create_udp_client_binding_using_explicit_path(
-                        bind_host,
-                        port_range,
-                        state.hopr.clone() as Arc<dyn hopr_utils_session::SessionFactory>,
-                        state.open_listeners.clone(),
-                        destination,
-                        target_spec,
-                        config,
-                    )
-                    .await
-                    .map_err(|e| match e {
-                        hopr_utils_session::BindError::ListenHostAlreadyUsed => {
-                            (StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed)
-                        }
-                        hopr_utils_session::BindError::UnknownFailure(_) => (
-                            StatusCode::UNPROCESSABLE_ENTITY,
-                            ApiErrorStatus::UnknownFailure(format!(
-                                "failed to start UDP listener on {bind_host}: {e}"
-                            )),
-                        ),
-                    })?;
+            let (bound_host, udp_session_id, max_client_sessions) = create_udp_client_binding(
+                bind_host,
+                port_range,
+                H::explicit_path_session_factory(state.hopr.clone()),
+                state.open_listeners.clone(),
+                destination,
+                target_spec,
+                config,
+            )
+            .await
+            .map_err(|e| match e {
+                hopr_utils_session::BindError::ListenHostAlreadyUsed => {
+                    (StatusCode::CONFLICT, ApiErrorStatus::ListenHostAlreadyUsed)
+                }
+                hopr_utils_session::BindError::UnknownFailure(_) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ApiErrorStatus::UnknownFailure(format!(
+                        "failed to start UDP listener on {bind_host}: {e}"
+                    )),
+                ),
+            })?;
 
-                Ok::<_, (StatusCode, ApiErrorStatus)>(
-                    (
-                        StatusCode::OK,
-                        Json(SessionClientResponse {
-                            protocol,
-                            ip: bound_host.ip().to_string(),
-                            port: bound_host.port(),
-                            target: args.target.to_string(),
-                            destination: args.destination,
-                            forward_path,
-                            return_path,
-                            hopr_mtu: SESSION_MTU,
-                            surb_len: SURB_SIZE,
-                            active_clients: udp_session_id
-                                .into_iter()
-                                .map(|s| s.to_string())
-                                .collect(),
-                            max_client_sessions,
-                            max_surb_upstream: args.max_surb_upstream,
-                            response_buffer: args.response_buffer,
-                            session_pool: args.session_pool,
-                        }),
-                    )
-                        .into_response(),
+            Ok::<_, (StatusCode, ApiErrorStatus)>(
+                (
+                    StatusCode::OK,
+                    Json(SessionClientResponse {
+                        protocol,
+                        ip: bound_host.ip().to_string(),
+                        port: bound_host.port(),
+                        target: args.target.to_string(),
+                        destination: args.destination,
+                        forward_path,
+                        return_path,
+                        hopr_mtu: SESSION_MTU,
+                        surb_len: SURB_SIZE,
+                        active_clients: udp_session_id.into_iter().map(|s| s.to_string()).collect(),
+                        max_client_sessions,
+                        max_surb_upstream: args.max_surb_upstream,
+                        response_buffer: args.response_buffer,
+                        session_pool: args.session_pool,
+                    }),
                 )
-            }
+                    .into_response(),
+            )
         }
     }
 }
 
-async fn create_client_impl<H: hopr_utils_session::SessionFactory + Send + Sync + 'static>(
+async fn create_client_impl<H: crate::RestApiSessionFactory>(
     state: Arc<InternalState<H>>,
     protocol: IpProtocol,
     args: SessionClientRequest,
@@ -761,7 +756,7 @@ async fn create_client_impl<H: hopr_utils_session::SessionFactory + Send + Sync 
             create_tcp_client_binding(
                 bind_host,
                 port_range,
-                state.hopr.clone() as Arc<dyn hopr_utils_session::SessionFactory>,
+                H::hop_session_factory(state.hopr.clone()),
                 state.open_listeners.clone(),
                 destination,
                 target_spec,
@@ -793,7 +788,7 @@ async fn create_client_impl<H: hopr_utils_session::SessionFactory + Send + Sync 
             create_udp_client_binding(
                 bind_host,
                 port_range,
-                state.hopr.clone() as Arc<dyn hopr_utils_session::SessionFactory>,
+                H::hop_session_factory(state.hopr.clone()),
                 state.open_listeners.clone(),
                 destination,
                 target_spec,
