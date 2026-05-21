@@ -15,14 +15,14 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-reference = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "d534e38f0f2098e264706a7d5bffabb65c766047" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-reference = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.9.0" }
