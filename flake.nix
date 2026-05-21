@@ -341,70 +341,10 @@
                 }
               );
 
-          dockerHoprdEntrypoint = pkgs.writeShellScriptBin "docker-entrypoint.sh" ''
-            set -euo pipefail
-
-            ssl_cert_file="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            if [ -f "$ssl_cert_file" ]; then
-              export SSL_CERT_FILE="$ssl_cert_file"
-              export NIX_SSL_CERT_FILE="$ssl_cert_file"
-            fi
-
-            mkdir -p "$TMPDIR"
-
-            listen_host="''${HOPRD_DEFAULT_SESSION_LISTEN_HOST:-}"
-            case "''${listen_host}" in
-              *:*)
-                listen_host_preset_ip="''${listen_host%%:*}"
-                listen_host_preset_port="''${listen_host#*:}"
-                ;;
-              *)
-                listen_host_preset_ip="''${listen_host}"
-                listen_host_preset_port=""
-                ;;
-            esac
-
-            if [ -z "''${listen_host_preset_ip:-}" ]; then
-              listen_host_ip="$(hostname -i | { read -r first _rest; echo "$first"; })"
-
-              if [ -z "''${listen_host_preset_port:-}" ]; then
-                listen_host="''${listen_host_ip}:0"
-              else
-                listen_host="''${listen_host_ip}:''${listen_host_preset_port}"
-              fi
-            fi
-
-            export HOPRD_DEFAULT_SESSION_LISTEN_HOST="''${listen_host}"
-
-            resolve_config_path() {
-              local prev="" arg
-              for arg in "$@"; do
-                case "$arg" in
-                  --configurationFilePath=*) echo "''${arg#*=}"; return ;;
-                  --configurationFilePath)   prev="match"; continue ;;
-                esac
-                if [ "$prev" = "match" ]; then echo "$arg"; return; fi
-              done
-              echo "''${HOPRD_CONFIGURATION_FILE_PATH:-}"
-            }
-
-            if [ -z "''${1:-}" ] || [ ! -f "/bin/''${1:-}" ] || [ ! -x "/bin/''${1:-}" ] || [ "''${1:-}" = "hoprd" ]; then
-              cfg_path="$(resolve_config_path "$@")"
-              if [ -n "$cfg_path" ]; then
-                if [ ! -f "$cfg_path" ]; then
-                  echo "hoprd-cfg: configuration file '$cfg_path' not found" >&2
-                  exit 1
-                fi
-                /bin/hoprd-cfg --validate "$cfg_path"
-              fi
-            fi
-
-            if [ -n "''${1:-}" ] && [ -f "/bin/''${1:-}" ] && [ -x "/bin/''${1:-}" ]; then
-              exec "$@"
-            else
-              exec /bin/hoprd "$@"
-            fi
-          '';
+          dockerHoprdEntrypoint = pkgs.writeShellApplication {
+            name = "docker-entrypoint.sh";
+            text = builtins.readFile ./deploy/docker/docker-entrypoint.sh;
+          };
 
           analyzeMemoryScript = pkgs.writeShellScriptBin "analyze_memory.sh" (
             builtins.readFile ./profiling/analyze_memory.sh
