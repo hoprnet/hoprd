@@ -98,8 +98,19 @@ fn apply_hoprd_otlp_endpoint_override() {
 
 fn resolve_service_name() -> String {
     match std::env::var(OTEL_SERVICE_NAME_ENV_KEY) {
-        Ok(service_name) => service_name,
-        _ => env!("CARGO_PKG_NAME").to_string(),
+        Ok(service_name) => {
+            let service_name = service_name.trim();
+            if service_name.is_empty() {
+                tracing::warn!(
+                    env_key = OTEL_SERVICE_NAME_ENV_KEY,
+                    "empty service name value ignored"
+                );
+                env!("CARGO_PKG_NAME").to_string()
+            } else {
+                service_name.to_string()
+            }
+        }
+        Err(_) => env!("CARGO_PKG_NAME").to_string(),
     }
 }
 
