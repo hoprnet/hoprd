@@ -28,13 +28,23 @@
 //!
 //! ## Validate an existing configuration YAML
 //!
+//! All validation errors found in the config are reported at once
+//! (one per line under `Caused by:`); the binary exits with code 1.
+//!
 //! ```shell
 //! ➜   hoprd-cfg -v /tmp/bad-config.yaml
-//! Error: ValidationError("The specified network 'anvil-localhost' is not listed as supported ([\"debug-staging\", \"dufour\", \"rotsee\"])")
+//! Error: config validation failed
+//!
+//! Caused by:
+//!     blokli_url: Validation error: url [{"value": String("not-a-valid-url")}]
+//!     identity.password: Validation error: No password could be found [{"value": String("")}]
 //!
 //! ➜   echo $?
 //! 1
 //! ```
+//!
+//! Note: YAML parsing errors (unknown fields, type mismatches) are
+//! reported by `serde` and stop at the first occurrence.
 
 use std::path::PathBuf;
 
