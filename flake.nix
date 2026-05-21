@@ -198,13 +198,20 @@
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
-            binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                CARGO_PROFILE = "dev";
-                cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
-              }
-            );
+            binary-hoprd-dev-x86_64-linux = (
+              rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
+                projectBuildArgs
+                // {
+                  CARGO_PROFILE = "dev";
+                  cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
+                }
+              )
+            ).overrideAttrs
+              (_: {
+                CARGO_PROFILE_DEV_STRIP = "none";
+                dontStrip = true;
+                separateDebugInfo = false;
+              });
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
