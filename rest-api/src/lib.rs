@@ -250,6 +250,7 @@ impl Modify for SecurityAddon {
     }
 }
 
+#[allow(deprecated)]
 pub trait RestApiSessionFactory: Send + Sync + 'static {
     type HopFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>;
     type ExplicitPathFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientExplicitPathConfig>;
@@ -258,6 +259,7 @@ pub trait RestApiSessionFactory: Send + Sync + 'static {
     fn explicit_path_session_factory(hopr: Arc<Self>) -> Self::ExplicitPathFactory;
 }
 
+#[allow(deprecated)]
 impl<Chain, Graph, Net, TMgr> RestApiSessionFactory for hopr_lib::Hopr<Chain, Graph, Net, TMgr>
 where
     hopr_lib::Hopr<Chain, Graph, Net, TMgr>: Send + Sync + 'static,
@@ -459,6 +461,7 @@ where
         )
 }
 
+#[allow(deprecated)]
 fn explicit_path_router<H: HoprNode + RestApiSessionFactory>(
     enabled: bool,
 ) -> Router<Arc<InternalState<H>>> {

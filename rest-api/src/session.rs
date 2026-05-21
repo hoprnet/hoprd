@@ -17,6 +17,7 @@ use hopr_lib::{
         SurbBalancerConfig,
     },
 };
+#[allow(deprecated)]
 use hopr_lib::{HoprSessionClientExplicitPathConfig, api::types::internal::NodeId};
 use hopr_utils_session::{
     ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding,
@@ -338,6 +339,7 @@ pub(crate) struct SessionClientExplicitPathRequest {
 }
 
 impl SessionClientExplicitPathRequest {
+    #[allow(deprecated)]
     fn into_protocol_session_explicit_config<H>(
         self,
         hopr: &H,
