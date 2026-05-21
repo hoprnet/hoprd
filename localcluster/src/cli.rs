@@ -11,7 +11,7 @@ fn parse_size(s: &str) -> Result<usize, String> {
     let n: usize = s
         .parse()
         .map_err(|_| format!("'{s}' is not a valid number"))?;
-    if n < 1 || n > MAX_NUM_NODES {
+    if !(1..=MAX_NUM_NODES).contains(&n) {
         return Err(format!(
             "size must be between 1 and {MAX_NUM_NODES}, got {n}"
         ));

@@ -65,7 +65,7 @@ pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
-    ChannelLifecycle(hopr_strategy::channel_lifecycle::ChannelLifecycleConfig),
+    ChannelLifecycle(Box<hopr_strategy::channel_lifecycle::ChannelLifecycleConfig>),
     Multi(MultiStrategyConfig),
     Passive,
 }
@@ -129,9 +129,7 @@ pub struct MultiStrategyConfig {
 pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
-        use hopr_strategy::{
-            auto_redeeming::AutoRedeemingStrategyConfig, channel_lifecycle::ChannelLifecycleConfig,
-        };
+        use hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig;
         return MultiStrategyConfig {
             allow_recursive: false,
             execution_interval: Duration::from_secs(60),
@@ -140,7 +138,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                     redeem_on_winning: true,
                     ..Default::default()
                 }),
-                StrategyKind::ChannelLifecycle(ChannelLifecycleConfig::default()),
+                StrategyKind::ChannelLifecycle(Box::default()),
             ],
         };
     }
@@ -243,8 +241,10 @@ where
             // async task; cfg.execution_interval does not apply to it.
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
-                hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(sub_cfg.clone())
-                    .build(Arc::clone(&node)),
+                hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(
+                    (**sub_cfg).clone(),
+                )
+                .build(Arc::clone(&node)),
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {

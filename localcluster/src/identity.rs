@@ -218,17 +218,19 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     })];
     if config.enable_channel_strategy {
         let mesh_target = effective_num_nodes.saturating_sub(1);
-        strategies.push(StrategyKind::ChannelLifecycle(ChannelLifecycleConfig {
-            population: PopulationConfig {
-                min_open_channels: mesh_target,
-                target_open_channels: mesh_target,
+        strategies.push(StrategyKind::ChannelLifecycle(Box::new(
+            ChannelLifecycleConfig {
+                population: PopulationConfig {
+                    min_open_channels: mesh_target,
+                    target_open_channels: mesh_target,
+                    ..Default::default()
+                },
+                // probe_recheck_threshold=3s → first probe within 3s → EMA converges
+                // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
+                tick_interval: std::time::Duration::from_secs(10),
                 ..Default::default()
             },
-            // probe_recheck_threshold=3s → first probe within 3s → EMA converges
-            // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
-            tick_interval: std::time::Duration::from_secs(10),
-            ..Default::default()
-        }));
+        )));
     }
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
@@ -440,7 +442,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 ..Default::default()
             },
             strategy: node_strategy.clone(),
-            ..Default::default()
         };
 
         let cfg_file = home_path

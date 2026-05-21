@@ -15,6 +15,7 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
+hopr-utils = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet" }
 hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", default-features = false }
@@ -124,6 +125,7 @@ vergen-gix = { version = "9.1.0", features = ["build"] }
 
 [profile.dev]
 panic = "abort"
+opt-level = 1
 
 [profile.candidate]
 inherits = "release"
@@ -162,4 +164,4 @@ lto = "thin"
 codegen-units = 16
 
 [workspace.metadata.cargo-shear]
-ignored = ["oas3", "humantime-serde", "hopr-api"]
+ignored = ["oas3", "humantime-serde", "hopr-api", "hopr-utils"]
