@@ -43,11 +43,13 @@ fi
 export HOPRD_DEFAULT_SESSION_LISTEN_HOST="$listen_host"
 
 # Resolve the hoprd configuration file path from CLI args or env var.
+# Mirrors clap's last-wins semantics: if --configurationFilePath appears
+# multiple times, the last valid value is used.
 # Returns 2 (with an error message to stderr) when --configurationFilePath
 # is present but has no value, so the caller never silently falls back to
 # the env var in that case.
 resolve_config_path() {
-  local prev="" arg
+  local found_val="" prev="" arg
   for arg in "$@"; do
     case "$arg" in
     --configurationFilePath=*)
@@ -56,8 +58,9 @@ resolve_config_path() {
         echo "Error: --configurationFilePath requires a non-empty value" >&2
         return 2
       fi
-      echo "$val"
-      return 0
+      found_val="$val"
+      prev=""
+      continue
       ;;
     --configurationFilePath)
       prev="match"
@@ -72,15 +75,20 @@ resolve_config_path() {
         return 2
         ;;
       esac
-      echo "$arg"
-      return 0
+      found_val="$arg"
+      prev=""
+      continue
     fi
   done
   if [ "$prev" = "match" ]; then
     echo "Error: --configurationFilePath requires a non-empty value" >&2
     return 2
   fi
-  echo "${HOPRD_CONFIGURATION_FILE_PATH:-}"
+  if [ -n "$found_val" ]; then
+    echo "$found_val"
+  else
+    echo "${HOPRD_CONFIGURATION_FILE_PATH:-}"
+  fi
   return 0
 }
 
@@ -90,16 +98,16 @@ resolve_config_path() {
 # the /bin/ boundary.
 _cmd="${1:-}"
 case "$_cmd" in
-  "" | hoprd | */*)
+"" | hoprd | */*)
+  _is_escape_hatch=0
+  ;;
+*)
+  if [ -f "/bin/$_cmd" ] && [ -x "/bin/$_cmd" ]; then
+    _is_escape_hatch=1
+  else
     _is_escape_hatch=0
-    ;;
-  *)
-    if [ -f "/bin/$_cmd" ] && [ -x "/bin/$_cmd" ]; then
-      _is_escape_hatch=1
-    else
-      _is_escape_hatch=0
-    fi
-    ;;
+  fi
+  ;;
 esac
 
 # Validate the config file when hoprd is about to run.
@@ -113,6 +121,9 @@ fi
 
 if [ "$_is_escape_hatch" -eq 1 ]; then
   exec "/bin/$_cmd" "${@:2}"
+elif [ "$_cmd" = "hoprd" ]; then
+  # Default Cmd is ["hoprd"], so $1 is the command name, not a flag — strip it.
+  exec /bin/hoprd "${@:2}"
 else
   exec /bin/hoprd "$@"
 fi
