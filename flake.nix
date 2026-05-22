@@ -341,10 +341,9 @@
                 }
               );
 
-          dockerHoprdEntrypoint = pkgs.writeShellApplication {
-            name = "docker-entrypoint.sh";
-            text = builtins.readFile ./deploy/docker/docker-entrypoint.sh;
-          };
+          dockerHoprdEntrypoint = pkgs.writeShellScriptBin "docker-entrypoint.sh" (
+            builtins.readFile ./deploy/docker/docker-entrypoint.sh
+          );
 
           analyzeMemoryScript = pkgs.writeShellScriptBin "analyze_memory.sh" (
             builtins.readFile ./profiling/analyze_memory.sh
@@ -592,7 +591,18 @@
             };
           };
 
-          checks = { inherit (hoprdPackages) hoprd-clippy; };
+          checks = {
+            inherit (hoprdPackages) hoprd-clippy;
+            shellcheck-docker-entrypoint =
+              pkgs.runCommand "shellcheck-docker-entrypoint"
+                {
+                  nativeBuildInputs = [ pkgs.shellcheck ];
+                }
+                ''
+                  shellcheck ${./deploy/docker/docker-entrypoint.sh}
+                  touch $out
+                '';
+          };
 
           apps = {
             check = run-check;
