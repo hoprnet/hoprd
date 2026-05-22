@@ -166,5 +166,12 @@ strip = false
 lto = "thin"
 codegen-units = 16
 
+[profile.flamegraph]
+inherits = "release"
+debug = true
+strip = false
+lto = false
+codegen-units = 16
+
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api", "hopr-utils"]

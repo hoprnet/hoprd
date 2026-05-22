@@ -117,13 +117,20 @@ impl NodeTelemetryIdentity {
 
 impl OtlpConfig {
     fn from_env() -> Self {
-        let enabled = matches!(
-            std::env::var("HOPRD_USE_OPENTELEMETRY")
+        let enabled = match std::env::var("HOPRD_USE_OPENTELEMETRY")
+            .ok()
+            .map(|v| v.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("1" | "true" | "yes" | "on") => true,
+            Some("0" | "false" | "no" | "off") => false,
+            // Unset, empty, or unrecognised: auto-enable when an OTLP endpoint is present.
+            // `apply_hoprd_otlp_endpoint_override` has already normalised
+            // `HOPRD_OTLP_ENDPOINT` into `OTEL_EXPORTER_OTLP_ENDPOINT` before this runs.
+            _ => std::env::var(LEGACY_OTLP_ENDPOINT_ENV_KEY)
                 .ok()
-                .map(|v| v.trim().to_ascii_lowercase())
-                .as_deref(),
-            Some("1" | "true" | "yes" | "on")
-        );
+                .is_some_and(|v| !v.trim().is_empty()),
+        };
         let transport = OtlpTransport::from_env();
         let mut signals = flagset::FlagSet::empty();
 
