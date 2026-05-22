@@ -77,7 +77,7 @@ resolve_config_path() {
     fi
   done
   if [ "$prev" = "match" ]; then
-    echo "Error: --configurationFilePath requires a value" >&2
+    echo "Error: --configurationFilePath requires a non-empty value" >&2
     return 2
   fi
   echo "${HOPRD_CONFIGURATION_FILE_PATH:-}"
@@ -95,7 +95,7 @@ if [ -z "${1:-}" ] || [ ! -f "/bin/${1:-}" ] || [ ! -x "/bin/${1:-}" ] || [ "${1
 fi
 
 if [ -n "${1:-}" ] && [ -f "/bin/${1:-}" ] && [ -x "/bin/${1:-}" ]; then
-  exec "$@"
+  exec "/bin/$1" "${@:2}"
 else
   exec /bin/hoprd "$@"
 fi
