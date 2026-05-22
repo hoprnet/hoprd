@@ -361,7 +361,6 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-x86_64-linux
-                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -374,7 +373,6 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
-                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -387,7 +385,6 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-profile-x86_64-linux
-                hoprdPackages.binary-hoprd-cfg-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
                 analyzeMemoryScript
@@ -412,7 +409,6 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-aarch64-linux
-                hoprdPackages.binary-hoprd-cfg-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
