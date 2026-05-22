@@ -84,18 +84,35 @@ resolve_config_path() {
   return 0
 }
 
+# Determine whether the first argument names a plain binary in /bin/.
+# Reject values containing '/' (absolute paths, path traversal) so that
+# /bin/${1} is always a safe single-level lookup and users cannot escape
+# the /bin/ boundary.
+_cmd="${1:-}"
+case "$_cmd" in
+  "" | hoprd | */*)
+    _is_escape_hatch=0
+    ;;
+  *)
+    if [ -f "/bin/$_cmd" ] && [ -x "/bin/$_cmd" ]; then
+      _is_escape_hatch=1
+    else
+      _is_escape_hatch=0
+    fi
+    ;;
+esac
+
 # Validate the config file when hoprd is about to run.
-# The escape hatch (exec "$@" for another /bin/ binary) skips validation.
 # Missing-file errors are surfaced by hoprd-cfg itself for consistent output.
-if [ -z "${1:-}" ] || [ ! -f "/bin/${1:-}" ] || [ ! -x "/bin/${1:-}" ] || [ "${1:-}" = "hoprd" ]; then
+if [ "$_is_escape_hatch" -eq 0 ]; then
   cfg_path="$(resolve_config_path "$@")" || exit $?
   if [ -n "$cfg_path" ]; then
     /bin/hoprd-cfg --validate "$cfg_path"
   fi
 fi
 
-if [ -n "${1:-}" ] && [ -f "/bin/${1:-}" ] && [ -x "/bin/${1:-}" ]; then
-  exec "/bin/$1" "${@:2}"
+if [ "$_is_escape_hatch" -eq 1 ]; then
+  exec "/bin/$_cmd" "${@:2}"
 else
   exec /bin/hoprd "$@"
 fi
