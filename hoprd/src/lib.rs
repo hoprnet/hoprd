@@ -257,7 +257,6 @@ async fn init_rest_api(
 
     Ok(processes)
 }
-// TODO: load all the environment variables here and use them to configure the hopr-lib config (#7660)
 fn update_hopr_lib_config_from_env_vars(cfg: &mut HoprLibConfig) -> anyhow::Result<()> {
     cfg.protocol.packet.pipeline.output_concurrency = std::env::var("HOPR_INTERNAL_OUT_PACKET_PIPELINE_CONCURRENCY")
         .ok()
@@ -278,6 +277,24 @@ fn update_hopr_lib_config_from_env_vars(cfg: &mut HoprLibConfig) -> anyhow::Resu
                 )
                 .ok()
         });
+
+    if let Some(cap) = std::env::var("HOPR_INTERNAL_SESSION_INCOMING_CAPACITY")
+        .ok()
+        .and_then(|s| {
+            s.trim()
+                .parse::<usize>()
+                .inspect_err(
+                    |error| tracing::warn!(%error, "failed to parse HOPR_INTERNAL_SESSION_INCOMING_CAPACITY"),
+                )
+                .ok()
+        })
+        .filter(|&c| c > 0)
+    {
+        cfg.incoming_session_capacity = cap;
+    }
+
+    cfg.disable_protocol_checks = std::env::var("HOPR_TEST_DISABLE_CHECKS")
+        .is_ok_and(|v| v.to_lowercase() == "true");
 
     Ok(())
 }
