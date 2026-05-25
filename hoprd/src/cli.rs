@@ -125,6 +125,14 @@ pub struct CliArgs {
     pub default_session_listen_host: Option<HostConfig>,
 
     #[arg(
+        long = "enableExplicitPathSessions",
+        env = "HOPRD_ENABLE_EXPLICIT_PATH_SESSIONS",
+        help = "Enable the deprecated explicit-path session creation REST endpoint",
+        action = ArgAction::SetTrue
+    )]
+    pub enable_explicit_path_sessions: bool,
+
+    #[arg(
         long = "disableApiAuthentication",
         help = "Completely disables the token authentication for the API, overrides any apiToken if set",
         env = "HOPRD_DISABLE_API_AUTHENTICATION",
@@ -272,6 +280,9 @@ impl TryFrom<CliArgs> for HoprdConfig {
                     .map_err(|_| anyhow!("invalid default session listen IP address")),
                 HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
             }?;
+        }
+        if value.enable_explicit_path_sessions {
+            cfg.api.enable_explicit_path_sessions = true;
         }
 
         // db
