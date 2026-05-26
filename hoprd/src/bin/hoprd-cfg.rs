@@ -96,3 +96,69 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use anyhow::Context;
+    use clap::Parser as _;
+    use tempfile::NamedTempFile;
+    use validator::Validate as _;
+
+    use hoprd::config::HoprdConfig;
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn validate_via_env_overlay(cfg_path: &str) -> anyhow::Result<()> {
+        let hoprd_args = hoprd::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            cfg_path,
+        ])
+        .context("failed to parse args")?;
+        let cfg = HoprdConfig::try_from(hoprd_args).context("failed to build config")?;
+        cfg.validate().context("config validation failed")
+    }
+
+    fn config_file_without_password() -> anyhow::Result<NamedTempFile> {
+        // Serialize the default config (identity.password is "" by default)
+        // to get a valid YAML that fails validation only on the missing password.
+        let yaml = serde_saphyr::to_string(&HoprdConfig::default())
+            .context("failed to serialize default config")?;
+        let mut file = NamedTempFile::new()?;
+        file.write_all(yaml.as_bytes())?;
+        Ok(file)
+    }
+
+    #[test]
+    fn validate_passes_when_password_supplied_via_env() -> anyhow::Result<()> {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let file = config_file_without_password()?;
+        let path = file.path().to_str().unwrap().to_string();
+
+        // Safety: ENV_LOCK serializes all env-var access across tests in this module.
+        unsafe { std::env::set_var("HOPRD_PASSWORD", "s3cr3tpassword") };
+        let result = validate_via_env_overlay(&path);
+        unsafe { std::env::remove_var("HOPRD_PASSWORD") };
+
+        result.context("expected validation to pass with HOPRD_PASSWORD set")
+    }
+
+    #[test]
+    fn validate_fails_without_password_in_config_or_env() -> anyhow::Result<()> {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let file = config_file_without_password()?;
+        let path = file.path().to_str().unwrap().to_string();
+
+        unsafe { std::env::remove_var("HOPRD_PASSWORD") };
+        let result = validate_via_env_overlay(&path);
+
+        let err = result.expect_err("expected validation to fail without a password");
+        assert!(
+            err.to_string().contains("config validation failed"),
+            "unexpected error: {err}"
+        );
+        Ok(())
+    }
+}
