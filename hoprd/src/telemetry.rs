@@ -164,8 +164,8 @@ impl OtlpConfig {
             enabled,
             reason,
             use_opentelemetry_raw = ?use_var_raw,
-            hoprd_otlp_endpoint = ?hoprd_endpoint,
-            otel_exporter_otlp_endpoint = ?legacy_endpoint,
+            hoprd_otlp_endpoint_set = hoprd_endpoint.is_some(),
+            otel_exporter_otlp_endpoint_set = legacy_endpoint.is_some(),
             "OpenTelemetry gate decision"
         );
 
