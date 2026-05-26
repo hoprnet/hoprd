@@ -51,7 +51,7 @@ use std::path::PathBuf;
 use anyhow::{Context, anyhow};
 use clap::Parser;
 use hoprd::config::HoprdConfig;
-use validator::Validate;
+use validator::Validate as _;
 
 #[derive(Parser, Default)]
 #[clap(author, version, about, long_about = None)]
@@ -79,11 +79,17 @@ fn main() -> anyhow::Result<()> {
             .into_string()
             .map_err(|_| anyhow!("file path not convertible"))?;
 
-        let yaml_configuration = std::fs::read_to_string(&cfg_path)
-            .with_context(|| format!("failed to read config file '{cfg_path}'"))?;
-
-        let cfg: HoprdConfig =
-            serde_saphyr::from_str(&yaml_configuration).context("failed to parse config YAML")?;
+        // Use hoprd's own CliArgs so that env-var overrides (e.g. HOPRD_PASSWORD)
+        // are applied exactly as hoprd would apply them at startup.  Without this,
+        // fields legitimately supplied via environment variables (the standard Docker
+        // Compose pattern) would always fail validation.
+        let hoprd_args = hoprd::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            &cfg_path,
+        ])
+        .context("failed to parse args for validation")?;
+        let cfg = HoprdConfig::try_from(hoprd_args).context("failed to build config")?;
 
         cfg.validate().context("config validation failed")?;
     }

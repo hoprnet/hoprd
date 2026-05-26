@@ -115,7 +115,7 @@ esac
 if [ "$_is_escape_hatch" -eq 0 ]; then
   cfg_path="$(resolve_config_path "$@")" || exit $?
   if [ -n "$cfg_path" ]; then
-    /bin/hoprd-cfg --validate "$cfg_path"
+    RUST_BACKTRACE=0 /bin/hoprd-cfg --validate "$cfg_path"
   fi
 fi
 
