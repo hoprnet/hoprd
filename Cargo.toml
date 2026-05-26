@@ -15,18 +15,18 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-utils = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1" }
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-reference = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "eb21c1354c20d3cd6c891abfedab33d74b5003d1", default-features = false }
+hopr-utils = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-reference = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "795c6f49ad9ecaf8bc68cf4be9c9eeb5477f2e20", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=1.9.0" }
+hopr-api = { version = "=1.10.0" }
 
 # Third-party deps
 anyhow = "1.0.102"
@@ -129,6 +129,10 @@ opt-level = 1
 strip = false
 debug = true
 
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3
+
 [profile.candidate]
 inherits = "release"
 codegen-units = 16
@@ -144,18 +148,13 @@ opt-level = 1
 codegen-units = 1
 lto = "fat"
 panic = "abort"
-strip = false
-debug = "line-tables-only"
+strip = true
 opt-level = 3
 
 [profile.bench]
 debug = 2
 split-debuginfo = "off"
 strip = false
-
-[profile.dev.package]
-insta.opt-level = 3
-similar.opt-level = 3
 
 # memory profiling profile — inherits release optimizations but preserves debug symbols
 # for jeprof symbol resolution

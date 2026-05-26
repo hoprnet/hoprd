@@ -254,7 +254,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     ..Default::default()
                 },
                 path_planner: Default::default(),
-                counter_flush_interval: Default::default(),
+                counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
             },
             ..Default::default()
         }
