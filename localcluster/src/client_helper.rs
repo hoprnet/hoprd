@@ -221,10 +221,6 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             .arg("--password")
             .arg(config.identity_password)
             .env(
-                "HOPRD_USE_OPENTELEMETRY",
-                std::env::var("HOPRD_USE_OPENTELEMETRY").unwrap_or_else(|_| "true".to_string()),
-            )
-            .env(
                 "HOPRD_OTEL_SIGNALS",
                 std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
             )

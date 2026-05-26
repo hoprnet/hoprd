@@ -136,13 +136,39 @@ impl NodeTelemetryIdentity {
 
 impl OtlpConfig {
     fn from_env() -> Self {
-        let enabled = matches!(
-            std::env::var("HOPRD_USE_OPENTELEMETRY")
-                .ok()
-                .map(|v| v.trim().to_ascii_lowercase())
-                .as_deref(),
-            Some("1" | "true" | "yes" | "on")
+        let use_var_raw = std::env::var("HOPRD_USE_OPENTELEMETRY").ok();
+        let hoprd_endpoint = std::env::var(HOPRD_OTLP_ENDPOINT_ENV_KEY).ok();
+        let legacy_endpoint = std::env::var(LEGACY_OTLP_ENDPOINT_ENV_KEY).ok();
+
+        let use_var_normalised = use_var_raw
+            .as_deref()
+            .map(|v| v.trim().to_ascii_lowercase());
+
+        // Auto-enable only on the HOPRD-prefixed var to avoid action-at-a-distance
+        // from ambient OTEL_EXPORTER_OTLP_ENDPOINT exports (e.g. jaeger-cli or
+        // sibling OTel SDK tools sharing the environment).
+        let (enabled, reason): (bool, &'static str) = match use_var_normalised.as_deref() {
+            Some("1" | "true" | "yes" | "on") => (true, "HOPRD_USE_OPENTELEMETRY=true"),
+            Some("0" | "false" | "no" | "off") => (false, "HOPRD_USE_OPENTELEMETRY=false"),
+            _ if hoprd_endpoint
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty()) =>
+            {
+                (true, "HOPRD_OTLP_ENDPOINT set, auto-enabled")
+            }
+            _ => (false, "no HOPRD OTLP env vars set"),
+        };
+
+        tracing::info!(
+            target: "hoprd::telemetry::gate",
+            enabled,
+            reason,
+            use_opentelemetry_raw = ?use_var_raw,
+            hoprd_otlp_endpoint_set = hoprd_endpoint.is_some(),
+            otel_exporter_otlp_endpoint_set = legacy_endpoint.is_some(),
+            "OpenTelemetry gate decision"
         );
+
         let transport = OtlpTransport::from_env();
         let mut signals = flagset::FlagSet::empty();
 
