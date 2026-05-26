@@ -83,12 +83,9 @@ fn main() -> anyhow::Result<()> {
         // are applied exactly as hoprd would apply them at startup.  Without this,
         // fields legitimately supplied via environment variables (the standard Docker
         // Compose pattern) would always fail validation.
-        let hoprd_args = hoprd::cli::CliArgs::try_parse_from([
-            "hoprd",
-            "--configurationFilePath",
-            &cfg_path,
-        ])
-        .context("failed to parse args for validation")?;
+        let hoprd_args =
+            hoprd::cli::CliArgs::try_parse_from(["hoprd", "--configurationFilePath", &cfg_path])
+                .context("failed to parse args for validation")?;
         let cfg = HoprdConfig::try_from(hoprd_args).context("failed to build config")?;
 
         cfg.validate().context("config validation failed")?;
@@ -111,12 +108,9 @@ mod tests {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn validate_via_env_overlay(cfg_path: &str) -> anyhow::Result<()> {
-        let hoprd_args = hoprd::cli::CliArgs::try_parse_from([
-            "hoprd",
-            "--configurationFilePath",
-            cfg_path,
-        ])
-        .context("failed to parse args")?;
+        let hoprd_args =
+            hoprd::cli::CliArgs::try_parse_from(["hoprd", "--configurationFilePath", cfg_path])
+                .context("failed to parse args")?;
         let cfg = HoprdConfig::try_from(hoprd_args).context("failed to build config")?;
         cfg.validate().context("config validation failed")
     }
