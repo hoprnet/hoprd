@@ -19,6 +19,7 @@ use crate::tracing_setup;
 const HOPRD_OTLP_ENDPOINT_ENV_KEY: &str = "HOPRD_OTLP_ENDPOINT";
 const LEGACY_OTLP_ENDPOINT_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
 const HOPRD_METRIC_EXPORT_INTERVAL_ENV_KEY: &str = "HOPRD_METRIC_EXPORT_INTERVAL";
+const OTEL_SERVICE_NAME_ENV_KEY: &str = "OTEL_SERVICE_NAME";
 
 flagset::flags! {
     #[repr(u8)]
@@ -93,6 +94,24 @@ fn apply_hoprd_otlp_endpoint_override() {
     }
 
     unsafe { std::env::set_var(LEGACY_OTLP_ENDPOINT_ENV_KEY, endpoint) };
+}
+
+fn resolve_service_name() -> String {
+    match std::env::var(OTEL_SERVICE_NAME_ENV_KEY) {
+        Ok(service_name) => {
+            let service_name = service_name.trim();
+            if service_name.is_empty() {
+                tracing::warn!(
+                    env_key = OTEL_SERVICE_NAME_ENV_KEY,
+                    "empty service name value ignored"
+                );
+                env!("CARGO_PKG_NAME").to_string()
+            } else {
+                service_name.to_string()
+            }
+        }
+        Err(_) => env!("CARGO_PKG_NAME").to_string(),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -479,9 +498,8 @@ pub(super) fn init_logger(
         .build();
 
     if config.enabled {
-        let service_name = env!("CARGO_PKG_NAME").to_string();
         let resource = opentelemetry_sdk::Resource::builder()
-            .with_service_name(service_name)
+            .with_service_name(resolve_service_name())
             .with_attributes(node_identity.resource_attributes())
             .build();
 
