@@ -310,7 +310,7 @@
               projectBuildArgs
               // {
                 runClippy = true;
-                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic";
+                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
               }
             );
             binary-hoprd-dev = rust-builder-local.callPackage nixLib.mkRustPackage (
@@ -473,14 +473,14 @@
                 buildDocs = true;
                 # Drop jemalloc default feature for docs: native lib fails to link in the docs sandbox.
                 # Must be applied here (not just in buildPhase) so cargoArtifacts/deps step also skips it.
-                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic";
+                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
               }
             )).overrideAttrs
               (_: {
                 buildPhase = ''
                   runHook preBuild
                   cargo doc -p hoprd -p hoprd-api --no-default-features \
-                    -F runtime-tokio,telemetry,transport-quic \
+                    -F runtime-tokio,telemetry,transport-quic,session-server \
                     --no-deps --document-private-items
                   runHook postBuild
                 '';

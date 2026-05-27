@@ -68,10 +68,7 @@ allocator-jemalloc-stats = [
   "dep:tikv-jemalloc-ctl",
   "dep:humansize",
 ]
-session-server = [
-  "hopr-lib/session-server",
-  "hopr-reference/session-server",
-]
+session-server = ["hopr-lib/session-server", "hopr-reference/session-server"]
 
 [dependencies]
 anyhow = { workspace = true }
