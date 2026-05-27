@@ -55,6 +55,7 @@ fn main() -> ExitCode {
         usize::from_str(&v)
             .inspect_err(|error| tracing::error!(%error, "failed to parse HOPRD_THREAD_STACK_SIZE"))
             .ok()
+            .filter(|&s| s > 0)
     });
 
     let args = <CliArgs as clap::Parser>::parse();

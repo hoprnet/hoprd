@@ -67,7 +67,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let git_hash = option_env!("VERGEN_GIT_SHA").unwrap_or("unknown");
     tracing::info!(
-        version = hopr_lib::constants::APP_VERSION,
+        version = env!("CARGO_PKG_VERSION"),
         hash = git_hash,
         cfg = cfg.as_redacted_string()?,
         "Starting HOPR daemon"
@@ -278,6 +278,7 @@ fn update_hopr_lib_config_from_env_vars(cfg: &mut HoprLibConfig) -> anyhow::Resu
                 .ok()
         });
 
+    #[cfg(feature = "session-server")]
     if let Some(cap) = std::env::var("HOPR_INTERNAL_SESSION_INCOMING_CAPACITY")
         .ok()
         .and_then(|s| {
@@ -293,8 +294,10 @@ fn update_hopr_lib_config_from_env_vars(cfg: &mut HoprLibConfig) -> anyhow::Resu
         cfg.incoming_session_capacity = cap;
     }
 
-    cfg.disable_protocol_checks = std::env::var("HOPR_TEST_DISABLE_CHECKS")
-        .is_ok_and(|v| v.to_lowercase() == "true");
+    #[cfg(debug_assertions)]
+    if let Ok(v) = std::env::var("HOPR_TEST_DISABLE_CHECKS") {
+        cfg.disable_protocol_checks = v.to_lowercase() == "true";
+    }
 
     Ok(())
 }
@@ -470,6 +473,55 @@ mod tests {
             cfg.protocol.packet.pipeline.input_concurrency,
             default.protocol.packet.pipeline.input_concurrency
         );
+        Ok(())
+    }
+
+    const DISABLE_CHECKS_VAR: &str = "HOPR_TEST_DISABLE_CHECKS";
+
+    #[test]
+    fn disable_checks_absent_leaves_config_unchanged() -> anyhow::Result<()> {
+        let (_g, _e) = setup_env(&[(DISABLE_CHECKS_VAR, None)]);
+        let mut cfg = HoprLibConfig::default();
+        cfg.disable_protocol_checks = true;
+
+        update_hopr_lib_config_from_env_vars(&mut cfg)?;
+
+        assert!(
+            cfg.disable_protocol_checks,
+            "prior value must not be clobbered when var is unset"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn disable_checks_true_values() -> anyhow::Result<()> {
+        for val in ["true", "TRUE", "True"] {
+            let (_g, _e) = setup_env(&[(DISABLE_CHECKS_VAR, Some(val))]);
+            let mut cfg = HoprLibConfig::default();
+
+            update_hopr_lib_config_from_env_vars(&mut cfg)?;
+
+            assert!(
+                cfg.disable_protocol_checks,
+                "expected true for value {val:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn disable_checks_false_and_other_values() -> anyhow::Result<()> {
+        for val in ["false", "FALSE", "0", "yes", ""] {
+            let (_g, _e) = setup_env(&[(DISABLE_CHECKS_VAR, Some(val))]);
+            let mut cfg = HoprLibConfig::default();
+
+            update_hopr_lib_config_from_env_vars(&mut cfg)?;
+
+            assert!(
+                !cfg.disable_protocol_checks,
+                "expected false for value {val:?}"
+            );
+        }
         Ok(())
     }
 }
