@@ -16,6 +16,7 @@ default = [
   "telemetry",
   "transport-quic",
   "allocator-jemalloc",
+  "session-server",
 ] # uses tokio by default because of axum
 runtime-tokio = [
   "dep:tokio",
@@ -67,6 +68,7 @@ allocator-jemalloc-stats = [
   "dep:tikv-jemalloc-ctl",
   "dep:humansize",
 ]
+session-server = ["hopr-lib/session-server", "hopr-reference/session-server"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -111,7 +113,6 @@ hopr-strategy = { workspace = true }
 hopr-lib = { workspace = true, features = [
   "runtime-tokio",
   "session-client",
-  "session-server",
   "utils_parallel",
   "telemetry",
 ] }
@@ -121,7 +122,6 @@ hoprd-api = { workspace = true, features = ["telemetry"] }
 hopr-reference = { workspace = true, features = [
   "runtime-tokio",
   "session-client",
-  "session-server",
 ] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }

@@ -51,6 +51,13 @@ fn main() -> ExitCode {
             .ok()
     });
 
+    let thread_stack_size = std::env::var("HOPRD_THREAD_STACK_SIZE").ok().and_then(|v| {
+        usize::from_str(&v)
+            .inspect_err(|error| tracing::error!(%error, "failed to parse HOPRD_THREAD_STACK_SIZE"))
+            .ok()
+            .filter(|&s| s > 0)
+    });
+
     let args = <CliArgs as clap::Parser>::parse();
     let cfg = match HoprdConfig::try_from(args) {
         Ok(cfg) => cfg,
@@ -114,7 +121,7 @@ fn main() -> ExitCode {
             .collect(),
     };
 
-    hopr_lib::prepare_tokio_runtime(num_cpu_threads, num_io_threads)
+    hopr_lib::prepare_tokio_runtime(num_cpu_threads, num_io_threads, thread_stack_size)
         .and_then(|runtime| {
             runtime.block_on(async move {
                 use hoprd::main_inner;
