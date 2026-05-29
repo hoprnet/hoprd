@@ -190,7 +190,7 @@ Flags take precedence over env vars. Only the flags marked with an env var below
 | `--size`               | —                         | `3`                       | Number of nodes to start (1–5)                                                                                            |
 | `--api-host`           | —                         | `localhost`               | Host to bind the REST API on                                                                                              |
 | `--api-port-base`      | —                         | `3000`                    | First API port (each node gets base + id)                                                                                 |
-| `--p2p-host`           | —                         | `127.0.0.1`               | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
+| `--p2p-host`           | —                         | `localhost`               | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
 | `--p2p-port-base`      | —                         | `9000`                    | First P2P port                                                                                                            |
 | `--data-dir`           | —                         | `/tmp/hopr-nodes`         | Root for configs, identities, DBs, logs                                                                                   |
 | `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                         | Container image for Blokli + Anvil                                                                                        |
