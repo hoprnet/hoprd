@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::identity::{
     DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
@@ -19,11 +19,40 @@ fn parse_size(s: &str) -> Result<usize, String> {
     Ok(n)
 }
 
+/// Top-level entry point.
+///
+/// With no subcommand, the cluster is started (the flattened [`Args`]). The
+/// `status` subcommand instead reads a previously written summary file, so its
+/// presence negates the run-only requirements (e.g. `--chain-image`).
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
-    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions."
+    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions.",
+    args_conflicts_with_subcommands = true,
+    subcommand_negates_reqs = true
 )]
+pub struct Cli {
+    #[command(flatten)]
+    pub run: Args,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Print the cluster summary of a running cluster as JSON, read from a summary file.
+    Status(StatusArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct StatusArgs {
+    /// Path to the summary file written by a running cluster via `--summary-file`.
+    #[arg(long)]
+    pub summary_file: PathBuf,
+}
+
+#[derive(Parser, Debug)]
 pub struct Args {
     /// Number of nodes to start (1–5)
     #[arg(long, default_value_t = DEFAULT_NUM_NODES, value_parser = parse_size)]
@@ -91,6 +120,13 @@ pub struct Args {
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+
+    /// Path for the machine-readable JSON cluster summary, written once the cluster
+    /// is running. External tooling can parse it instead of scraping stdout, and the
+    /// `status` subcommand can re-read it. Defaults to `<data-dir>/summary.json`.
+    /// The file is kept until the cluster exits.
+    #[arg(long)]
+    pub summary_file: Option<PathBuf>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

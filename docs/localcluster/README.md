@@ -130,27 +130,79 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 ---
 
+## Machine-readable summary
+
+For CI and integration tooling, prefer the structured JSON summary over scraping stdout. The cluster always writes a JSON snapshot once it reaches the running state — by default to `<data-dir>/summary.json` (e.g. `/tmp/hopr-nodes/summary.json`). Use `--summary-file` to override the path:
+
+```bash
+./result-1/bin/hoprd-localcluster \
+  --hoprd-bin ./result/bin/hoprd \
+  --chain-image "$CHAIN_IMAGE" \
+  --size 3 \
+  --summary-file /tmp/hopr-nodes/summary.json
+```
+
+Read it back at any time — including from another process attaching to an already-running cluster — with the `status` subcommand (it just re-prints the file as JSON):
+
+```bash
+./result-1/bin/hoprd-localcluster status --summary-file /tmp/hopr-nodes/summary.json
+```
+
+Shape:
+
+```json
+{
+  "blokli_url": "http://127.0.0.1:8080",
+  "nodes": [
+    {
+      "id": 0,
+      "address": "0x1234…",
+      "api_url": "http://127.0.0.1:3000",
+      "api_token": null,
+      "p2p": "127.0.0.1:9000",
+      "node_admin_url": "http://localhost:4677/node/info?apiEndpoint=http://127.0.0.1:3000",
+      "pid": 12345
+    }
+  ],
+  "extras": [
+    {
+      "id": 0,
+      "address": "0xabcd…",
+      "safe_address": "0x…",
+      "module_address": "0x…",
+      "keystore_path": "/tmp/hopr-nodes/extra_id_0.id",
+      "password": "local-cluster"
+    }
+  ]
+}
+```
+
+`api_token` is `null` unless `--api-token` is set; `extras` is empty unless `--extra-identities` is greater than 0. The file is written once on startup and persists until the cluster exits. If you override `--data-dir`, the default summary path follows it; pass an explicit `--summary-file` to the `status` subcommand when reading it back.
+
+---
+
 ## Configuration reference
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                   | Env var                   | Default           | Description                                                                                                               |
-| ---------------------- | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--size`               | —                         | `3`               | Number of nodes to start (1–5)                                                                                            |
-| `--api-host`           | —                         | `localhost`       | Host to bind the REST API on                                                                                              |
-| `--api-port-base`      | —                         | `3000`            | First API port (each node gets base + id)                                                                                 |
-| `--p2p-host`           | —                         | `127.0.0.1`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
-| `--p2p-port-base`      | —                         | `9000`            | First P2P port                                                                                                            |
-| `--data-dir`           | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                                                                                   |
-| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                                                                                        |
-| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step                                                                             |
-| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
-| `--hoprd-bin`          | —                         | `hoprd`           | Path to the `hoprd` binary                                                                                                |
-| `--identity-password`  | —                         | `password`        | Password for identity encryption                                                                                          |
-| `--api-token`          | —                         | none              | Bearer token for the REST API                                                                                             |
-| `--funding-amount`     | —                         | `1 wxHOPR`        | Per-channel funding amount                                                                                                |
-| `--channel-management` | —                         | `api`             | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
-| `--extra-identities`   | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
+| Flag                   | Env var                   | Default                   | Description                                                                                                               |
+| ---------------------- | ------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--size`               | —                         | `3`                       | Number of nodes to start (1–5)                                                                                            |
+| `--api-host`           | —                         | `localhost`               | Host to bind the REST API on                                                                                              |
+| `--api-port-base`      | —                         | `3000`                    | First API port (each node gets base + id)                                                                                 |
+| `--p2p-host`           | —                         | `127.0.0.1`               | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
+| `--p2p-port-base`      | —                         | `9000`                    | First P2P port                                                                                                            |
+| `--data-dir`           | —                         | `/tmp/hopr-nodes`         | Root for configs, identities, DBs, logs                                                                                   |
+| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                         | Container image for Blokli + Anvil                                                                                        |
+| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                         | External Blokli URL; skips the container step                                                                             |
+| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`                  | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
+| `--hoprd-bin`          | —                         | `hoprd`                   | Path to the `hoprd` binary                                                                                                |
+| `--identity-password`  | —                         | `password`                | Password for identity encryption                                                                                          |
+| `--api-token`          | —                         | none                      | Bearer token for the REST API                                                                                             |
+| `--funding-amount`     | —                         | `1 wxHOPR`                | Per-channel funding amount                                                                                                |
+| `--channel-management` | —                         | `api`                     | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
+| `--extra-identities`   | —                         | `0`                       | Extra pre-funded identities for external tooling (0–5)                                                                    |
+| `--summary-file`       | —                         | `<data-dir>/summary.json` | Path for the machine-readable JSON cluster summary written once running (see below)                                       |
 
 ### Channel management modes
 

@@ -14,10 +14,7 @@ use std::{fs, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use hoprd_localcluster::{
-    blokli_helper, cli, client_helper,
-    identity::{self, GeneratedIdentity},
-};
+use hoprd_localcluster::{blokli_helper, cli, client_helper, identity, summary::ClusterSummary};
 use tracing::{error, info, warn};
 
 const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -47,7 +44,15 @@ async fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    let args = cli::Args::parse();
+    let cli = cli::Cli::parse();
+
+    if let Some(cli::Command::Status(status)) = &cli.command {
+        let summary = ClusterSummary::read_file(&status.summary_file)?;
+        println!("{}", summary.to_json()?);
+        return Ok(());
+    }
+
+    let args = cli.run;
 
     let data_dir = args.data_dir.clone();
     fs::create_dir_all(&data_dir).context("failed to create data directory")?;
@@ -176,8 +181,18 @@ async fn main() -> Result<()> {
             }
         }
 
-        node_summary(&cleanup.nodes, &args, &blokli_url);
-        extras_summary(&identities.extras);
+        let summary = ClusterSummary::build(&cleanup.nodes, &args, &blokli_url, &identities.extras);
+        print!("{}", summary.render_human());
+        // Default to `<data_dir>/summary.json` so external tooling has a stable,
+        // discoverable location even when `--summary-file` is not passed.
+        let summary_path = args
+            .summary_file
+            .clone()
+            .unwrap_or_else(|| data_dir.join("summary.json"));
+        summary
+            .write_file(&summary_path)
+            .with_context(|| format!("failed to write summary file {}", summary_path.display()))?;
+        info!("wrote cluster summary to {}", summary_path.display());
 
         info!("localcluster running; press Ctrl+C to stop");
         tokio::select! {
@@ -200,66 +215,6 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn node_summary(nodes: &[client_helper::NodeProcess], args: &cli::Args, blokli_url: &str) {
-    println!();
-    println!("Chain (Blokli): {blokli_url}");
-    println!();
-
-    for node in nodes {
-        let addr = node.address.clone().unwrap_or_else(|| "N/A".to_string());
-        let api_host = if args.api_host == "0.0.0.0" {
-            "127.0.0.1"
-        } else {
-            &args.api_host
-        };
-        let api = format!("http://{}:{}", api_host, node.api_port);
-        let token = args.api_token.clone().unwrap_or_else(|| "N/A".to_string());
-        let mut node_admin = format!("http://localhost:4677/node/info?apiEndpoint={api}");
-        if let Some(token) = &args.api_token {
-            node_admin.push_str(&format!("&apiToken={token}"));
-        }
-
-        let rows = [
-            ("Address", addr),
-            ("P2P", format!("{}:{}", &args.p2p_host, node.p2p_port)),
-            ("API host", api),
-            ("API token", token),
-            ("Node admin", node_admin),
-            ("PID", node.child.id().to_string()),
-        ];
-        let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
-
-        println!("Node {}", node.id);
-        for (label, value) in rows {
-            println!("\t{label:<width$}: {value}", width = label_width);
-        }
-        println!();
-    }
-}
-
-fn extras_summary(extras: &[GeneratedIdentity]) {
-    if extras.is_empty() {
-        return;
-    }
-
-    for extra in extras {
-        let rows = [
-            ("Address", extra.address.clone()),
-            ("Safe address", extra.safe_address.clone()),
-            ("Module address", extra.module_address.clone()),
-            ("Identity file", extra.id_file.display().to_string()),
-            ("Password", extra.password.clone()),
-        ];
-        let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
-
-        println!("Extra {}", extra.id);
-        for (label, value) in rows {
-            println!("\t{label:<width$}: {value}", width = label_width);
-        }
-        println!();
-    }
 }
 
 async fn wait_sigterm() {
@@ -285,10 +240,10 @@ async fn wait_for_blokli_ready(blokli_url: &str, timeout: Duration) -> Result<()
     let start = std::time::Instant::now();
 
     loop {
-        if let Ok(resp) = client.get(&url).send().await {
-            if resp.status().is_success() {
-                return Ok(());
-            }
+        if let Ok(resp) = client.get(&url).send().await
+            && resp.status().is_success()
+        {
+            return Ok(());
         }
 
         if start.elapsed() > timeout {

@@ -145,15 +145,15 @@ async fn run() -> Result<()> {
     // Double-check every expected pair via direct API call.
     for src in &cleanup.nodes {
         for dst in &cleanup.nodes {
-            if let (Some(src_addr), Some(dst_addr)) = (&src.address, &dst.address) {
-                if src_addr != dst_addr {
-                    assert!(
-                        src.api.is_outgoing_channel_open(dst_addr).await?,
-                        "node {} missing open outgoing channel to node {}",
-                        src.id,
-                        dst.id,
-                    );
-                }
+            if let (Some(src_addr), Some(dst_addr)) = (&src.address, &dst.address)
+                && src_addr != dst_addr
+            {
+                assert!(
+                    src.api.is_outgoing_channel_open(dst_addr).await?,
+                    "node {} missing open outgoing channel to node {}",
+                    src.id,
+                    dst.id,
+                );
             }
         }
     }
@@ -169,10 +169,10 @@ async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
     let readyz = format!("{url}/readyz");
     let start = std::time::Instant::now();
     loop {
-        if let Ok(resp) = client.get(&readyz).send().await {
-            if resp.status().is_success() {
-                return Ok(());
-            }
+        if let Ok(resp) = client.get(&readyz).send().await
+            && resp.status().is_success()
+        {
+            return Ok(());
         }
         if start.elapsed() > timeout {
             anyhow::bail!("timeout waiting for blokli at {readyz}");
