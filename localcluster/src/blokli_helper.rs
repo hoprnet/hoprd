@@ -55,14 +55,14 @@ impl ChainHandle {
         let name = CONTAINER_NAME;
 
         // Apple `container` uses --arch amd64; Docker/Podman use --platform linux/amd64.
-        let basename = std::path::Path::new(runtime)
+        let runtime_name = std::path::Path::new(runtime)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(runtime);
 
         let mut cmd = Command::new(runtime);
         cmd.arg("run").arg("--rm").arg("--name").arg(name);
-        if basename == "container" {
+        if runtime_name == "container" {
             cmd.arg("--arch").arg("amd64");
         } else {
             cmd.arg("--platform").arg("linux/amd64");
