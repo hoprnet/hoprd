@@ -54,14 +54,20 @@ impl ChainHandle {
             .context("failed to clone blokli log file handle")?;
         let name = CONTAINER_NAME;
 
+        // Apple `container` uses --arch amd64; Docker/Podman use --platform linux/amd64.
+        let basename = std::path::Path::new(runtime)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(runtime);
+
         let mut cmd = Command::new(runtime);
-        cmd.arg("run")
-            .arg("--rm")
-            .arg("--name")
-            .arg(name)
-            .arg("--platform")
-            .arg("linux/amd64")
-            .arg("-p")
+        cmd.arg("run").arg("--rm").arg("--name").arg(name);
+        if basename == "container" {
+            cmd.arg("--arch").arg("amd64");
+        } else {
+            cmd.arg("--platform").arg("linux/amd64");
+        }
+        cmd.arg("-p")
             .arg(format!("{CHAIN_PORT}:{CHAIN_PORT}"))
             .arg(chain_image)
             .stdout(Stdio::from(log_file))
