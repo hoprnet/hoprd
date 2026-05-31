@@ -157,7 +157,7 @@ jobs:
   build-docker:
     name: Docker
     needs: build-binaries
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@30f77f2fd7306bd460e19fe088b4dff4493d5f3d # temporary: pin to registries.conf fix; revert to @build-docker-v2 after tag move
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@build-docker-v2
     permissions:
       contents: read
       pull-requests: write
