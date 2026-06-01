@@ -44,7 +44,10 @@ telemetry = [
   "hopr-strategy/telemetry",
   "hopr-transport-p2p/telemetry",
 ]
-transport-quic = ["hopr-transport-p2p/transport-quic"]
+transport-quic = [
+  "hopr-transport-p2p/transport-quic",
+  "hopr-lib/transport-announce-quic",
+]
 capture = ["hopr-lib/capture"]
 # To use profiling:
 # 1. Set RUSTFLAGS="--cfg tokio_unstable" before building
