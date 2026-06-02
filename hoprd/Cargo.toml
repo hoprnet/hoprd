@@ -82,6 +82,7 @@ console-subscriber = { workspace = true, optional = true }
 futures = { workspace = true }
 flagset = { workspace = true, optional = true }
 home = { workspace = true }
+if-addrs = { workspace = true }
 humansize = { workspace = true, optional = true, features = ["no_alloc"] }
 humantime-serde = { workspace = true }
 proc-macro-regex = { workspace = true }
