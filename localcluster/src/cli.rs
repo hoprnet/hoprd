@@ -22,8 +22,9 @@ fn parse_size(s: &str) -> Result<usize, String> {
 /// Top-level entry point.
 ///
 /// With no subcommand, the cluster is started (the flattened [`Args`]). The
-/// `status` subcommand instead reads a previously written summary file, so its
-/// presence negates the run-only requirements (e.g. `--chain-image`).
+/// `status` subcommand instead reads the summary file written by a (possibly still
+/// starting) cluster, so its presence negates the run-only requirements (e.g.
+/// `--chain-image`).
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
@@ -41,15 +42,31 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Print the cluster summary of a running cluster as JSON, read from a summary file.
+    /// Query a running cluster's live status and print it as JSON.
+    ///
+    /// Always exits 0 with a parseable answer: the live state of a running/starting
+    /// cluster, or `not_running` when nothing is listening on the control socket.
     Status(StatusArgs),
 }
 
 #[derive(Parser, Debug)]
 pub struct StatusArgs {
-    /// Path to the summary file written by a running cluster via `--summary-file`.
+    /// Data directory of the cluster to inspect (used to locate the control socket).
+    #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
+    pub data_dir: PathBuf,
+
+    /// Explicit control socket path. Defaults to `<data-dir>/cluster.sock`.
     #[arg(long)]
-    pub summary_file: PathBuf,
+    pub socket: Option<PathBuf>,
+}
+
+impl StatusArgs {
+    /// Resolve the control socket path: explicit `--socket` or `<data-dir>/cluster.sock`.
+    pub fn socket_path(&self) -> PathBuf {
+        self.socket
+            .clone()
+            .unwrap_or_else(|| crate::control::socket_path(&self.data_dir))
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -120,13 +137,6 @@ pub struct Args {
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
-
-    /// Path for the machine-readable JSON cluster summary, written once the cluster
-    /// is running. External tooling can parse it instead of scraping stdout, and the
-    /// `status` subcommand can re-read it. Defaults to `<data-dir>/summary.json`.
-    /// The file is kept until the cluster exits.
-    #[arg(long)]
-    pub summary_file: Option<PathBuf>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

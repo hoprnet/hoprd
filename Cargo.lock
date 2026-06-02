@@ -5015,6 +5015,7 @@ dependencies = [
  "hoprd-api",
  "hoprd-api-client",
  "lazy_static",
+ "nix",
  "reqwest 0.13.3",
  "serde",
  "serde-saphyr",

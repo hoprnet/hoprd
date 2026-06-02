@@ -130,32 +130,40 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 ---
 
-## Machine-readable summary
+## Machine-readable status
 
-For CI and integration tooling, prefer the structured JSON summary over scraping stdout. The cluster always writes a JSON snapshot once it reaches the running state — by default to `<data-dir>/summary.json` (e.g. `/tmp/hopr-nodes/summary.json`). Use `--summary-file` to override the path:
+For CI and integration tooling, query the structured status instead of scraping stdout. A running cluster serves its **live** state on a unix domain socket at `<data-dir>/cluster.sock`. The `status` subcommand connects to it and prints the current snapshot as JSON:
 
 ```bash
-./result-1/bin/hoprd-localcluster \
-  --hoprd-bin ./result/bin/hoprd \
-  --chain-image "$CHAIN_IMAGE" \
-  --size 3 \
-  --summary-file /tmp/hopr-nodes/summary.json
+./result-1/bin/hoprd-localcluster status                       # reads <data-dir>/cluster.sock
+./result-1/bin/hoprd-localcluster status --data-dir /tmp/hopr-nodes
+./result-1/bin/hoprd-localcluster status --socket /custom/path/cluster.sock
 ```
 
-Read it back at any time — including from another process attaching to an already-running cluster — with the `status` subcommand (it just re-prints the file as JSON):
+`status` always exits `0` with a parseable answer:
+
+- a live snapshot while the cluster is `initializing` / `starting` / `running` / `shutting_down`,
+- `{"state": "not_running"}` when nothing is listening (no cluster, or it already exited).
+
+The status is updated **as the cluster comes up**, so tooling can poll `status` and key off the structured `state` fields instead of grepping logs. The deterministic stop criterion is `.state == "running"`. Each node also carries its own `state`, advancing `pending → spawned → started → ready → channels_open` as it becomes available.
+
+Example (`jq`-friendly) wait loop:
 
 ```bash
-./result-1/bin/hoprd-localcluster status --summary-file /tmp/hopr-nodes/summary.json
+until [ "$(./result-1/bin/hoprd-localcluster status | jq -r .state)" = "running" ]; do sleep 1; done
 ```
 
 Shape:
 
 ```json
 {
+  "state": "running",
+  "pid": 12000,
   "blokli_url": "http://127.0.0.1:8080",
   "nodes": [
     {
       "id": 0,
+      "state": "channels_open",
       "address": "0x1234…",
       "api_url": "http://127.0.0.1:3000",
       "api_token": null,
@@ -177,7 +185,21 @@ Shape:
 }
 ```
 
-`api_token` is `null` unless `--api-token` is set; `extras` is empty unless `--extra-identities` is greater than 0. The file is written once on startup and persists until the cluster exits. If you override `--data-dir`, the default summary path follows it; pass an explicit `--summary-file` to the `status` subcommand when reading it back.
+`api_token` is `null` unless `--api-token` is set; `address`/`pid` are `null` until a node reaches that point; `extras` is empty unless `--extra-identities` is greater than 0. If startup fails, `state` becomes `failed` and an `error` field describes why.
+
+> Note: the socket lives under `--data-dir`. Querying it across a Docker bind mount (gRPC-FUSE/virtiofs on macOS) or NFS is unreliable — run `status` on the same host/container that owns the data directory, or keep the data directory local.
+
+---
+
+## Single-instance lock
+
+A running cluster holds an exclusive advisory lock on `<data-dir>/cluster.lock` for its whole lifetime. Starting a second cluster against the same `--data-dir` fails fast with the offending pid:
+
+```text
+another localcluster instance (pid 12000) is already using data directory /tmp/hopr-nodes; stop it (e.g. `kill 12000`) or pass a different --data-dir
+```
+
+The lock is released automatically by the OS when the owner exits — including on a crash or `kill -9` — so a stale lock never wedges a future run. (Same bind-mount/NFS caveat as the status socket: the guarantee is reliable on a local filesystem.)
 
 ---
 
@@ -185,24 +207,23 @@ Shape:
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                   | Env var                   | Default                   | Description                                                                                                               |
-| ---------------------- | ------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--size`               | —                         | `3`                       | Number of nodes to start (1–5)                                                                                            |
-| `--api-host`           | —                         | `localhost`               | Host to bind the REST API on                                                                                              |
-| `--api-port-base`      | —                         | `3000`                    | First API port (each node gets base + id)                                                                                 |
-| `--p2p-host`           | —                         | `localhost`               | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
-| `--p2p-port-base`      | —                         | `9000`                    | First P2P port                                                                                                            |
-| `--data-dir`           | —                         | `/tmp/hopr-nodes`         | Root for configs, identities, DBs, logs                                                                                   |
-| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                         | Container image for Blokli + Anvil                                                                                        |
-| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                         | External Blokli URL; skips the container step                                                                             |
-| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`                  | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
-| `--hoprd-bin`          | —                         | `hoprd`                   | Path to the `hoprd` binary                                                                                                |
-| `--identity-password`  | —                         | `password`                | Password for identity encryption                                                                                          |
-| `--api-token`          | —                         | none                      | Bearer token for the REST API                                                                                             |
-| `--funding-amount`     | —                         | `1 wxHOPR`                | Per-channel funding amount                                                                                                |
-| `--channel-management` | —                         | `api`                     | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
-| `--extra-identities`   | —                         | `0`                       | Extra pre-funded identities for external tooling (0–5)                                                                    |
-| `--summary-file`       | —                         | `<data-dir>/summary.json` | Path for the machine-readable JSON cluster summary written once running (see below)                                       |
+| Flag                   | Env var                   | Default           | Description                                                                                                               |
+| ---------------------- | ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--size`               | —                         | `3`               | Number of nodes to start (1–5)                                                                                            |
+| `--api-host`           | —                         | `localhost`       | Host to bind the REST API on                                                                                              |
+| `--api-port-base`      | —                         | `3000`            | First API port (each node gets base + id)                                                                                 |
+| `--p2p-host`           | —                         | `localhost`       | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
+| `--p2p-port-base`      | —                         | `9000`            | First P2P port                                                                                                            |
+| `--data-dir`           | —                         | `/tmp/hopr-nodes` | Root for configs, identities, DBs, logs                                                                                   |
+| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                 | Container image for Blokli + Anvil                                                                                        |
+| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                 | External Blokli URL; skips the container step                                                                             |
+| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`          | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
+| `--hoprd-bin`          | —                         | `hoprd`           | Path to the `hoprd` binary                                                                                                |
+| `--identity-password`  | —                         | `password`        | Password for identity encryption                                                                                          |
+| `--api-token`          | —                         | none              | Bearer token for the REST API                                                                                             |
+| `--funding-amount`     | —                         | `1 wxHOPR`        | Per-channel funding amount                                                                                                |
+| `--channel-management` | —                         | `api`             | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
+| `--extra-identities`   | —                         | `0`               | Extra pre-funded identities for external tooling (0–5)                                                                    |
 
 ### Channel management modes
 
@@ -231,6 +252,8 @@ Everything lands under `--data-dir` (default `/tmp/hopr-nodes`):
   node_id_2.id
   extra_id_0.id          # extra identity keystore (if --extra-identities > 0)
   extra_id_1.id
+  cluster.lock           # single-instance advisory lock (holds owner pid)
+  cluster.sock           # control socket serving live `status` (removed on exit)
   db_0/                  # node 0 database
   db_1/
   db_2/

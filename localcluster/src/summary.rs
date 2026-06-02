@@ -1,34 +1,81 @@
-//! Machine-readable cluster summary.
+//! Machine-readable, progressively-updated cluster summary.
 //!
-//! Once the cluster reaches the "running" state, its metadata (blokli URL, per-node
-//! addresses/endpoints, extra identity details) is captured into [`ClusterSummary`].
-//! This is the single source of truth for both the human-readable stdout table and
-//! the JSON consumed by external tooling via `--summary-file` and the `status`
-//! subcommand. It replaces fragile stdout scraping.
-
-use std::path::Path;
+//! The summary is the single source of truth for both the human-readable stdout table
+//! and the JSON served to external tooling. The orchestrator holds it in memory and
+//! updates it on every lifecycle transition — chain ready, each node spawned/started/
+//! ready, channels open, shutdown. The live snapshot is served over a unix socket (see
+//! [`crate::control`]); the `status` subcommand queries it and keys off the structured
+//! `state` fields instead of scraping logs, with a deterministic stop criterion
+//! (`state == "running"`).
+//!
+//! When no instance is listening, `status` reports `not_running`, so callers always get
+//! a parseable answer.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{cli, client_helper::NodeProcess, identity::GeneratedIdentity};
 
-/// Full snapshot of a running cluster.
+/// Overall lifecycle state of the cluster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClusterState {
+    /// No instance is listening for this data directory; nothing is running.
+    NotRunning,
+    /// Booting chain services and generating identities.
+    Initializing,
+    /// Nodes are spawning and coming up; not all are ready yet.
+    Starting,
+    /// All nodes are ready and channels (if any) are open. Stop criterion for tooling.
+    Running,
+    /// Shutdown was requested; processes are being torn down.
+    ShuttingDown,
+    /// Startup failed; see `error`.
+    Failed,
+}
+
+/// Lifecycle state of a single node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeState {
+    /// Not yet spawned.
+    Pending,
+    /// Process spawned; not yet answering `/startedz`.
+    Spawned,
+    /// Passed `/startedz`.
+    Started,
+    /// Passed `/readyz`; address known.
+    Ready,
+    /// Outgoing channels to all peers are open.
+    ChannelsOpen,
+    /// This node failed to come up.
+    Failed,
+}
+
+/// Full snapshot of a cluster at one point in its lifecycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterSummary {
-    /// Base URL of the Blokli indexer / chain services.
-    pub blokli_url: String,
+    pub state: ClusterState,
+    /// OS process id of the orchestrator that owns this summary.
+    pub pid: u32,
+    /// Base URL of the Blokli indexer / chain services, once known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blokli_url: Option<String>,
     pub nodes: Vec<NodeSummary>,
     /// Extra (non-node) pre-funded identities. Empty when none were requested.
     #[serde(default)]
     pub extras: Vec<ExtraSummary>,
+    /// Failure detail, set only when `state == Failed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
-/// A single running hoprd node.
+/// A single hoprd node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeSummary {
     pub id: usize,
-    /// On-chain peer (EVM) address, or `null` if it could not be fetched.
+    pub state: NodeState,
+    /// On-chain peer (EVM) address, or `null` until fetched.
     pub address: Option<String>,
     /// REST API base URL.
     pub api_url: String,
@@ -38,8 +85,8 @@ pub struct NodeSummary {
     pub p2p: String,
     /// Convenience URL opening this node in the hopr-admin UI.
     pub node_admin_url: String,
-    /// OS process id of the spawned hoprd.
-    pub pid: u32,
+    /// OS process id of the spawned hoprd, or `null` until spawned.
+    pub pid: Option<u32>,
 }
 
 /// A pre-funded extra identity (Safe + Module + on-disk keystore), not run as a node.
@@ -56,42 +103,66 @@ pub struct ExtraSummary {
 }
 
 impl ClusterSummary {
-    /// Build the summary from live cluster state.
-    pub fn build(
-        nodes: &[NodeProcess],
-        args: &cli::Args,
-        blokli_url: &str,
-        extras: &[GeneratedIdentity],
-    ) -> Self {
-        // 0.0.0.0 is not routable for clients; advertise loopback instead.
-        let api_host = if args.api_host == "0.0.0.0" {
-            "127.0.0.1"
-        } else {
-            &args.api_host
-        };
-
-        let nodes = nodes
-            .iter()
-            .map(|node| {
-                let api_url = format!("http://{}:{}", api_host, node.api_port);
+    /// Build the initial summary from CLI args, before anything has started.
+    ///
+    /// Endpoints are deterministic from the args (`base + id`), so they are populated
+    /// up front; per-node `address`/`pid` and the chain URL are filled in as they become
+    /// known.
+    pub fn initial(args: &cli::Args) -> Self {
+        let nodes = (0..args.size)
+            .map(|id| {
+                let api_url = format!(
+                    "http://{}:{}",
+                    advertised_host(&args.api_host),
+                    args.api_port_base as usize + id
+                );
                 let mut node_admin_url =
                     format!("http://localhost:4677/node/info?apiEndpoint={api_url}");
                 if let Some(token) = &args.api_token {
                     node_admin_url.push_str(&format!("&apiToken={token}"));
                 }
                 NodeSummary {
-                    id: node.id,
-                    address: node.address.clone(),
+                    id,
+                    state: NodeState::Pending,
+                    address: None,
                     api_url,
                     api_token: args.api_token.clone(),
-                    p2p: format!("{}:{}", &args.p2p_host, node.p2p_port),
+                    p2p: format!(
+                        "{}:{}",
+                        advertised_host(&args.p2p_host),
+                        args.p2p_port_base as usize + id
+                    ),
                     node_admin_url,
-                    pid: node.child.id(),
+                    pid: None,
                 }
             })
             .collect();
 
-        let extras = extras
+        Self {
+            state: ClusterState::Initializing,
+            pid: std::process::id(),
+            blokli_url: None,
+            nodes,
+            extras: Vec::new(),
+            error: None,
+        }
+    }
+
+    /// Summary returned when no cluster is running for the queried data directory.
+    pub fn not_running() -> Self {
+        Self {
+            state: ClusterState::NotRunning,
+            pid: 0,
+            blokli_url: None,
+            nodes: Vec::new(),
+            extras: Vec::new(),
+            error: None,
+        }
+    }
+
+    /// Replace the extra-identity list (known after identity generation).
+    pub fn set_extras(&mut self, extras: &[GeneratedIdentity]) {
+        self.extras = extras
             .iter()
             .map(|extra| ExtraSummary {
                 id: extra.id,
@@ -102,12 +173,41 @@ impl ClusterSummary {
                 password: extra.password.clone(),
             })
             .collect();
+    }
 
-        Self {
-            blokli_url: blokli_url.to_string(),
-            nodes,
-            extras,
+    /// Record the live pid for each spawned node and mark it [`NodeState::Spawned`].
+    pub fn mark_spawned(&mut self, nodes: &[NodeProcess]) {
+        for proc in nodes {
+            if let Some(node) = self.node_mut(proc.id) {
+                node.pid = Some(proc.child.id());
+                node.state = NodeState::Spawned;
+            }
         }
+    }
+
+    /// Set a single node's lifecycle state.
+    pub fn set_node_state(&mut self, id: usize, state: NodeState) {
+        if let Some(node) = self.node_mut(id) {
+            node.state = state;
+        }
+    }
+
+    /// Set every node's lifecycle state.
+    pub fn set_all_node_states(&mut self, state: NodeState) {
+        for node in &mut self.nodes {
+            node.state = state;
+        }
+    }
+
+    /// Record a fetched node address.
+    pub fn set_node_address(&mut self, id: usize, address: String) {
+        if let Some(node) = self.node_mut(id) {
+            node.address = Some(address);
+        }
+    }
+
+    fn node_mut(&mut self, id: usize) -> Option<&mut NodeSummary> {
+        self.nodes.iter_mut().find(|n| n.id == id)
     }
 
     /// Serialize to pretty JSON.
@@ -115,29 +215,19 @@ impl ClusterSummary {
         serde_json::to_string_pretty(self).context("failed to serialize cluster summary")
     }
 
-    /// Write the summary as pretty JSON to `path`.
-    pub fn write_file(&self, path: &Path) -> Result<()> {
-        let json = self.to_json()?;
-        std::fs::write(path, json)
-            .with_context(|| format!("failed to write summary file {}", path.display()))
-    }
-
-    /// Read a previously written summary from `path`.
-    pub fn read_file(path: &Path) -> Result<Self> {
-        let contents = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read summary file {}", path.display()))?;
-        serde_json::from_str(&contents)
-            .with_context(|| format!("failed to parse summary file {}", path.display()))
-    }
-
     /// Render the human-readable table printed to stdout.
     pub fn render_human(&self) -> String {
         let mut out = String::new();
         out.push('\n');
-        out.push_str(&format!("Chain (Blokli): {}\n\n", self.blokli_url));
+        out.push_str(&format!("State: {}\n", self.state_label()));
+        out.push_str(&format!(
+            "Chain (Blokli): {}\n\n",
+            self.blokli_url.as_deref().unwrap_or("N/A")
+        ));
 
         for node in &self.nodes {
             let rows = [
+                ("State", node.state_label().to_string()),
                 (
                     "Address",
                     node.address.clone().unwrap_or_else(|| "N/A".to_string()),
@@ -149,16 +239,18 @@ impl ClusterSummary {
                     node.api_token.clone().unwrap_or_else(|| "N/A".to_string()),
                 ),
                 ("Node admin", node.node_admin_url.clone()),
-                ("PID", node.pid.to_string()),
+                (
+                    "PID",
+                    node.pid
+                        .map(|p| p.to_string())
+                        .unwrap_or_else(|| "N/A".to_string()),
+                ),
             ];
             let label_width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
 
             out.push_str(&format!("Node {}\n", node.id));
             for (label, value) in rows {
-                out.push_str(&format!(
-                    "\t{label:<width$}: {value}\n",
-                    width = label_width
-                ));
+                out.push_str(&format!("\t{label:<label_width$}: {value}\n"));
             }
             out.push('\n');
         }
@@ -175,15 +267,44 @@ impl ClusterSummary {
 
             out.push_str(&format!("Extra {}\n", extra.id));
             for (label, value) in rows {
-                out.push_str(&format!(
-                    "\t{label:<width$}: {value}\n",
-                    width = label_width
-                ));
+                out.push_str(&format!("\t{label:<label_width$}: {value}\n"));
             }
             out.push('\n');
         }
 
         out
+    }
+
+    fn state_label(&self) -> &'static str {
+        match self.state {
+            ClusterState::NotRunning => "not_running",
+            ClusterState::Initializing => "initializing",
+            ClusterState::Starting => "starting",
+            ClusterState::Running => "running",
+            ClusterState::ShuttingDown => "shutting_down",
+            ClusterState::Failed => "failed",
+        }
+    }
+}
+
+impl NodeSummary {
+    fn state_label(&self) -> &'static str {
+        match self.state {
+            NodeState::Pending => "pending",
+            NodeState::Spawned => "spawned",
+            NodeState::Started => "started",
+            NodeState::Ready => "ready",
+            NodeState::ChannelsOpen => "channels_open",
+            NodeState::Failed => "failed",
+        }
+    }
+}
+
+/// `0.0.0.0` and `auto` (bind-all) are not routable for clients; advertise loopback instead.
+fn advertised_host(host: &str) -> &str {
+    match host {
+        "0.0.0.0" | "auto" => "127.0.0.1",
+        other => other,
     }
 }
 
@@ -193,9 +314,12 @@ mod tests {
 
     fn sample() -> ClusterSummary {
         ClusterSummary {
-            blokli_url: "http://chain:8080".to_string(),
+            state: ClusterState::Running,
+            pid: 4242,
+            blokli_url: Some("http://chain:8080".to_string()),
             nodes: vec![NodeSummary {
                 id: 0,
+                state: NodeState::ChannelsOpen,
                 address: Some("0xabc".to_string()),
                 api_url: "http://127.0.0.1:3000".to_string(),
                 api_token: Some("tok".to_string()),
@@ -203,7 +327,7 @@ mod tests {
                 node_admin_url:
                     "http://localhost:4677/node/info?apiEndpoint=http://127.0.0.1:3000&apiToken=tok"
                         .to_string(),
-                pid: 4242,
+                pid: Some(5000),
             }],
             extras: vec![ExtraSummary {
                 id: 0,
@@ -213,6 +337,7 @@ mod tests {
                 keystore_path: "/tmp/extra_id_0.id".to_string(),
                 password: "local-cluster".to_string(),
             }],
+            error: None,
         }
     }
 
@@ -221,34 +346,37 @@ mod tests {
         let original = sample();
         let json = original.to_json().unwrap();
         let parsed: ClusterSummary = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.blokli_url, original.blokli_url);
+        assert_eq!(parsed.state, ClusterState::Running);
         assert_eq!(parsed.nodes.len(), 1);
-        assert_eq!(parsed.nodes[0].pid, 4242);
+        assert_eq!(parsed.nodes[0].state, NodeState::ChannelsOpen);
+        assert_eq!(parsed.nodes[0].pid, Some(5000));
         assert_eq!(parsed.extras[0].keystore_path, "/tmp/extra_id_0.id");
     }
 
     #[test]
+    fn state_serializes_snake_case() {
+        let json = sample().to_json().unwrap();
+        assert!(json.contains("\"state\": \"running\""));
+        assert!(json.contains("\"state\": \"channels_open\""));
+    }
+
+    #[test]
     fn extras_default_when_missing() {
-        let json = r#"{"blokli_url":"http://x","nodes":[]}"#;
+        let json = r#"{"state":"running","pid":1,"nodes":[]}"#;
         let parsed: ClusterSummary = serde_json::from_str(json).unwrap();
         assert!(parsed.extras.is_empty());
     }
 
     #[test]
-    fn write_then_read_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("summary.json");
-        let original = sample();
-        original.write_file(&path).unwrap();
-
-        let parsed = ClusterSummary::read_file(&path).unwrap();
-        assert_eq!(parsed.nodes[0].address, Some("0xabc".to_string()));
-        assert_eq!(parsed.extras[0].safe_address, "0xsafe");
+    fn not_running_serializes() {
+        let json = ClusterSummary::not_running().to_json().unwrap();
+        assert!(json.contains("\"state\": \"not_running\""));
     }
 
     #[test]
     fn render_human_contains_key_fields() {
         let rendered = sample().render_human();
+        assert!(rendered.contains("State: running"));
         assert!(rendered.contains("Chain (Blokli): http://chain:8080"));
         assert!(rendered.contains("Node 0"));
         assert!(rendered.contains("0xabc"));
