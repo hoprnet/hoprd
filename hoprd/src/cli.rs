@@ -207,7 +207,8 @@ pub struct CliArgs {
     pub password: Option<String>,
 
     #[arg(
-        long,
+        long = "blokliUrl",
+        alias = "blokli-url",
         help = "URL for Blokli provider to be used for the node to connect to blockchain",
         env = "HOPRD_BLOKLI_URL",
         value_name = "BLOKLI_URL"
