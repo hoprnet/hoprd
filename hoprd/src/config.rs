@@ -353,7 +353,7 @@ mod tests {
     };
 
     use anyhow::Context;
-    use clap::{Args, Command, FromArgMatches};
+    use clap::{Args, Command, FromArgMatches, Parser};
     use hopr_lib::api::types::primitive::prelude::Address;
     use tempfile::NamedTempFile;
 
@@ -458,6 +458,72 @@ mod tests {
         let cfg = HoprdConfig::try_from(args)?;
 
         assert_eq!(cfg.blokli_url, pwnd.to_owned());
+
+        Ok(())
+    }
+
+    /// Writes `cfg` to a temporary YAML file and returns the file (kept alive by
+    /// the caller) together with its path.
+    fn write_cfg_file(cfg: &HoprdConfig) -> anyhow::Result<(NamedTempFile, String)> {
+        let mut config_file = NamedTempFile::new()?;
+        let yaml = serde_saphyr::to_string(cfg)?;
+        config_file.write_all(yaml.as_bytes())?;
+        let path = config_file
+            .path()
+            .to_str()
+            .context("file path should have a string representation")?
+            .to_string();
+        Ok((config_file, path))
+    }
+
+    #[test]
+    fn validation_should_fail_when_required_values_are_missing_from_the_file() -> anyhow::Result<()>
+    {
+        let mut cfg = example_cfg()?;
+        // Blank the password so the file on its own is genuinely invalid.
+        cfg.identity.password = String::new();
+
+        let (_file, cfg_path) = write_cfg_file(&cfg)?;
+
+        let cli_args = crate::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            cfg_path.as_str(),
+        ])?;
+        let effective = HoprdConfig::try_from(cli_args)?;
+
+        assert!(
+            effective.validate().is_err(),
+            "config with an empty password must fail validation on its own"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_should_pass_when_required_values_are_supplied_via_overrides() -> anyhow::Result<()>
+    {
+        let mut cfg = example_cfg()?;
+        // Same file as the negative test: invalid on its own due to the empty password.
+        cfg.identity.password = String::new();
+
+        let (_file, cfg_path) = write_cfg_file(&cfg)?;
+
+        // The password is supplied as a CLI/environment override (the exact code
+        // path that `HOPRD_PASSWORD` feeds into), so the effective config is valid.
+        let cli_args = crate::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            cfg_path.as_str(),
+            "--password",
+            "a-securely-provided-password",
+        ])?;
+        let effective = HoprdConfig::try_from(cli_args)?;
+
+        assert!(
+            effective.validate().is_ok(),
+            "config must validate once the missing password is supplied via override"
+        );
 
         Ok(())
     }

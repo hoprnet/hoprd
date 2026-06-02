@@ -28,6 +28,11 @@
 //!
 //! ## Validate an existing configuration YAML
 //!
+//! Validation reflects the *effective* configuration hoprd builds at startup:
+//! the YAML file with `HOPRD_*` environment variables (and CLI-equivalent
+//! overrides) layered on top. Values supplied via the environment are honored,
+//! so they are not falsely reported as missing or invalid.
+//!
 //! All validation errors found in the config are reported at once
 //! (one per line under `Caused by:`); the binary exits with code 1.
 //!
