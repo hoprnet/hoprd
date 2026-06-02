@@ -25,6 +25,13 @@ fi
 # overrides) exactly as hoprd builds it at startup, so misconfigurations fail
 # fast before launch. hoprd-cfg surfaces missing-file errors and treats a
 # --help/--version request as a no-op success.
-RUST_BACKTRACE=0 /bin/hoprd-cfg --validate-args -- "$@"
+echo "hoprd container startup attempt: validating configuration" >&2
+if RUST_BACKTRACE=0 /bin/hoprd-cfg --validate-args -- "$@"; then
+  echo "hoprd container startup attempt: configuration valid; launching hoprd" >&2
+else
+  exit_code=$?
+  echo "hoprd container startup attempt: configuration validation failed; exiting with status ${exit_code}. A configured container restart policy may launch another attempt." >&2
+  exit "$exit_code"
+fi
 
 exec /bin/hoprd "$@"
