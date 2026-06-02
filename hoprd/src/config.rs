@@ -56,7 +56,31 @@ fn validate_optional_private_key(s: &str) -> Result<(), ValidationError> {
     validate_private_key(s)
 }
 
+// Ensures the node has an identity source to load or create keys from: either a
+// non-empty identity file path or a private key. Without this, an empty file path
+// (the default) only surfaces as an opaque filesystem error at keypair creation.
+fn validate_identity_source(identity: &Identity) -> Result<(), ValidationError> {
+    let has_file = !identity.file.trim().is_empty();
+    let has_key = identity
+        .private_key
+        .as_ref()
+        .is_some_and(|k| !k.trim().is_empty());
+
+    if has_file || has_key {
+        return Ok(());
+    }
+
+    let mut error = ValidationError::new("identity_source_missing");
+    error.message = Some(
+        "no identity source configured: provide an identity file via --identity \
+         (HOPRD_IDENTITY) or a private key via --privateKey (HOPRD_PRIVATE_KEY)"
+            .into(),
+    );
+    Err(error)
+}
+
 #[derive(Default, Serialize, Deserialize, Validate, Clone, PartialEq)]
+#[validate(schema(function = "validate_identity_source", skip_on_field_errors = false))]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
     #[validate(custom(function = "validate_file_path"))]
@@ -524,6 +548,48 @@ mod tests {
             effective.validate().is_ok(),
             "config must validate once the missing password is supplied via override"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_fails_when_no_identity_source() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.identity.file = String::new();
+        cfg.identity.private_key = None;
+
+        let err = cfg
+            .validate()
+            .expect_err("a config without any identity source must fail validation");
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("identity_source_missing"),
+            "unexpected error: {rendered}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_passes_with_private_key_and_no_file() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.identity.file = String::new();
+        // A valid 128-hex private key satisfies both the source requirement and the key format.
+        cfg.identity.private_key = Some(format!("0x{}", "a".repeat(128)));
+
+        cfg.validate()
+            .context("a private key alone should satisfy the identity source requirement")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_passes_with_identity_file_and_no_key() -> anyhow::Result<()> {
+        // `example_cfg` sets `identity.file` and leaves `private_key` unset.
+        let cfg = example_cfg()?;
+
+        cfg.validate()
+            .context("an identity file alone should satisfy the identity source requirement")?;
 
         Ok(())
     }

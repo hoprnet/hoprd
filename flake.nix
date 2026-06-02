@@ -358,13 +358,22 @@
           hoprdDocker = {
             docker-hoprd-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
@@ -375,13 +384,22 @@
             };
             docker-hoprd-dev-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
@@ -392,8 +410,13 @@
             };
             docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-profile-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
@@ -407,7 +430,11 @@
                 pkgs.perl
               ]
               ++ profileDeps;
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
@@ -419,13 +446,22 @@
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
@@ -436,6 +472,10 @@
             };
             docker-hoprd-localcluster-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd-localcluster";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux

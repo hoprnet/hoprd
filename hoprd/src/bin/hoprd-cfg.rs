@@ -154,15 +154,21 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::validate_effective_config;
-    use hoprd::config::HoprdConfig;
+    use hoprd::config::{HoprdConfig, Identity};
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn config_file_without_password() -> anyhow::Result<NamedTempFile> {
-        // Serialize the default config (identity.password is "" by default)
-        // to get a valid YAML that fails validation only on the missing password.
-        let yaml = serde_saphyr::to_string(&HoprdConfig::default())
-            .context("failed to serialize default config")?;
+        // A config whose only validation gap is the missing password: an identity file is
+        // set (satisfying the identity-source requirement) while the password stays "".
+        let cfg = HoprdConfig {
+            identity: Identity {
+                file: "/tmp/hoprd-cfg-test-identity".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let yaml = serde_saphyr::to_string(&cfg).context("failed to serialize config")?;
         let mut file = NamedTempFile::new()?;
         file.write_all(yaml.as_bytes())?;
         Ok(file)

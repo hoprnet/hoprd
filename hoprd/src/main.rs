@@ -90,7 +90,15 @@ fn main() -> ExitCode {
     let hopr_keys: HoprKeys = match maybe_keys.try_into() {
         Ok(hopr_keys) => hopr_keys,
         Err(error) => {
-            tracing::error!(%error, "hoprd exited with an error");
+            // The underlying KeyPairError does not carry the path, so name the source here.
+            match &cfg.identity.private_key {
+                Some(_) => {
+                    tracing::error!(%error, "failed to load identity keys from the provided private key")
+                }
+                None => {
+                    tracing::error!(%error, identity_file = %cfg.identity.file, "failed to load or create identity keys")
+                }
+            }
             return ExitCode::FAILURE;
         }
     };
