@@ -73,6 +73,21 @@ fn detect_local_ipv4() -> anyhow::Result<IpAddr> {
         .ok_or_else(|| anyhow!("no non-loopback IPv4 address found for session listen host"))
 }
 
+fn resolve_session_listen_host(
+    host: HostConfig,
+    detect_local_ipv4: impl FnOnce() -> anyhow::Result<IpAddr>,
+) -> anyhow::Result<std::net::SocketAddr> {
+    match host.address {
+        HostType::IPv4(addr) => IpAddr::from_str(&addr)
+            .map(|ip| std::net::SocketAddr::new(ip, host.port))
+            .map_err(|_| anyhow!("invalid default session listen IP address")),
+        HostType::Domain(ref d) if d.eq_ignore_ascii_case(SESSION_LISTEN_HOST_AUTO) => {
+            detect_local_ipv4().map(|ip| std::net::SocketAddr::new(ip, host.port))
+        }
+        HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
+    }
+}
+
 fn parse_api_token(mut s: &str) -> Result<String, String> {
     if s.len() < MINIMAL_API_TOKEN_LENGTH {
         return Err(format!(
@@ -322,15 +337,8 @@ impl TryFrom<CliArgs> for HoprdConfig {
         }
 
         if let Some(host) = value.default_session_listen_host {
-            cfg.session_ip_forwarding.default_entry_listen_host = match host.address {
-                HostType::IPv4(addr) => IpAddr::from_str(&addr)
-                    .map(|ip| std::net::SocketAddr::new(ip, host.port))
-                    .map_err(|_| anyhow!("invalid default session listen IP address")),
-                HostType::Domain(ref d) if d.eq_ignore_ascii_case(SESSION_LISTEN_HOST_AUTO) => {
-                    detect_local_ipv4().map(|ip| std::net::SocketAddr::new(ip, host.port))
-                }
-                HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
-            }?;
+            cfg.session_ip_forwarding.default_entry_listen_host =
+                resolve_session_listen_host(host, detect_local_ipv4)?;
         }
         if value.enable_explicit_path_sessions {
             cfg.api.enable_explicit_path_sessions = true;
@@ -432,8 +440,11 @@ mod tests {
     #[test]
     fn auto_sentinel_resolves_to_non_loopback_ipv4_with_given_port() -> anyhow::Result<()> {
         let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto:1234"])?;
-        let cfg = HoprdConfig::try_from(args)?;
-        let host: SocketAddr = cfg.session_ip_forwarding.default_entry_listen_host;
+        let host = resolve_session_listen_host(
+            args.default_session_listen_host
+                .expect("session listen host must be parsed"),
+            || Ok("10.20.30.40".parse()?),
+        )?;
 
         assert!(host.is_ipv4(), "expected an IPv4 address, got {host}");
         assert!(
@@ -448,12 +459,13 @@ mod tests {
     #[test]
     fn auto_sentinel_without_port_defaults_to_zero() -> anyhow::Result<()> {
         let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto"])?;
-        let cfg = HoprdConfig::try_from(args)?;
+        let host = resolve_session_listen_host(
+            args.default_session_listen_host
+                .expect("session listen host must be parsed"),
+            || Ok("10.20.30.40".parse()?),
+        )?;
 
-        assert_eq!(
-            cfg.session_ip_forwarding.default_entry_listen_host.port(),
-            0
-        );
+        assert_eq!(host.port(), 0);
 
         Ok(())
     }
