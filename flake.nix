@@ -341,47 +341,9 @@
                 }
               );
 
-          dockerHoprdEntrypoint = pkgs.writeShellScriptBin "docker-entrypoint.sh" ''
-            set -euo pipefail
-
-            ssl_cert_file="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            if [ -f "$ssl_cert_file" ]; then
-              export SSL_CERT_FILE="$ssl_cert_file"
-              export NIX_SSL_CERT_FILE="$ssl_cert_file"
-            fi
-
-            mkdir -p "$TMPDIR"
-
-            listen_host="''${HOPRD_DEFAULT_SESSION_LISTEN_HOST:-}"
-            case "''${listen_host}" in
-              *:*)
-                listen_host_preset_ip="''${listen_host%%:*}"
-                listen_host_preset_port="''${listen_host#*:}"
-                ;;
-              *)
-                listen_host_preset_ip="''${listen_host}"
-                listen_host_preset_port=""
-                ;;
-            esac
-
-            if [ -z "''${listen_host_preset_ip:-}" ]; then
-              listen_host_ip="$(hostname -i | { read -r first _rest; echo "$first"; })"
-
-              if [ -z "''${listen_host_preset_port:-}" ]; then
-                listen_host="''${listen_host_ip}:0"
-              else
-                listen_host="''${listen_host_ip}:''${listen_host_preset_port}"
-              fi
-            fi
-
-            export HOPRD_DEFAULT_SESSION_LISTEN_HOST="''${listen_host}"
-
-            if [ -n "''${1:-}" ] && [ -f "/bin/''${1:-}" ] && [ -x "/bin/''${1:-}" ]; then
-              exec "$@"
-            else
-              exec /bin/hoprd "$@"
-            fi
-          '';
+          dockerHoprdEntrypoint = pkgs.writeShellScriptBin "docker-entrypoint.sh" (
+            builtins.readFile ./deploy/docker/docker-entrypoint.sh
+          );
 
           analyzeMemoryScript = pkgs.writeShellScriptBin "analyze_memory.sh" (
             builtins.readFile ./profiling/analyze_memory.sh
@@ -396,32 +358,65 @@
           hoprdDocker = {
             docker-hoprd-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
-              env = [ "TMPDIR=/app/.tmp" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
             };
             docker-hoprd-dev-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
-              env = [ "TMPDIR=/app/.tmp" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
             };
             docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-profile-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
@@ -435,27 +430,52 @@
                 pkgs.perl
               ]
               ++ profileDeps;
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
                 "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
               ];
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 dockerHoprdEntrypoint
+                pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
-              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
               Cmd = [ "hoprd" ];
-              env = [ "TMPDIR=/app/.tmp" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
             };
             docker-hoprd-localcluster-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd-localcluster";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
@@ -625,7 +645,18 @@
             };
           };
 
-          checks = { inherit (hoprdPackages) hoprd-clippy; };
+          checks = {
+            inherit (hoprdPackages) hoprd-clippy;
+            shellcheck-docker-entrypoint =
+              pkgs.runCommand "shellcheck-docker-entrypoint"
+                {
+                  nativeBuildInputs = [ pkgs.shellcheck ];
+                }
+                ''
+                  shellcheck ${./deploy/docker/docker-entrypoint.sh}
+                  touch $out
+                '';
+          };
 
           apps = {
             check = run-check;

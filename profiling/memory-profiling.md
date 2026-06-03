@@ -53,7 +53,7 @@ nix build .#binary-hoprd-profile-aarch64-linux   # ARM64
      -e "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix:/app/.tmp/jeprof,lg_prof_sample:19,lg_prof_interval:26" \
      -e "HOPRD_PASSWORD=my-password" \
      hoprd:latest \
-     bash -c "mkdir -p /tmp/hoprd /app/.tmp && exec hoprd --data /tmp/hoprd --identity /tmp/hoprd/identity --apiHost 0.0.0.0 --blokli-url https://your-blokli-url"
+     bash -c "mkdir -p /tmp/hoprd /app/.tmp && exec hoprd --data /tmp/hoprd --identity /tmp/hoprd/identity --apiHost 0.0.0.0 --blokliUrl https://your-blokli-url"
    ```
 
    > **Note:** The `_RJEM_` prefix is required because `tikv-jemallocator` renames jemalloc symbols. The standard `MALLOC_CONF` variable will not work.

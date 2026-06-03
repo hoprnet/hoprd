@@ -15,6 +15,14 @@ pub const DEFAULT_API_PORT: u16 = 3001;
 
 pub const MINIMAL_API_TOKEN_LENGTH: usize = 8;
 
+/// Sentinel host for the session listen host that triggers local-IP auto-detection.
+///
+/// Used by container deployments that cannot know their routable IP ahead of time:
+/// `auto` (or `auto:<port>`) is resolved to the node's primary non-loopback IPv4 in
+/// [`HoprdConfig::try_from`]. Native deployments that leave the value unset keep the
+/// `127.0.0.1:0` default.
+pub const SESSION_LISTEN_HOST_AUTO: &str = "auto";
+
 fn parse_host(s: &str) -> Result<HostConfig, String> {
     let host = s.split_once(':').map_or(s, |(h, _)| h);
     if !(validator::ValidateIp::validate_ipv4(&host) || looks_like_domain(host)) {
@@ -24,6 +32,60 @@ fn parse_host(s: &str) -> Result<HostConfig, String> {
     }
 
     HostConfig::from_str(s)
+}
+
+/// Parses the session listen host, additionally accepting the [`SESSION_LISTEN_HOST_AUTO`]
+/// sentinel (`auto` or `auto:<port>`). The sentinel is carried as a `Domain` host and
+/// resolved to a concrete IP when the effective config is built.
+fn parse_session_listen_host(s: &str) -> Result<HostConfig, String> {
+    let (host, port) = match s.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (s, None),
+    };
+
+    if host.eq_ignore_ascii_case(SESSION_LISTEN_HOST_AUTO) {
+        let port = match port {
+            Some(p) => p
+                .parse::<u16>()
+                .map_err(|e| format!("invalid port '{p}' in session listen host: {e}"))?,
+            None => 0,
+        };
+        return Ok(HostConfig {
+            address: HostType::Domain(SESSION_LISTEN_HOST_AUTO.to_string()),
+            port,
+        });
+    }
+
+    parse_host(s)
+}
+
+/// Detects the node's primary non-loopback IPv4 address.
+///
+/// Mirrors the container entrypoint's historical `hostname -i` behavior: it returns the
+/// first non-loopback IPv4 reported by the host's network interfaces. Used to resolve the
+/// [`SESSION_LISTEN_HOST_AUTO`] sentinel into a concrete, advertisable address.
+fn detect_local_ipv4() -> anyhow::Result<IpAddr> {
+    if_addrs::get_if_addrs()
+        .context("failed to enumerate network interfaces")?
+        .into_iter()
+        .map(|iface| iface.ip())
+        .find(|ip| ip.is_ipv4() && !ip.is_loopback())
+        .ok_or_else(|| anyhow!("no non-loopback IPv4 address found for session listen host"))
+}
+
+fn resolve_session_listen_host(
+    host: HostConfig,
+    detect_local_ipv4: impl FnOnce() -> anyhow::Result<IpAddr>,
+) -> anyhow::Result<std::net::SocketAddr> {
+    match host.address {
+        HostType::IPv4(addr) => IpAddr::from_str(&addr)
+            .map(|ip| std::net::SocketAddr::new(ip, host.port))
+            .map_err(|_| anyhow!("invalid default session listen IP address")),
+        HostType::Domain(ref d) if d.eq_ignore_ascii_case(SESSION_LISTEN_HOST_AUTO) => {
+            detect_local_ipv4().map(|ip| std::net::SocketAddr::new(ip, host.port))
+        }
+        HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
+    }
 }
 
 fn parse_api_token(mut s: &str) -> Result<String, String> {
@@ -120,7 +182,7 @@ pub struct CliArgs {
         long = "defaultSessionListenHost",
         env = "HOPRD_DEFAULT_SESSION_LISTEN_HOST",
         help = "Default Session listening host for Session IP forwarding",
-        value_parser = ValueParser::new(parse_host),
+        value_parser = ValueParser::new(parse_session_listen_host),
     )]
     pub default_session_listen_host: Option<HostConfig>,
 
@@ -160,7 +222,8 @@ pub struct CliArgs {
     pub password: Option<String>,
 
     #[arg(
-        long,
+        long = "blokliUrl",
+        alias = "blokli-url",
         help = "URL for Blokli provider to be used for the node to connect to blockchain",
         env = "HOPRD_BLOKLI_URL",
         value_name = "BLOKLI_URL"
@@ -274,12 +337,8 @@ impl TryFrom<CliArgs> for HoprdConfig {
         }
 
         if let Some(host) = value.default_session_listen_host {
-            cfg.session_ip_forwarding.default_entry_listen_host = match host.address {
-                HostType::IPv4(addr) => IpAddr::from_str(&addr)
-                    .map(|ip| std::net::SocketAddr::new(ip, host.port))
-                    .map_err(|_| anyhow!("invalid default session listen IP address")),
-                HostType::Domain(_) => Err(anyhow!("default session listen must be an IP")),
-            }?;
+            cfg.session_ip_forwarding.default_entry_listen_host =
+                resolve_session_listen_host(host, detect_local_ipv4)?;
         }
         if value.enable_explicit_path_sessions {
             cfg.api.enable_explicit_path_sessions = true;
@@ -366,5 +425,74 @@ impl TryFrom<CliArgs> for HoprdConfig {
         }
 
         Ok(cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use clap::Parser as _;
+
+    use super::*;
+    use crate::config::HoprdConfig;
+
+    #[test]
+    fn auto_sentinel_resolves_to_non_loopback_ipv4_with_given_port() -> anyhow::Result<()> {
+        let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto:1234"])?;
+        let host = resolve_session_listen_host(
+            args.default_session_listen_host
+                .expect("session listen host must be parsed"),
+            || Ok("10.20.30.40".parse()?),
+        )?;
+
+        assert!(host.is_ipv4(), "expected an IPv4 address, got {host}");
+        assert!(
+            !host.ip().is_loopback(),
+            "expected a non-loopback address, got {host}"
+        );
+        assert_eq!(host.port(), 1234);
+
+        Ok(())
+    }
+
+    #[test]
+    fn auto_sentinel_without_port_defaults_to_zero() -> anyhow::Result<()> {
+        let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto"])?;
+        let host = resolve_session_listen_host(
+            args.default_session_listen_host
+                .expect("session listen host must be parsed"),
+            || Ok("10.20.30.40".parse()?),
+        )?;
+
+        assert_eq!(host.port(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn concrete_ipv4_listen_host_passes_through() -> anyhow::Result<()> {
+        let args =
+            CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "10.20.30.40:9091"])?;
+        let cfg = HoprdConfig::try_from(args)?;
+
+        assert_eq!(
+            cfg.session_ip_forwarding.default_entry_listen_host,
+            "10.20.30.40:9091".parse::<SocketAddr>()?
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn non_auto_domain_listen_host_is_rejected() -> anyhow::Result<()> {
+        // A domain is accepted by CLI parsing but rejected when the effective config is built,
+        // because the session listen host must resolve to a concrete IP.
+        let args =
+            CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "example.com:9091"])?;
+
+        assert!(HoprdConfig::try_from(args).is_err());
+
+        Ok(())
     }
 }

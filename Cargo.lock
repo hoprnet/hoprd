@@ -4914,6 +4914,7 @@ dependencies = [
  "hoprd-api",
  "humansize",
  "humantime-serde",
+ "if-addrs",
  "lazy_static",
  "mimalloc",
  "opentelemetry",

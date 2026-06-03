@@ -125,7 +125,7 @@ _RJEM_MALLOC_CONF='prof:true,prof_active:true,prof_final:true,prof_prefix:/tmp/j
   --data /tmp/hoprd \
   --identity /tmp/hoprd/identity \
   --apiHost 127.0.0.1 \
-  --blokli-url https://blokli.rotsee.hoprnet.link
+  --blokliUrl https://blokli.rotsee.hoprnet.link
 ```
 
 ### Tuning `_RJEM_MALLOC_CONF`

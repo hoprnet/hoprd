@@ -56,7 +56,31 @@ fn validate_optional_private_key(s: &str) -> Result<(), ValidationError> {
     validate_private_key(s)
 }
 
+// Ensures the node has an identity source to load or create keys from: either a
+// non-empty identity file path or a private key. Without this, an empty file path
+// (the default) only surfaces as an opaque filesystem error at keypair creation.
+fn validate_identity_source(identity: &Identity) -> Result<(), ValidationError> {
+    let has_file = !identity.file.trim().is_empty();
+    let has_key = identity
+        .private_key
+        .as_ref()
+        .is_some_and(|k| !k.trim().is_empty());
+
+    if has_file || has_key {
+        return Ok(());
+    }
+
+    let mut error = ValidationError::new("identity_source_missing");
+    error.message = Some(
+        "no identity source configured: provide an identity file via --identity \
+         (HOPRD_IDENTITY) or a private key via --privateKey (HOPRD_PRIVATE_KEY)"
+            .into(),
+    );
+    Err(error)
+}
+
 #[derive(Default, Serialize, Deserialize, Validate, Clone, PartialEq)]
+#[validate(schema(function = "validate_identity_source", skip_on_field_errors = false))]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
     #[validate(custom(function = "validate_file_path"))]
@@ -353,7 +377,7 @@ mod tests {
     };
 
     use anyhow::Context;
-    use clap::{Args, Command, FromArgMatches};
+    use clap::{Args, Command, FromArgMatches, Parser};
     use hopr_lib::api::types::primitive::prelude::Address;
     use tempfile::NamedTempFile;
 
@@ -458,6 +482,114 @@ mod tests {
         let cfg = HoprdConfig::try_from(args)?;
 
         assert_eq!(cfg.blokli_url, pwnd.to_owned());
+
+        Ok(())
+    }
+
+    /// Writes `cfg` to a temporary YAML file and returns the file (kept alive by
+    /// the caller) together with its path.
+    fn write_cfg_file(cfg: &HoprdConfig) -> anyhow::Result<(NamedTempFile, String)> {
+        let mut config_file = NamedTempFile::new()?;
+        let yaml = serde_saphyr::to_string(cfg)?;
+        config_file.write_all(yaml.as_bytes())?;
+        let path = config_file
+            .path()
+            .to_str()
+            .context("file path should have a string representation")?
+            .to_string();
+        Ok((config_file, path))
+    }
+
+    #[test]
+    fn validation_should_fail_when_required_values_are_missing_from_the_file() -> anyhow::Result<()>
+    {
+        let mut cfg = example_cfg()?;
+        // Blank the password so the file on its own is genuinely invalid.
+        cfg.identity.password = String::new();
+
+        let (_file, cfg_path) = write_cfg_file(&cfg)?;
+
+        let cli_args = crate::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            cfg_path.as_str(),
+        ])?;
+        let effective = HoprdConfig::try_from(cli_args)?;
+
+        assert!(
+            effective.validate().is_err(),
+            "config with an empty password must fail validation on its own"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_should_pass_when_required_values_are_supplied_via_overrides() -> anyhow::Result<()>
+    {
+        let mut cfg = example_cfg()?;
+        // Same file as the negative test: invalid on its own due to the empty password.
+        cfg.identity.password = String::new();
+
+        let (_file, cfg_path) = write_cfg_file(&cfg)?;
+
+        // The password is supplied as a CLI/environment override (the exact code
+        // path that `HOPRD_PASSWORD` feeds into), so the effective config is valid.
+        let cli_args = crate::cli::CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            cfg_path.as_str(),
+            "--password",
+            "a-securely-provided-password",
+        ])?;
+        let effective = HoprdConfig::try_from(cli_args)?;
+
+        assert!(
+            effective.validate().is_ok(),
+            "config must validate once the missing password is supplied via override"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_fails_when_no_identity_source() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.identity.file = String::new();
+        cfg.identity.private_key = None;
+
+        let err = cfg
+            .validate()
+            .expect_err("a config without any identity source must fail validation");
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("identity_source_missing"),
+            "unexpected error: {rendered}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_passes_with_private_key_and_no_file() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.identity.file = String::new();
+        // A valid 128-hex private key satisfies both the source requirement and the key format.
+        cfg.identity.private_key = Some(format!("0x{}", "a".repeat(128)));
+
+        cfg.validate()
+            .context("a private key alone should satisfy the identity source requirement")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn validation_passes_with_identity_file_and_no_key() -> anyhow::Result<()> {
+        // `example_cfg` sets `identity.file` and leaves `private_key` unset.
+        let cfg = example_cfg()?;
+
+        cfg.validate()
+            .context("an identity file alone should satisfy the identity source requirement")?;
 
         Ok(())
     }

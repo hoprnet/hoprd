@@ -35,6 +35,14 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Ensure the configured temporary directory exists before any component relies on it.
+    // Container images set TMPDIR to a path that may not exist yet on first start.
+    if let Ok(tmp_dir) = std::env::var("TMPDIR")
+        && let Err(error) = std::fs::create_dir_all(&tmp_dir)
+    {
+        tracing::warn!(%error, tmp_dir, "failed to create TMPDIR");
+    }
+
     let num_cpu_threads = std::env::var("HOPRD_NUM_CPU_THREADS").ok().and_then(|v| {
         usize::from_str(&v)
             .map_err(anyhow::Error::from)
@@ -82,7 +90,15 @@ fn main() -> ExitCode {
     let hopr_keys: HoprKeys = match maybe_keys.try_into() {
         Ok(hopr_keys) => hopr_keys,
         Err(error) => {
-            tracing::error!(%error, "hoprd exited with an error");
+            // The underlying KeyPairError does not carry the path, so name the source here.
+            match &cfg.identity.private_key {
+                Some(_) => {
+                    tracing::error!(%error, "failed to load identity keys from the provided private key")
+                }
+                None => {
+                    tracing::error!(%error, identity_file = %cfg.identity.file, "failed to load or create identity keys")
+                }
+            }
             return ExitCode::FAILURE;
         }
     };
