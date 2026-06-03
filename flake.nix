@@ -161,6 +161,17 @@
             cargoToml = ./localcluster/Cargo.toml;
           };
 
+          # Production build args with the `tracing` static max level raised to TRACE.
+          # `tracing` resolves `release_max_level_debug` ahead of `release_max_level_trace`,
+          # so the trace level cannot be added on top of the default features; it must be
+          # selected by dropping the defaults and re-listing them with `tracing-level-trace`
+          # in place of the default `tracing-level-debug`.
+          tracingBuildArgs = projectBuildArgs // {
+            cargoExtraArgs =
+              "-p hoprd -p hoprd-api --no-default-features "
+              + "-F runtime-tokio,telemetry,transport-quic,allocator-jemalloc,session-server,tracing-level-trace";
+          };
+
           # Build args for the memory-profiling variant (Linux).
           # Linux gets full jemalloc profiling: stats + dump-on-interval.
           memprofBuildArgs = projectBuildArgs // {
@@ -197,6 +208,7 @@
             binary-hoprd = rust-builder-local.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
+            binary-hoprd-tracing-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage tracingBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
               projectBuildArgs
@@ -399,6 +411,18 @@
               extraContents = [
                 dockerHoprdEntrypoint
                 hoprdPackages.binary-hoprd-x86_64-linux
+                pkgs.cacert
+                pkgs.curl
+              ];
+              Entrypoint = [ "/bin/docker-entrypoint.sh" ];
+              Cmd = [ "hoprd" ];
+              env = [ "TMPDIR=/app/.tmp" ];
+            };
+            docker-hoprd-tracing-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd";
+              extraContents = [
+                dockerHoprdEntrypoint
+                hoprdPackages.binary-hoprd-tracing-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
