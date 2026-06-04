@@ -3,8 +3,8 @@ use std::time::Duration;
 use hopr_lib::{
     api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
     config::{
-        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, ProbeConfig, SafeModule,
-        SessionGlobalConfig, TransportConfig,
+        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
+        SafeModule, SessionGlobalConfig, TransportConfig,
     },
     exports::transport::{HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig},
 };
@@ -199,6 +199,14 @@ pub struct UserHoprNetworkConfig {
     /// and will default to that value whenever it is lower.
     #[serde(default)]
     pub min_incoming_ticket_price: Option<HoprBalance>,
+    /// Packet mixer configuration.
+    ///
+    /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
+    /// Defaults to `MixerConfig::default()` (0 ms min, 20 ms spread, 20 000 capacity).
+    /// Use [`hopr_lib::config::build_mixer_cfg_from_env`] to load from `HOPR_INTERNAL_MIXER_*`
+    /// environment variables instead.
+    #[serde(default)]
+    pub mixer: MixerConfig,
 }
 
 /// Subset of the [`HoprLibConfig`] that is tuned to be user-facing and more user-friendly.
@@ -279,6 +287,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
+                mixer: value.network.mixer,
             },
             ..Default::default()
         }
@@ -590,6 +599,30 @@ mod tests {
 
         cfg.validate()
             .context("an identity file alone should satisfy the identity source requirement")?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_mixer_section_round_trips() -> anyhow::Result<()> {
+        use std::time::Duration;
+
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.mixer = hopr_lib::config::MixerConfig {
+            min_delay: Duration::from_millis(0),
+            delay_range: Duration::from_millis(15),
+            capacity: 5_000,
+            ..Default::default()
+        };
+        let yaml = serde_saphyr::to_string(&cfg)?;
+        let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
+        assert_eq!(cfg, from_yaml);
+        assert!(!yaml.contains("metric_delay_window"));
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+        assert_eq!(
+            lib_cfg.protocol.mixer.delay_range,
+            Duration::from_millis(15)
+        );
 
         Ok(())
     }
