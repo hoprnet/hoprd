@@ -226,6 +226,7 @@ pub struct UserHoprNetworkConfig {
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
     /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
     /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity).
+    #[default(build_mixer_cfg_from_env())]
     #[serde(default = "build_mixer_cfg_from_env")]
     pub mixer: MixerConfig,
 }
@@ -646,5 +647,26 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn mixer_env_var_fallback_is_read() {
+        use std::time::Duration;
+
+        // Baseline: no env vars → compiled-in defaults.
+        let base = build_mixer_cfg_from_env();
+        assert_eq!(base.delay_range, MixerConfig::default().delay_range);
+
+        // With env var set → value is picked up.
+        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "42") };
+        let with_env = build_mixer_cfg_from_env();
+        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
+        assert_eq!(with_env.delay_range, Duration::from_millis(42));
+
+        // SmartDefault path (hopr.network absent from YAML) also reads env vars.
+        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "7") };
+        let default_net = UserHoprNetworkConfig::default();
+        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
+        assert_eq!(default_net.mixer.delay_range, Duration::from_millis(7));
     }
 }
