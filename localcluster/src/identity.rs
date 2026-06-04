@@ -160,13 +160,13 @@ lazy_static::lazy_static! {
 /// blokli sees the same multiaddr from the pre-announce and hoprd startup,
 /// allowing hoprd to receive `AlreadyAnnounced` and skip the on-chain announce.
 ///
-/// IP addresses use `/ip4/<addr>/tcp/<port>`; all other values (including
-/// "localhost") use `/dns4/<host>/tcp/<port>`.
+/// IP addresses use `/ip4/<addr>/udp/<port>/quic-v1`; all other values
+/// (including "localhost") use `/dns4/<host>/udp/<port>/quic-v1`.
 fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> {
     let s = if host.parse::<std::net::IpAddr>().is_ok() {
-        format!("/ip4/{host}/tcp/{port}")
+        format!("/ip4/{host}/udp/{port}/quic-v1")
     } else {
-        format!("/dns4/{host}/tcp/{port}")
+        format!("/dns4/{host}/udp/{port}/quic-v1")
     };
     s.parse().context("invalid pre-announce multiaddr")
 }
