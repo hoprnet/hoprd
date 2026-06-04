@@ -159,6 +159,28 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
         .map(|p| p.as_f64())
 }
 
+fn build_mixer_cfg_from_env() -> MixerConfig {
+    let defaults = MixerConfig::default();
+    MixerConfig {
+        min_delay: std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(defaults.min_delay),
+        delay_range: std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(defaults.delay_range),
+        capacity: std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|&c| c > 0)
+            .unwrap_or(defaults.capacity),
+        ..defaults
+    }
+}
+
 /// Subset of various selected HOPR library network-related configuration options.
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -202,10 +224,9 @@ pub struct UserHoprNetworkConfig {
     /// Packet mixer configuration.
     ///
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
-    /// Defaults to `MixerConfig::default()` (0 ms min, 20 ms spread, 20 000 capacity).
-    /// Use [`hopr_lib::config::build_mixer_cfg_from_env`] to load from `HOPR_INTERNAL_MIXER_*`
-    /// environment variables instead.
-    #[serde(default)]
+    /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
+    /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity).
+    #[serde(default = "build_mixer_cfg_from_env")]
     pub mixer: MixerConfig,
 }
 
