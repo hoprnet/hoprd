@@ -209,7 +209,9 @@ For tooling, the same rejection is emitted on **stdout** as JSON (the human mess
 }
 ```
 
-## The lock is released automatically by the OS when the owner exits — including on a crash or `kill -9` — so a stale lock never wedges a future run.
+The lock is released automatically by the OS when the owner exits — including on a crash or `kill -9` — so a stale lock never wedges a future run.
+
+> Note: the guarantee is keyed on the **control base**, not the data directory. By default they map one-to-one (`<data-dir>/cluster`). If you override `--control-base` while reusing the same `--data-dir`, a second cluster _can_ start against that data directory and clobber it — keep `--control-base` paired one-to-one with `--data-dir`.
 
 ## Configuration reference
 

@@ -25,6 +25,7 @@ use nix::{
     errno::Errno,
     fcntl::{Flock, FlockArg},
 };
+use tracing::warn;
 
 /// An acquired exclusive lock on a cluster data directory.
 ///
@@ -91,10 +92,15 @@ impl ClusterLock {
         };
 
         let pid = std::process::id();
-        handle.set_len(0).ok();
-        handle.seek(SeekFrom::Start(0)).ok();
-        write!(handle, "{pid}").ok();
-        handle.flush().ok();
+        let write_pid = (|| -> std::io::Result<()> {
+            handle.set_len(0)?;
+            handle.seek(SeekFrom::Start(0))?;
+            write!(handle, "{pid}")?;
+            handle.flush()
+        })();
+        if let Err(err) = write_pid {
+            warn!(error = %err, pid, "failed to write pid to lock file; rejection messages may omit it");
+        }
 
         Ok(Self { _handle: handle })
     }
