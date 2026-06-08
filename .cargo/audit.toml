@@ -7,6 +7,7 @@ ignore = [
   "RUSTSEC-2026-0049", # `rustls-webpki` - needs alloy removal
   "RUSTSEC-2026-0118", # `hickory-proto` 0.25.2 pulled by libp2p-dns 0.44.0 -> libp2p 0.56.0; no fix for 0.25.x; cannot remove without a major libp2p bump
   "RUSTSEC-2026-0119", # same root cause as 0118 (different advisory DB version); hickory-proto 0.25.2 still pulled by libp2p 0.56.0; remove together with 0118 once libp2p is bumped past 0.56.0
+  "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained] via validator_derive 0.20 (validator 0.20 is latest; no fix yet)
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"

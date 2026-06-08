@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::identity::{
     DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
@@ -19,11 +19,65 @@ fn parse_size(s: &str) -> Result<usize, String> {
     Ok(n)
 }
 
+/// Top-level entry point.
+///
+/// With no subcommand, the cluster is started (the flattened [`Args`]). The
+/// `status` subcommand instead reads the summary file written by a (possibly still
+/// starting) cluster, so its presence negates the run-only requirements (e.g.
+/// `--chain-image`).
 #[derive(Parser, Debug)]
 #[command(
     name = "hoprd-localcluster",
-    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions."
+    about = "Run a local HOPR cluster using external processes.\n\nLifecycle: start chain container → generate identities & fund Safes → spawn hoprd nodes → open channels → wait for Ctrl-C.\n\nSee docs/localcluster/README.md for full setup instructions.",
+    args_conflicts_with_subcommands = true,
+    subcommand_negates_reqs = true
 )]
+pub struct Cli {
+    #[command(flatten)]
+    pub run: Args,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Query a running cluster's live status and print it as JSON.
+    ///
+    /// Always exits 0 with a parseable answer: the live state of a running/starting
+    /// cluster, or `not_running` when nothing is listening on the control socket.
+    Status(StatusArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct StatusArgs {
+    /// Data directory of the cluster to inspect (used to locate the control socket).
+    #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
+    pub data_dir: PathBuf,
+
+    /// Control-base prefix; the socket is read from `<base>.sock`. Defaults to `<data-dir>/cluster`.
+    #[arg(long)]
+    pub control_base: Option<PathBuf>,
+}
+
+impl StatusArgs {
+    /// Resolve the control socket path from the control base.
+    pub fn socket_path(&self) -> PathBuf {
+        crate::control::socket_path(&resolve_control_base(
+            self.control_base.as_deref(),
+            &self.data_dir,
+        ))
+    }
+}
+
+/// Control-base prefix: explicit override or `<data-dir>/cluster`.
+fn resolve_control_base(explicit: Option<&Path>, data_dir: &Path) -> PathBuf {
+    explicit
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| data_dir.join("cluster"))
+}
+
+#[derive(Parser, Debug)]
 pub struct Args {
     /// Number of nodes to start (1–5)
     #[arg(long, default_value_t = DEFAULT_NUM_NODES, value_parser = parse_size)]
@@ -52,6 +106,11 @@ pub struct Args {
     /// Base directory for generated configs, identities, DBs, and logs
     #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
     pub data_dir: PathBuf,
+
+    /// Path prefix for the lock (`<base>.lock`) and status socket (`<base>.sock`). Override
+    /// onto a local FS when `--data-dir` is a bind mount/NFS. Defaults to `<data-dir>/cluster`.
+    #[arg(long)]
+    pub control_base: Option<PathBuf>,
 
     /// Container image containing both Anvil and Blokli (required unless --chain-url is set)
     #[arg(long, env = "HOPRD_CHAIN_IMAGE", required_unless_present = "chain_url")]
@@ -91,6 +150,13 @@ pub struct Args {
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+}
+
+impl Args {
+    /// Resolve the control base: explicit `--control-base` or `<data-dir>/cluster`.
+    pub fn control_base(&self) -> PathBuf {
+        resolve_control_base(self.control_base.as_deref(), &self.data_dir)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

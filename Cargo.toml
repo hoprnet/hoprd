@@ -61,6 +61,7 @@ mockall = "0.14.0"
 mimalloc = { version = "0.1.50", default-features = false, features = [
   "secure",
 ] }
+nix = { version = "0.30.1", features = ["fs", "signal"] }
 rstest = "0.26.1"
 oas3 = "0.21.0"
 openapiv3 = "2.2.0"
