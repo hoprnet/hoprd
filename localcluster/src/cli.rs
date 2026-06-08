@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -55,18 +55,26 @@ pub struct StatusArgs {
     #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
     pub data_dir: PathBuf,
 
-    /// Explicit control socket path. Defaults to `<data-dir>/cluster.sock`.
+    /// Control-base prefix; the socket is read from `<base>.sock`. Defaults to `<data-dir>/cluster`.
     #[arg(long)]
-    pub socket: Option<PathBuf>,
+    pub control_base: Option<PathBuf>,
 }
 
 impl StatusArgs {
-    /// Resolve the control socket path: explicit `--socket` or `<data-dir>/cluster.sock`.
+    /// Resolve the control socket path from the control base.
     pub fn socket_path(&self) -> PathBuf {
-        self.socket
-            .clone()
-            .unwrap_or_else(|| crate::control::socket_path(&self.data_dir))
+        crate::control::socket_path(&resolve_control_base(
+            self.control_base.as_deref(),
+            &self.data_dir,
+        ))
     }
+}
+
+/// Control-base prefix: explicit override or `<data-dir>/cluster`.
+fn resolve_control_base(explicit: Option<&Path>, data_dir: &Path) -> PathBuf {
+    explicit
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| data_dir.join("cluster"))
 }
 
 #[derive(Parser, Debug)]
@@ -98,6 +106,11 @@ pub struct Args {
     /// Base directory for generated configs, identities, DBs, and logs
     #[arg(long, default_value = DEFAULT_CONFIG_HOME)]
     pub data_dir: PathBuf,
+
+    /// Path prefix for the lock (`<base>.lock`) and status socket (`<base>.sock`). Override
+    /// onto a local FS when `--data-dir` is a bind mount/NFS. Defaults to `<data-dir>/cluster`.
+    #[arg(long)]
+    pub control_base: Option<PathBuf>,
 
     /// Container image containing both Anvil and Blokli (required unless --chain-url is set)
     #[arg(long, env = "HOPRD_CHAIN_IMAGE", required_unless_present = "chain_url")]
@@ -137,6 +150,13 @@ pub struct Args {
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+}
+
+impl Args {
+    /// Resolve the control base: explicit `--control-base` or `<data-dir>/cluster`.
+    pub fn control_base(&self) -> PathBuf {
+        resolve_control_base(self.control_base.as_deref(), &self.data_dir)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

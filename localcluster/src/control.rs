@@ -28,9 +28,11 @@ use crate::summary::ClusterSummary;
 /// Shared, mutable cluster summary served over the control socket.
 pub type SharedSummary = Arc<Mutex<ClusterSummary>>;
 
-/// Default control socket path for a data directory.
-pub fn socket_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("cluster.sock")
+/// Control socket path for a control-base prefix (`<base>.sock`).
+pub fn socket_path(control_base: &Path) -> PathBuf {
+    let mut path = control_base.as_os_str().to_owned();
+    path.push(".sock");
+    PathBuf::from(path)
 }
 
 /// A running control server. Dropping it stops the accept loop and removes the socket.
@@ -74,7 +76,9 @@ impl ControlServer {
 impl Drop for ControlServer {
     fn drop(&mut self) {
         self.handle.abort();
-        let _ = std::fs::remove_file(&self.path);
+        if let Err(err) = std::fs::remove_file(&self.path) {
+            warn!(path = %self.path.display(), error = %err, "failed to remove control socket file");
+        }
     }
 }
 

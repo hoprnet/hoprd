@@ -71,13 +71,18 @@ async fn main() -> Result<()> {
     let log_dir = data_dir.join("logs");
     fs::create_dir_all(&log_dir).context("failed to create log directory")?;
 
-    // Refuse to run a second instance against the same data directory. Held for the
+    let control_base = args.control_base();
+    if let Some(parent) = control_base.parent() {
+        fs::create_dir_all(parent).context("failed to create control directory")?;
+    }
+
+    // Refuse to run a second instance against the same control base. Held for the
     // whole process lifetime; released automatically on exit (including a crash).
-    let _lock = ClusterLock::acquire(&data_dir)?;
+    let _lock = ClusterLock::acquire(&control_base)?;
 
     // Live status, updated through the lifecycle and served on the control socket.
     let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(&args)));
-    let _control = ControlServer::start(control::socket_path(&data_dir), summary.clone())?;
+    let _control = ControlServer::start(control::socket_path(&control_base), summary.clone())?;
 
     let explicit_chain_url = args.chain_url.clone();
 
@@ -221,8 +226,8 @@ async fn main() -> Result<()> {
         }
 
         info!(
-            "localcluster running; query status via `hoprd-localcluster status --data-dir {}`",
-            args.data_dir.display()
+            "localcluster running; query status via `hoprd-localcluster status --control-base {}`",
+            control_base.display()
         );
         info!("press Ctrl+C to stop");
         tokio::select! {

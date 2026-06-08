@@ -1,18 +1,18 @@
-//! Single-instance guard for a cluster data directory.
+//! Single-instance guard for a cluster control base.
 //!
-//! Each running cluster holds an exclusive advisory `flock(2)` on
-//! `<data-dir>/cluster.lock` for its whole lifetime. A second instance pointed at
-//! the same data directory fails fast instead of clobbering shared ports,
-//! identities, and the summary file. The lock is released automatically by the OS
-//! when the holder exits — including on `SIGKILL` or a crash — so a stale lock can
-//! never wedge a future run.
+//! Each running cluster holds an exclusive advisory `flock(2)` on `<control-base>.lock`
+//! (default `<data-dir>/cluster.lock`) for its whole lifetime. A second instance pointed
+//! at the same control base fails fast instead of clobbering shared ports, identities, and
+//! the summary file. The lock is released automatically by the OS when the holder exits —
+//! including on `SIGKILL` or a crash — so a stale lock can never wedge a future run.
 //!
 //! The holder's pid is written into the file purely so the rejection message can
 //! tell the operator which process to kill.
 //!
-//! Caveat: advisory `flock` is only reliable on local filesystems. If `--data-dir`
-//! points at a Docker bind mount (gRPC-FUSE/virtiofs on macOS) or NFS, mutual
-//! exclusion across that boundary is not guaranteed.
+//! Caveat: advisory `flock` is only reliable on local filesystems. If the control base
+//! points at a Docker bind mount (gRPC-FUSE/virtiofs on macOS) or NFS, mutual exclusion
+//! across that boundary is not guaranteed — point `--control-base` at a local path in that
+//! case.
 
 use std::{
     fs::OpenOptions,
@@ -37,14 +37,16 @@ pub struct ClusterLock {
 }
 
 impl ClusterLock {
-    /// Default lock path for a given data directory.
-    pub fn path_for(data_dir: &Path) -> PathBuf {
-        data_dir.join("cluster.lock")
+    /// Lock file path for a control-base prefix (`<base>.lock`).
+    pub fn path_for(control_base: &Path) -> PathBuf {
+        let mut path = control_base.as_os_str().to_owned();
+        path.push(".lock");
+        PathBuf::from(path)
     }
 
-    /// Acquire the exclusive lock for `data_dir`, or fail if another live instance holds it.
-    pub fn acquire(data_dir: &Path) -> Result<Self> {
-        let path = Self::path_for(data_dir);
+    /// Acquire the exclusive lock for `control_base`, or fail if another live instance holds it.
+    pub fn acquire(control_base: &Path) -> Result<Self> {
+        let path = Self::path_for(control_base);
         let file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -58,18 +60,27 @@ impl ClusterLock {
             Err((mut file, Errno::EWOULDBLOCK | Errno::EACCES)) => {
                 let mut existing = String::new();
                 let _ = file.read_to_string(&mut existing);
-                let holder = existing.trim();
-                let who = if holder.is_empty() {
-                    "another localcluster instance".to_string()
-                } else {
-                    format!("another localcluster instance (pid {holder})")
+                let holder_pid = existing.trim().parse::<u32>().ok();
+
+                // Machine-readable rejection on stdout for tooling; human message on stderr.
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "error": "lock_held",
+                        "control_base": control_base.display().to_string(),
+                        "holder_pid": holder_pid,
+                    })
+                );
+
+                let who = match holder_pid {
+                    Some(pid) => format!("another localcluster instance (pid {pid})"),
+                    None => "another localcluster instance".to_string(),
                 };
                 bail!(
-                    "{who} is already using data directory {}; stop it{} or pass a different --data-dir",
-                    data_dir.display(),
-                    holder
-                        .parse::<i32>()
-                        .map(|p| format!(" (e.g. `kill {p}`)"))
+                    "{who} is already using control base {}; stop it{} or pass a different --control-base",
+                    control_base.display(),
+                    holder_pid
+                        .map(|pid| format!(" (e.g. `kill {pid}`)"))
                         .unwrap_or_default(),
                 );
             }
@@ -102,7 +113,7 @@ mod tests {
             Ok(_) => panic!("second acquire should fail"),
             Err(err) => err.to_string(),
         };
-        assert!(msg.contains("already using data directory"));
+        assert!(msg.contains("already using control base"));
         assert!(msg.contains(&std::process::id().to_string()));
     }
 
