@@ -76,9 +76,10 @@ jobs:
           fi
   checks:
     name: Check
-    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@bbd22e57cf954c15f0a6051d59329857809141dd # workflow-checks-v1
+    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@18b6c2fec0b8f0240a83d2099cb40301c06585a0 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      format: true
       runner_small: depot-ubuntu-24.04
       runner_large: depot-ubuntu-24.04-4
     secrets:
