@@ -169,6 +169,7 @@ Shape:
       "api_url": "http://127.0.0.1:3000",
       "api_token": null,
       "p2p": "127.0.0.1:9000",
+      "latency": null,
       "node_admin_url": "http://localhost:4677/node/info?apiEndpoint=http://127.0.0.1:3000",
       "pid": 12345
     }
@@ -278,6 +279,10 @@ Caveats:
 - Delay is applied per hop; a multi-hop HOPR path accumulates delay at each relayed node.
 - Latency mode flips `announce=false` and announces the relay port — only meaningful for
   the local Anvil chain. Disabled by default, so normal runs are unaffected.
+- When latency is enabled, the `status` JSON `p2p` field reports the **relay** port (the
+  address peers dial, `latency_port_base + id`), not the node's real listen port, and each
+  node's `latency` field describes the delay applied to its inbound traffic (a single value,
+  or a per-source breakdown when links differ). It is `null` when latency is disabled.
 
 ### Channel management modes
 

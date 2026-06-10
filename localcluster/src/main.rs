@@ -107,7 +107,8 @@ async fn main() -> Result<()> {
     let _lock = ClusterLock::acquire(&control_base)?;
 
     // Live status, updated through the lifecycle and served on the control socket.
-    let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(&args)));
+    let summary: SharedSummary =
+        Arc::new(Mutex::new(ClusterSummary::initial(&args, latency.as_ref())));
     let _control = ControlServer::start(control::socket_path(&control_base), summary.clone())?;
 
     let explicit_chain_url = args.chain_url.clone();

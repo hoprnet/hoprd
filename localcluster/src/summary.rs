@@ -14,7 +14,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{cli, client_helper::NodeProcess, identity::GeneratedIdentity};
+use crate::{cli, client_helper::NodeProcess, identity::GeneratedIdentity, latency::LatencyConfig};
 
 /// Overall lifecycle state of the cluster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,8 +81,14 @@ pub struct NodeSummary {
     pub api_url: String,
     /// API bearer token, or `null` if authentication is disabled.
     pub api_token: Option<String>,
-    /// P2P `host:port` the node listens on.
+    /// P2P `host:port` peers dial to reach the node — the latency relay when latency is
+    /// enabled, otherwise the node's own listen address.
     pub p2p: String,
+    /// Artificial latency applied to traffic arriving at this node, or `null` when latency
+    /// is disabled. A single value (e.g. `200ms`, `70-130ms uniform`) when uniform across
+    /// sources, otherwise a per-source breakdown.
+    #[serde(default)]
+    pub latency: Option<String>,
     /// Convenience URL opening this node in the hopr-admin UI.
     pub node_admin_url: String,
     /// OS process id of the spawned hoprd, or `null` until spawned.
@@ -108,7 +114,16 @@ impl ClusterSummary {
     /// Endpoints are deterministic from the args (`base + id`), so they are populated
     /// up front; per-node `address`/`pid` and the chain URL are filled in as they become
     /// known.
-    pub fn initial(args: &cli::Args) -> Self {
+    ///
+    /// When `latency` is `Some`, relays are active: the `p2p` field reports the relay port
+    /// peers actually dial (not the real listen port), and each node's `latency` field
+    /// describes the delay applied to its inbound traffic.
+    pub fn initial(args: &cli::Args, latency: Option<&LatencyConfig>) -> Self {
+        let p2p_port_base = if latency.is_some() {
+            args.latency_port_base
+        } else {
+            args.p2p_port_base
+        } as usize;
         let nodes = (0..args.size)
             .map(|id| {
                 let api_url = format!(
@@ -127,11 +142,8 @@ impl ClusterSummary {
                     address: None,
                     api_url,
                     api_token: args.api_token.clone(),
-                    p2p: format!(
-                        "{}:{}",
-                        advertised_host(&args.p2p_host),
-                        args.p2p_port_base as usize + id
-                    ),
+                    p2p: format!("{}:{}", advertised_host(&args.p2p_host), p2p_port_base + id),
+                    latency: latency.and_then(|cfg| cfg.describe_inbound(id, args.size)),
                     node_admin_url,
                     pid: None,
                 }
@@ -233,6 +245,10 @@ impl ClusterSummary {
                     node.address.clone().unwrap_or_else(|| "N/A".to_string()),
                 ),
                 ("P2P", node.p2p.clone()),
+                (
+                    "Latency",
+                    node.latency.clone().unwrap_or_else(|| "none".to_string()),
+                ),
                 ("API host", node.api_url.clone()),
                 (
                     "API token",
@@ -324,6 +340,7 @@ mod tests {
                 api_url: "http://127.0.0.1:3000".to_string(),
                 api_token: Some("tok".to_string()),
                 p2p: "localhost:9000".to_string(),
+                latency: Some("200ms".to_string()),
                 node_admin_url:
                     "http://localhost:4677/node/info?apiEndpoint=http://127.0.0.1:3000&apiToken=tok"
                         .to_string(),

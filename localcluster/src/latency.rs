@@ -21,6 +21,19 @@ pub enum DelayDist {
 }
 
 impl DelayDist {
+    /// Human-readable one-line description, e.g. `200ms`, `70-130ms uniform`,
+    /// `100ms±30ms normal`.
+    pub fn describe(&self) -> String {
+        let ms = |d: Duration| (d.as_secs_f64() * 1000.0).round() as u64;
+        match *self {
+            DelayDist::Fixed(d) => format!("{}ms", ms(d)),
+            DelayDist::Uniform { min, max } => format!("{}-{}ms uniform", ms(min), ms(max)),
+            DelayDist::Normal { mean, stddev } => {
+                format!("{}ms±{}ms normal", ms(mean), ms(stddev))
+            }
+        }
+    }
+
     /// Draw a delay. Never returns a negative duration.
     pub fn sample(&self) -> Duration {
         match *self {
@@ -81,6 +94,31 @@ impl LatencyConfig {
     /// True when no delay would ever be applied.
     pub fn is_empty(&self) -> bool {
         self.default.is_none() && self.per_node.is_empty() && self.per_link.is_empty()
+    }
+
+    /// Describe the delay applied to traffic arriving at `node` from the other nodes.
+    ///
+    /// Returns a single description when every inbound link is shaped identically, or a
+    /// per-source breakdown when they differ. `None` if no delay applies to this node.
+    pub fn describe_inbound(&self, node: usize, num_nodes: usize) -> Option<String> {
+        let mut per_src: std::collections::BTreeMap<usize, String> = Default::default();
+        for src in (0..num_nodes).filter(|&s| s != node) {
+            if let Some(dist) = self.resolve(src, node) {
+                per_src.insert(src, dist.describe());
+            }
+        }
+        let first = per_src.values().next()?.clone();
+        if per_src.values().all(|v| *v == first) {
+            Some(first)
+        } else {
+            Some(
+                per_src
+                    .iter()
+                    .map(|(src, desc)| format!("from {src}: {desc}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+        }
     }
 
     /// Load a per-node / per-link config from YAML (see `docs/localcluster/README.md`).
