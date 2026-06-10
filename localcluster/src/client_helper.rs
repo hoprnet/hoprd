@@ -5,7 +5,9 @@ use std::{
 
 use anyhow::{Context, Result};
 use hoprd_api_client;
-use hoprd_api_client::types::OpenChannelBodyRequest;
+use hoprd_api_client::types::{
+    OpenChannelBodyRequest, RoutingOptions, SessionClientRequest, SessionTargetSpec,
+};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
 
@@ -98,6 +100,37 @@ impl HoprdApiClient {
             .await
             .map_err(|e| anyhow::anyhow!("open_channel to {destination}: {e}"))?;
         Ok(())
+    }
+
+    /// Open a TCP session to `destination` (exit node on-chain address) using `hops`
+    /// intermediate relays on both the forward and return paths. The exit node forwards
+    /// the plaintext stream to `target` (`ip:port`). Returns the `(ip, port)` of the TCP
+    /// listener bound on this (entry) node.
+    pub async fn open_tcp_session(
+        &self,
+        destination: &str,
+        target: &str,
+        hops: u64,
+    ) -> Result<(String, u16)> {
+        let body = SessionClientRequest {
+            destination: destination.to_string(),
+            forward_path: RoutingOptions::Hops(hops),
+            return_path: RoutingOptions::Hops(hops),
+            target: SessionTargetSpec::Plain(target.to_string()),
+            capabilities: None,
+            listen_host: None,
+            max_client_sessions: None,
+            max_surb_upstream: None,
+            response_buffer: None,
+            session_pool: None,
+        };
+        let resp = self
+            .inner
+            .create_client("tcp", &body)
+            .await
+            .map_err(|e| anyhow::anyhow!("create tcp session to {destination}: {e}"))?
+            .into_inner();
+        Ok((resp.ip, resp.port as u16))
     }
 }
 
