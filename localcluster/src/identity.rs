@@ -19,7 +19,7 @@ use hopr_lib::{
     },
     config::SafeModule,
 };
-use hopr_reference::config::SessionIpForwardingConfig;
+use hopr_node::config::SessionIpForwardingConfig;
 use hopr_strategy::{
     auto_redeeming::AutoRedeemingStrategyConfig,
     channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},

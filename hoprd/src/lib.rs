@@ -31,7 +31,7 @@ use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliCli
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
 use hopr_network_graph::SharedChannelGraph;
-use hopr_reference::exit::HoprServerIpForwardingReactor;
+use hopr_node::exit::HoprServerIpForwardingReactor;
 use hopr_transport_p2p::HoprNetwork;
 
 type HoprBlokliConnector = HoprBlockchainSafeConnector<BlokliClient>;
@@ -39,7 +39,7 @@ type HoprNode = hopr_lib::Hopr<
     Arc<HoprBlokliConnector>,
     SharedChannelGraph,
     HoprNetwork,
-    hopr_reference::SharedTicketManager,
+    hopr_node::SharedTicketManager,
 >;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
@@ -133,7 +133,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         ..Default::default()
     };
 
-    let node = hopr_reference::build_full_with_chain(
+    let node = hopr_node::build_full_with_chain(
         &hopr_keys.chain_key,
         &hopr_keys.packet_key,
         hopr_lib_cfg,
