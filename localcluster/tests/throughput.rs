@@ -1,20 +1,51 @@
-//! Manual throughput test: push 500 MiB through a TCP connection layered on a HOPR
-//! session, between two endpoints of a 3-node local cluster, with ~100 ms of artificial
-//! latency on the first hop (each direction) — simulating a Warsaw–California link.
+//! Manual throughput test: push data through a HOPR **session** (TCP or UDP) between two
+//! endpoints of a local cluster, optionally with artificial first-hop latency, and report
+//! throughput. `#[ignore]` — run it explicitly; it spins up real `hoprd` processes against
+//! a real chain.
 //!
-//! This test is `#[ignore]` (run it explicitly); it spins up real `hoprd` processes and
-//! talks to a real chain. It either reuses a cluster already running at the control base
-//! or spawns the `hoprd-localcluster` binary itself and tears it down on exit.
+//! The cluster is reused if one is already running at the control base, otherwise the
+//! `hoprd-localcluster` binary is spawned and torn down on exit. Node API endpoints and
+//! on-chain addresses are read from the cluster **status** (nothing hardcoded). Entry =
+//! first node, exit = last node; intermediate nodes relay.
 //!
-//! Topology (1-hop session): node 0 (entry) → node 1 (relay) → node 2 (exit). Only the
-//! two endpoints exchange application data; node 1 only relays. Latency is applied to the
-//! first physical hop, links 0↔1.
+//! ## Required environment
+//!   HOPRD_BIN          path to the hoprd binary (default `hoprd` on PATH).
+//!                      A relative path is resolved against the workspace root.
+//!   HOPRD_CHAIN_URL    Blokli URL of a running chain (default http://localhost:8080).
 //!
-//! Run with:
-//!   HOPRD_BIN=./target/release/hoprd \
-//!   HOPRD_CHAIN_URL=http://localhost:8080 \
-//!   RUST_LOG=info \
-//!   cargo nextest run -p hoprd-localcluster --test throughput --run-ignored all -j 1 --no-capture
+//! ## Scenario options (all optional, with defaults)
+//!   HOPRD_LC_PROTO        tcp | udp            session protocol            (default tcp)
+//!   HOPRD_LC_DOWNLOAD     set to any value     download shape (tiny request up, bulk
+//!                                              stream down) instead of symmetric echo
+//!   HOPRD_LC_HOPS         <n>                  intermediate relay hops      (default 1;
+//!                                              0 = direct entry↔exit, no relay)
+//!   HOPRD_LC_PAYLOAD_MIB  <n>                  payload size in MiB          (default 500)
+//!   HOPRD_LC_RATE_MIBPS   <f>                  cap offered load, MiB/s; 0 = unthrottled
+//!                                              (default 0). Applies to the TCP echo writer
+//!                                              and the UDP send side.
+//!   HOPRD_LC_NO_LATENCY   set to any value     disable the latency relays (default: on,
+//!                                              ~100 ms each way on the first hop, links 0↔1)
+//!   HOPRD_LC_DATA_DIR     <path>               cluster data dir   (default /tmp/hopr-localcluster-throughput)
+//!   RUST_LOG              tracing filter       (default info)
+//!
+//! Notes:
+//! - TCP asserts the full payload is transferred; UDP is lossy and only reports delivered
+//!   bytes / throughput (no exact-count assert).
+//! - Echo = symmetric (payload up AND back); download = payload one way (down).
+//!
+//! ## Examples
+//!   # default: TCP echo, 500 MiB, 1 hop, 100 ms latency
+//!   HOPRD_BIN=./target/release/hoprd HOPRD_CHAIN_URL=http://localhost:8080 RUST_LOG=info \
+//!     cargo nextest run -p hoprd-localcluster --test throughput --run-ignored all -j1 --no-capture
+//!
+//!   # UDP download, 0-hop, no latency, 50 MiB
+//!   HOPRD_LC_PROTO=udp HOPRD_LC_DOWNLOAD=1 HOPRD_LC_HOPS=0 HOPRD_LC_NO_LATENCY=1 \
+//!   HOPRD_LC_PAYLOAD_MIB=50 HOPRD_BIN=./target/release/hoprd HOPRD_CHAIN_URL=http://localhost:8080 \
+//!     cargo nextest run -p hoprd-localcluster --test throughput --run-ignored all -j1 --no-capture
+//!
+//!   # TCP echo, 1-hop, 100 ms latency, paced to 2 MiB/s
+//!   HOPRD_LC_RATE_MIBPS=2 HOPRD_BIN=./target/release/hoprd HOPRD_CHAIN_URL=http://localhost:8080 \
+//!     cargo nextest run -p hoprd-localcluster --test throughput --run-ignored all -j1 --no-capture
 
 use std::{
     path::PathBuf,
@@ -39,7 +70,7 @@ use tokio::{
 
 const NUM_NODES: usize = 3;
 const CHUNK_BYTES: usize = 1024 * 1024;
-const DEFAULT_RATE_MIBPS: f64 = 2.0;
+const DEFAULT_RATE_MIBPS: f64 = 0.0;
 
 /// Payload size in MiB. Override with `HOPRD_LC_PAYLOAD_MIB` (default 500) to bisect the
 /// throughput/SURB ceiling.
@@ -64,6 +95,17 @@ fn hops() -> u64 {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(1)
+}
+
+/// Session protocol: `"tcp"` (default) or `"udp"`. Override with `HOPRD_LC_PROTO`.
+fn proto() -> String {
+    std::env::var("HOPRD_LC_PROTO").unwrap_or_else(|_| "tcp".to_string())
+}
+
+/// `HOPRD_LC_DOWNLOAD=1` switches from the symmetric echo to a VPN-like download (tiny
+/// request up, `payload` streamed down) — the asymmetric shape the SURB balancer targets.
+fn download_mode() -> bool {
+    std::env::var("HOPRD_LC_DOWNLOAD").is_ok()
 }
 
 /// Target offered-load rate in bytes/sec, or `None` to push unthrottled. Defaults to
@@ -139,39 +181,75 @@ async fn run() -> Result<()> {
         format!("exit node ({exit_id}) has no on-chain address in cluster status")
     })?;
 
-    // Echo server the exit node forwards the session's plaintext to: it mirrors every byte
-    // straight back, so the same volume travels up (entry→exit→echo) and back down
-    // (echo→exit→entry). Bind before opening the session so the target is reachable.
     let payload = payload_bytes();
     let progress = progress_log_bytes();
+    let download = download_mode();
+    let hops = hops();
 
-    let echo = TcpListener::bind("127.0.0.1:0").await?;
-    let echo_addr = echo.local_addr()?;
+    // UDP session path is fully separate (datagrams, no stream/window/retransmit) — used to
+    // isolate whether a stall is in the TCP session's reliability layer. Honours the same
+    // echo/download and rate options.
+    if proto() == "udp" {
+        return run_udp(
+            &entry,
+            entry_id,
+            exit_id,
+            &exit_address,
+            hops,
+            payload,
+            progress,
+            download,
+            rate_bytes_per_sec(),
+        )
+        .await;
+    }
+
+    // Target the exit node forwards the session's plaintext to. Two shapes:
+    //   echo     – mirror every byte back (symmetric up == down).
+    //   download – ignore the (tiny) request, stream `payload` bytes back (VPN-like:
+    //              small up, bulk down — the case the SURB balancer is built for).
+    // Bind before opening the session so the target is reachable the moment data flows.
+    let target = TcpListener::bind("127.0.0.1:0").await?;
+    let target_addr = target.local_addr()?;
     tokio::spawn(async move {
-        let (mut stream, _) = echo.accept().await?;
-        let (mut rd, mut wr) = stream.split();
-        let mut buf = vec![0u8; CHUNK_BYTES];
-        let mut echoed = 0usize;
-        while echoed < payload {
-            let n = rd.read(&mut buf).await?;
-            if n == 0 {
-                break;
+        let (mut stream, _) = target.accept().await?;
+        if download {
+            let (_rd, mut wr) = stream.into_split();
+            let chunk = vec![0xCDu8; CHUNK_BYTES];
+            let mut written = 0usize;
+            while written < payload {
+                let n = CHUNK_BYTES.min(payload - written);
+                wr.write_all(&chunk[..n]).await?;
+                written += n;
             }
-            wr.write_all(&buf[..n]).await?;
-            echoed += n;
+            wr.flush().await?;
+            // Hold the read half so the connection isn't closed before the bulk send drains.
+            drop(_rd);
+            Ok::<usize, std::io::Error>(written)
+        } else {
+            let (mut rd, mut wr) = stream.split();
+            let mut buf = vec![0u8; CHUNK_BYTES];
+            let mut echoed = 0usize;
+            while echoed < payload {
+                let n = rd.read(&mut buf).await?;
+                if n == 0 {
+                    break;
+                }
+                wr.write_all(&buf[..n]).await?;
+                echoed += n;
+            }
+            wr.flush().await?;
+            Ok::<usize, std::io::Error>(echoed)
         }
-        wr.flush().await?;
-        Ok::<usize, std::io::Error>(echoed)
     });
 
-    let hops = hops();
     tracing::info!(
-        "opening {hops}-hop TCP session: entry node {entry_id} -> exit node {exit_id} ({}) (echo target {})",
+        "opening {hops}-hop TCP session: entry node {entry_id} -> exit node {exit_id} ({}) (target {})",
         exit_address,
-        echo_addr
+        target_addr
     );
     let (listen_ip, listen_port) = entry
-        .open_tcp_session(&exit_address, &echo_addr.to_string(), hops)
+        .open_session("tcp", &exit_address, &target_addr.to_string(), hops)
         .await?;
     tracing::info!("session listener bound at {listen_ip}:{listen_port}");
 
@@ -179,6 +257,60 @@ async fn run() -> Result<()> {
         .await
         .with_context(|| format!("connecting to session listener {listen_ip}:{listen_port}"))?;
     let (mut rd, mut wr) = client.into_split();
+
+    let start = Instant::now();
+
+    if download {
+        // VPN download shape: send a tiny request to open the exit→target connection, then
+        // pull the bulk stream. The write half stays open for the whole download.
+        tracing::info!(
+            "downloading {} MiB (tiny request up, bulk stream down)",
+            payload / (1024 * 1024)
+        );
+        wr.write_all(b"GET\n").await?;
+        wr.flush().await?;
+
+        let mut buf = vec![0u8; CHUNK_BYTES];
+        let mut received = 0usize;
+        let mut next_log = progress;
+        let read_fut = async {
+            while received < payload {
+                let n = rd.read(&mut buf).await?;
+                if n == 0 {
+                    break;
+                }
+                received += n;
+                if received >= next_log {
+                    let mib = received as f64 / (1024.0 * 1024.0);
+                    tracing::info!(
+                        "  downloaded {:.0} MiB ({:.2} MiB/s)",
+                        mib,
+                        mib / start.elapsed().as_secs_f64()
+                    );
+                    next_log += progress;
+                }
+            }
+            Ok::<usize, std::io::Error>(received)
+        };
+        let received = tokio::time::timeout(TRANSFER_TIMEOUT, read_fut)
+            .await
+            .context("timed out waiting for the download")??;
+        let elapsed = start.elapsed();
+        drop(wr);
+
+        anyhow::ensure!(
+            received == payload,
+            "downloaded {received} bytes, expected {payload}"
+        );
+        let mib = payload as f64 / (1024.0 * 1024.0);
+        tracing::info!(
+            "downloaded {:.0} MiB in {:.1}s = {:.2} MiB/s",
+            mib,
+            elapsed.as_secs_f64(),
+            mib / elapsed.as_secs_f64()
+        );
+        return Ok(());
+    }
 
     let rate = rate_bytes_per_sec();
     tracing::info!(
@@ -189,7 +321,6 @@ async fn run() -> Result<()> {
             None => ", writer unthrottled".to_string(),
         }
     );
-    let start = Instant::now();
 
     // Writer and reader must run concurrently: serializing them deadlocks once the echoed
     // bytes fill the socket buffers and block the writer's `write_all`.
@@ -201,9 +332,6 @@ async fn run() -> Result<()> {
             let n = CHUNK_BYTES.min(payload - sent);
             wr.write_all(&chunk[..n]).await?;
             sent += n;
-            // Pace the offered load: if we're ahead of the target schedule, wait. Slowing
-            // the writer keeps the entry's packet pipeline and SURB budget from being
-            // overrun, trading throughput for sustainability.
             if let Some(bps) = rate {
                 let target = Duration::from_secs_f64(sent as f64 / bps);
                 let elapsed = start.elapsed();
@@ -279,6 +407,143 @@ async fn run() -> Result<()> {
         FIRST_HOP_LATENCY,
     );
 
+    Ok(())
+}
+
+/// UDP-session data plane for both scenarios (`download` = bulk stream down after a tiny
+/// request; otherwise `echo` = datagrams mirrored back). UDP is unreliable (no
+/// stream/window/retransmit), so this reports delivered bytes / throughput rather than
+/// asserting an exact count — it isolates whether a stall is in the TCP reliability layer.
+#[allow(clippy::too_many_arguments)]
+async fn run_udp(
+    entry: &HoprdApiClient,
+    entry_id: usize,
+    exit_id: usize,
+    exit_address: &str,
+    hops: u64,
+    payload: usize,
+    progress: usize,
+    download: bool,
+    rate: Option<f64>,
+) -> Result<()> {
+    use std::sync::Arc;
+    const DGRAM: usize = 1000; // stay under the session MTU
+
+    let target = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
+    let target_addr = target.local_addr()?;
+    {
+        let target = target.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 2048];
+            if download {
+                // Learn the exit's source address from the request, then stream back.
+                let (_, peer) = target.recv_from(&mut buf).await?;
+                send_datagrams(&target, Some(peer), payload, DGRAM, rate).await?;
+            } else {
+                // Echo: bounce every datagram back to its sender.
+                loop {
+                    let (n, peer) = target.recv_from(&mut buf).await?;
+                    target.send_to(&buf[..n], peer).await?;
+                }
+            }
+            Ok::<(), std::io::Error>(())
+        });
+    }
+
+    tracing::info!(
+        "opening {hops}-hop UDP session ({}): entry node {entry_id} -> exit node {exit_id} ({exit_address}) (target {target_addr})",
+        if download { "download" } else { "echo" }
+    );
+    let (listen_ip, listen_port) = entry
+        .open_session("udp", exit_address, &target_addr.to_string(), hops)
+        .await?;
+    tracing::info!("session listener bound at {listen_ip}:{listen_port}");
+
+    let sock = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
+    sock.connect((listen_ip.as_str(), listen_port)).await?;
+
+    let label = if download { "downloading" } else { "echoing" };
+    tracing::info!("UDP {label} {} MiB", payload / (1024 * 1024));
+
+    if download {
+        sock.send(b"GET").await?;
+    } else {
+        // Push the payload up as datagrams; the target mirrors them back.
+        let s = sock.clone();
+        tokio::spawn(async move { send_datagrams(&s, None, payload, DGRAM, rate).await });
+    }
+
+    let start = Instant::now();
+    let mut buf = vec![0u8; 2048];
+    let mut received = 0usize;
+    let mut next_log = progress;
+    loop {
+        match tokio::time::timeout(Duration::from_secs(15), sock.recv(&mut buf)).await {
+            Ok(Ok(n)) => {
+                received += n;
+                if received >= next_log {
+                    let mib = received as f64 / (1024.0 * 1024.0);
+                    tracing::info!(
+                        "  received {:.0} MiB ({:.2} MiB/s)",
+                        mib,
+                        mib / start.elapsed().as_secs_f64()
+                    );
+                    next_log += progress;
+                }
+                if received >= payload {
+                    break;
+                }
+            }
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => {
+                tracing::warn!("UDP recv idle 15s — stopping");
+                break;
+            }
+        }
+    }
+    let elapsed = start.elapsed();
+    let mib = received as f64 / (1024.0 * 1024.0);
+    tracing::info!(
+        "UDP {label}: received {:.1} of {} MiB in {:.1}s = {:.2} MiB/s ({} datagrams; UDP loss expected)",
+        mib,
+        payload / (1024 * 1024),
+        elapsed.as_secs_f64(),
+        if elapsed.as_secs_f64() > 0.0 {
+            mib / elapsed.as_secs_f64()
+        } else {
+            0.0
+        },
+        received / DGRAM,
+    );
+    Ok(())
+}
+
+/// Send `payload` bytes as `dgram`-sized datagrams on a UDP socket — to `peer` via
+/// `send_to` when given, else on the connected socket — optionally paced to `rate` B/s.
+async fn send_datagrams(
+    sock: &tokio::net::UdpSocket,
+    peer: Option<std::net::SocketAddr>,
+    payload: usize,
+    dgram: usize,
+    rate: Option<f64>,
+) -> std::io::Result<()> {
+    let chunk = vec![0xCDu8; dgram];
+    let start = Instant::now();
+    let mut sent = 0usize;
+    while sent < payload {
+        match peer {
+            Some(p) => sock.send_to(&chunk, p).await?,
+            None => sock.send(&chunk).await?,
+        };
+        sent += dgram;
+        if let Some(bps) = rate {
+            let target = Duration::from_secs_f64(sent as f64 / bps);
+            let elapsed = start.elapsed();
+            if target > elapsed {
+                tokio::time::sleep(target - elapsed).await;
+            }
+        }
+    }
     Ok(())
 }
 

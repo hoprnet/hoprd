@@ -102,17 +102,15 @@ impl HoprdApiClient {
         Ok(())
     }
 
-    /// Open a TCP session to `destination` (exit node on-chain address) using `hops`
-    /// intermediate relays on both the forward and return paths. The exit node forwards
-    /// the plaintext stream to `target` (`ip:port`). Returns the `(ip, port)` of the TCP
-    /// listener bound on this (entry) node.
+    /// Open a session (`protocol` = `"tcp"` or `"udp"`) to `destination` (exit node
+    /// on-chain address) using `hops` intermediate relays on both forward and return
+    /// paths. The exit forwards the plaintext to `target` (`ip:port`). Returns the
+    /// `(ip, port)` of the listener bound on this (entry) node.
     ///
-    /// `response_buffer` and `max_surb_upstream` govern the *return* direction: the exit
-    /// can only send data back using SURBs supplied by this entry node. The defaults are
-    /// tuned for interactive use and choke bulk return traffic, so we request generous
-    /// values to keep a high-throughput echo/download flowing.
-    pub async fn open_tcp_session(
+    /// SURB knobs (`response_buffer`, `max_surb_upstream`) are left at protocol defaults.
+    pub async fn open_session(
         &self,
+        protocol: &str,
         destination: &str,
         target: &str,
         hops: u64,
@@ -125,17 +123,15 @@ impl HoprdApiClient {
             capabilities: None,
             listen_host: None,
             max_client_sessions: None,
-            max_surb_upstream: Some("100 Mbps".to_string()),
-            // Keep under the SURB store ring-buffer cap (~15k SURBs ≈ 14.5 MB); larger
-            // values just trigger `cause=Size` evictions at the counterparty.
-            response_buffer: Some("8 MB".to_string()),
+            max_surb_upstream: None,
+            response_buffer: None,
             session_pool: None,
         };
         let resp = self
             .inner
-            .create_client("tcp", &body)
+            .create_client(protocol, &body)
             .await
-            .map_err(|e| anyhow::anyhow!("create tcp session to {destination}: {e}"))?
+            .map_err(|e| anyhow::anyhow!("create {protocol} session to {destination}: {e}"))?
             .into_inner();
         Ok((resp.ip, resp.port as u16))
     }
