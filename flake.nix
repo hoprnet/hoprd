@@ -438,7 +438,7 @@
                 jeprofPatched
                 pkgs.graphviz
                 pkgs.perl
-                pkgs.tar
+                pkgs.gnutar
               ]
               ++ profileDeps;
               Entrypoint = [
