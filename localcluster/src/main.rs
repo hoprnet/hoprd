@@ -54,10 +54,18 @@ impl Cleanup {
 }
 
 /// Resolve a `host:port` (e.g. `localhost`, `127.0.0.1`) to a single socket address.
+///
+/// Prefers IPv4: hoprd binds its P2P host as IPv4 (it resolves domains like `localhost`
+/// to `127.0.0.1` and rejects IPv6 literals), so the relay must stay on the same address
+/// family — otherwise it would forward to `[::1]` while the node listens on `127.0.0.1`.
 async fn resolve_socket(host: &str, port: u16) -> Result<SocketAddr> {
-    tokio::net::lookup_host((host, port))
+    let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
         .await
         .with_context(|| format!("failed to resolve {host}:{port}"))?
+        .collect();
+    addrs.sort_by_key(SocketAddr::is_ipv6);
+    addrs
+        .into_iter()
         .next()
         .with_context(|| format!("no address resolved for {host}:{port}"))
 }
