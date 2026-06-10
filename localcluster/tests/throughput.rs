@@ -23,11 +23,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use nix::{sys::signal::{self, Signal}, unistd::Pid};
 use hoprd_localcluster::{
     client_helper::HoprdApiClient,
     control,
     summary::{ClusterState, ClusterSummary},
+};
+use nix::{
+    sys::signal::{self, Signal},
+    unistd::Pid,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -35,14 +38,45 @@ use tokio::{
 };
 
 const NUM_NODES: usize = 3;
-const PAYLOAD_BYTES: usize = 500 * 1024 * 1024;
 const CHUNK_BYTES: usize = 1024 * 1024;
-const PROGRESS_LOG_BYTES: usize = 25 * 1024 * 1024;
-const FIRST_HOP_LATENCY: &str = "100ms";
+const DEFAULT_RATE_MIBPS: f64 = 2.0;
 
-const API_PORT_BASE: u16 = 3010;
-const P2P_PORT_BASE: u16 = 9010;
-const LATENCY_PORT_BASE: u16 = 9110;
+/// Payload size in MiB. Override with `HOPRD_LC_PAYLOAD_MIB` (default 500) to bisect the
+/// throughput/SURB ceiling.
+fn payload_bytes() -> usize {
+    std::env::var("HOPRD_LC_PAYLOAD_MIB")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(500)
+        * 1024
+        * 1024
+}
+
+/// Log a progress line every ~5% of the payload.
+fn progress_log_bytes() -> usize {
+    (payload_bytes() / 20).max(CHUNK_BYTES)
+}
+
+/// Number of intermediate relay hops for the session (both directions). Override with
+/// `HOPRD_LC_HOPS` (default 1). 0 = direct entry↔exit, no relay.
+fn hops() -> u64 {
+    std::env::var("HOPRD_LC_HOPS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1)
+}
+
+/// Target offered-load rate in bytes/sec, or `None` to push unthrottled. Defaults to
+/// `DEFAULT_RATE_MIBPS`; override with `HOPRD_LC_RATE_MIBPS` (set to `0` to disable
+/// throttling).
+fn rate_bytes_per_sec() -> Option<f64> {
+    let mibps = std::env::var("HOPRD_LC_RATE_MIBPS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(DEFAULT_RATE_MIBPS);
+    (mibps > 0.0).then_some(mibps * 1024.0 * 1024.0)
+}
+const FIRST_HOP_LATENCY: &str = "100ms";
 
 const PROVISION_TIMEOUT: Duration = Duration::from_secs(900);
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
@@ -97,96 +131,148 @@ async fn run() -> Result<()> {
         summary.nodes.len()
     );
 
-    let entry = node_client(summary, 0)?;
-    let exit_address = summary.nodes[2]
-        .address
-        .clone()
-        .context("exit node (2) has no on-chain address in cluster status")?;
+    // Entry is the first node, exit the last — both resolved from status, never assumed.
+    let entry_id = 0;
+    let exit_id = summary.nodes.len() - 1;
+    let entry = node_client(summary, entry_id)?;
+    let exit_address = summary.nodes[exit_id].address.clone().with_context(|| {
+        format!("exit node ({exit_id}) has no on-chain address in cluster status")
+    })?;
 
-    // TCP sink the exit node forwards the session's plaintext to. Bind before opening the
-    // session so the target is reachable the moment data starts flowing.
-    let sink = TcpListener::bind("127.0.0.1:0").await?;
-    let sink_addr = sink.local_addr()?;
-    let sink_task = tokio::spawn(async move {
-        let (mut stream, _) = sink.accept().await?;
+    // Echo server the exit node forwards the session's plaintext to: it mirrors every byte
+    // straight back, so the same volume travels up (entry→exit→echo) and back down
+    // (echo→exit→entry). Bind before opening the session so the target is reachable.
+    let payload = payload_bytes();
+    let progress = progress_log_bytes();
+
+    let echo = TcpListener::bind("127.0.0.1:0").await?;
+    let echo_addr = echo.local_addr()?;
+    tokio::spawn(async move {
+        let (mut stream, _) = echo.accept().await?;
+        let (mut rd, mut wr) = stream.split();
         let mut buf = vec![0u8; CHUNK_BYTES];
-        let mut total = 0usize;
-        let mut next_log = PROGRESS_LOG_BYTES;
-        // Stop at the expected byte count rather than waiting for EOF: the session may not
-        // propagate the entry-side write shutdown to the exit→target connection, so a
-        // read-until-EOF loop could block forever after all data has arrived.
-        while total < PAYLOAD_BYTES {
-            let n = stream.read(&mut buf).await?;
+        let mut echoed = 0usize;
+        while echoed < payload {
+            let n = rd.read(&mut buf).await?;
             if n == 0 {
                 break;
             }
-            total += n;
-            if total >= next_log {
-                tracing::info!("  sink received {} MiB", total / (1024 * 1024));
-                next_log += PROGRESS_LOG_BYTES;
-            }
+            wr.write_all(&buf[..n]).await?;
+            echoed += n;
         }
-        Ok::<usize, std::io::Error>(total)
+        wr.flush().await?;
+        Ok::<usize, std::io::Error>(echoed)
     });
 
+    let hops = hops();
     tracing::info!(
-        "opening 1-hop TCP session: entry node 0 -> exit {} (target {})",
+        "opening {hops}-hop TCP session: entry node {entry_id} -> exit node {exit_id} ({}) (echo target {})",
         exit_address,
-        sink_addr
+        echo_addr
     );
     let (listen_ip, listen_port) = entry
-        .open_tcp_session(&exit_address, &sink_addr.to_string(), 1)
+        .open_tcp_session(&exit_address, &echo_addr.to_string(), hops)
         .await?;
     tracing::info!("session listener bound at {listen_ip}:{listen_port}");
 
-    let mut client = TcpStream::connect((listen_ip.as_str(), listen_port))
+    let client = TcpStream::connect((listen_ip.as_str(), listen_port))
         .await
         .with_context(|| format!("connecting to session listener {listen_ip}:{listen_port}"))?;
+    let (mut rd, mut wr) = client.into_split();
 
+    let rate = rate_bytes_per_sec();
     tracing::info!(
-        "pushing {} MiB through the session",
-        PAYLOAD_BYTES / (1024 * 1024)
+        "round-tripping {} MiB up and back through the echo server (full-duplex){}",
+        payload / (1024 * 1024),
+        match rate {
+            Some(b) => format!(", writer throttled to {:.1} MiB/s", b / (1024.0 * 1024.0)),
+            None => ", writer unthrottled".to_string(),
+        }
     );
     let start = Instant::now();
-    let chunk = vec![0xABu8; CHUNK_BYTES];
-    let mut sent = 0usize;
-    let mut next_log = PROGRESS_LOG_BYTES;
-    while sent < PAYLOAD_BYTES {
-        let n = CHUNK_BYTES.min(PAYLOAD_BYTES - sent);
-        client.write_all(&chunk[..n]).await?;
-        sent += n;
-        if sent >= next_log {
-            let mib = sent as f64 / (1024.0 * 1024.0);
-            let secs = start.elapsed().as_secs_f64();
-            tracing::info!("  sent {:.0} MiB ({:.2} MiB/s avg)", mib, mib / secs);
-            next_log += PROGRESS_LOG_BYTES;
-        }
-    }
-    client.flush().await?;
-    tracing::info!(
-        "all {} MiB written into the session in {:.1}s; waiting for the sink to drain",
-        PAYLOAD_BYTES / (1024 * 1024),
-        start.elapsed().as_secs_f64()
-    );
 
-    // Do NOT shut down the write half here: `write_all` only means the bytes are buffered
-    // in the entry node's session, not delivered. Closing now would tear the session down
-    // and drop the still-in-flight tail. The sink stops at exactly PAYLOAD_BYTES, so we
-    // don't need EOF — just keep the stream open until it has drained.
-    let received = tokio::time::timeout(TRANSFER_TIMEOUT, sink_task)
+    // Writer and reader must run concurrently: serializing them deadlocks once the echoed
+    // bytes fill the socket buffers and block the writer's `write_all`.
+    let writer = tokio::spawn(async move {
+        let chunk = vec![0xABu8; CHUNK_BYTES];
+        let mut sent = 0usize;
+        let mut next_log = progress;
+        while sent < payload {
+            let n = CHUNK_BYTES.min(payload - sent);
+            wr.write_all(&chunk[..n]).await?;
+            sent += n;
+            // Pace the offered load: if we're ahead of the target schedule, wait. Slowing
+            // the writer keeps the entry's packet pipeline and SURB budget from being
+            // overrun, trading throughput for sustainability.
+            if let Some(bps) = rate {
+                let target = Duration::from_secs_f64(sent as f64 / bps);
+                let elapsed = start.elapsed();
+                if target > elapsed {
+                    tokio::time::sleep(target - elapsed).await;
+                }
+            }
+            if sent >= next_log {
+                tracing::info!("  sent {} MiB up", sent / (1024 * 1024));
+                next_log += progress;
+            }
+        }
+        wr.flush().await?;
+        // Return `wr` instead of letting it drop here: dropping the write half half-closes
+        // the session, which tears it down at the entry and makes the still-arriving return
+        // data be rejected as "unregistered session". The caller holds it until the reader
+        // has drained the full echo.
+        Ok::<(usize, tokio::net::tcp::OwnedWriteHalf), std::io::Error>((sent, wr))
+    });
+
+    let mut buf = vec![0u8; CHUNK_BYTES];
+    let mut received = 0usize;
+    let mut next_log = progress;
+    let read_fut = async {
+        // Stop at the expected byte count rather than relying on EOF.
+        while received < payload {
+            let n = rd.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            received += n;
+            if received >= next_log {
+                let mib = received as f64 / (1024.0 * 1024.0);
+                tracing::info!(
+                    "  echoed back {:.0} MiB ({:.2} MiB/s avg round-trip)",
+                    mib,
+                    mib / start.elapsed().as_secs_f64()
+                );
+                next_log += progress;
+            }
+        }
+        Ok::<usize, std::io::Error>(received)
+    };
+
+    let received = tokio::time::timeout(TRANSFER_TIMEOUT, read_fut)
         .await
-        .context("timed out waiting for the sink to drain the session")???;
+        .context("timed out waiting for echoed data to return")??;
     let elapsed = start.elapsed();
-    let _ = client.shutdown().await;
+
+    // The reader has the full echo; only now release the write half.
+    let (sent, _wr) = writer
+        .await
+        .context("writer task panicked")?
+        .context("writer failed")?;
+    drop(_wr);
 
     anyhow::ensure!(
-        received == PAYLOAD_BYTES,
-        "sink received {received} bytes, expected {PAYLOAD_BYTES}"
+        sent == payload,
+        "writer sent {sent} bytes, expected {payload}"
+    );
+    anyhow::ensure!(
+        received == payload,
+        "echoed back {received} bytes, expected {payload}"
     );
 
-    let mib = PAYLOAD_BYTES as f64 / (1024.0 * 1024.0);
+    let mib = payload as f64 / (1024.0 * 1024.0);
     tracing::info!(
-        "transferred {:.0} MiB in {:.1}s = {:.2} MiB/s (first-hop latency {} each way)",
+        "round-tripped {:.0} MiB up + {:.0} MiB back in {:.1}s = {:.2} MiB/s round-trip (first-hop latency {} each way)",
+        mib,
         mib,
         elapsed.as_secs_f64(),
         mib / elapsed.as_secs_f64(),
@@ -248,6 +334,9 @@ async fn ensure_cluster() -> Result<Cluster> {
     let hoprd_bin = resolve_hoprd_bin();
     let chain_url =
         std::env::var("HOPRD_CHAIN_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    // Diagnostic toggle: HOPRD_LC_NO_LATENCY=1 spawns the cluster without latency relays,
+    // to isolate whether a problem is in the relay or in the session itself.
+    let with_latency = std::env::var("HOPRD_LC_NO_LATENCY").is_err();
 
     let latency_cfg = data_dir.join("latency.yaml");
     std::fs::write(
@@ -261,24 +350,25 @@ async fn ensure_cluster() -> Result<Cluster> {
     let log = std::fs::File::create(data_dir.join("orchestrator.log"))?;
     let log_err = log.try_clone()?;
 
-    tracing::info!("spawning hoprd-localcluster ({NUM_NODES} nodes) at {bin}");
-    let child = Command::new(bin)
-        .arg("--size")
+    tracing::info!(
+        "spawning hoprd-localcluster ({NUM_NODES} nodes, latency {}) at {bin}",
+        if with_latency { "on" } else { "off" }
+    );
+    // Ports are left at the binary's defaults; the test never assumes them — every node
+    // endpoint (api_url, api_token, on-chain address) is read back from the cluster status.
+    let mut cmd = Command::new(bin);
+    cmd.arg("--size")
         .arg(NUM_NODES.to_string())
         .arg("--chain-url")
         .arg(&chain_url)
         .arg("--hoprd-bin")
         .arg(&hoprd_bin)
         .arg("--data-dir")
-        .arg(&data_dir)
-        .arg("--api-port-base")
-        .arg(API_PORT_BASE.to_string())
-        .arg("--p2p-port-base")
-        .arg(P2P_PORT_BASE.to_string())
-        .arg("--latency-port-base")
-        .arg(LATENCY_PORT_BASE.to_string())
-        .arg("--latency-config")
-        .arg(&latency_cfg)
+        .arg(&data_dir);
+    if with_latency {
+        cmd.arg("--latency-config").arg(&latency_cfg);
+    }
+    let child = cmd
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err))
         .spawn()

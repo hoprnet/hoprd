@@ -106,6 +106,11 @@ impl HoprdApiClient {
     /// intermediate relays on both the forward and return paths. The exit node forwards
     /// the plaintext stream to `target` (`ip:port`). Returns the `(ip, port)` of the TCP
     /// listener bound on this (entry) node.
+    ///
+    /// `response_buffer` and `max_surb_upstream` govern the *return* direction: the exit
+    /// can only send data back using SURBs supplied by this entry node. The defaults are
+    /// tuned for interactive use and choke bulk return traffic, so we request generous
+    /// values to keep a high-throughput echo/download flowing.
     pub async fn open_tcp_session(
         &self,
         destination: &str,
@@ -120,8 +125,10 @@ impl HoprdApiClient {
             capabilities: None,
             listen_host: None,
             max_client_sessions: None,
-            max_surb_upstream: None,
-            response_buffer: None,
+            max_surb_upstream: Some("100 Mbps".to_string()),
+            // Keep under the SURB store ring-buffer cap (~15k SURBs ≈ 14.5 MB); larger
+            // values just trigger `cause=Size` evictions at the counterparty.
+            response_buffer: Some("8 MB".to_string()),
             session_pool: None,
         };
         let resp = self
