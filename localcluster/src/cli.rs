@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::identity::{
-    DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_NUM_EXTRA_IDENTITIES,
-    DEFAULT_NUM_NODES, MAX_EXTRA_IDENTITIES, MAX_NUM_NODES,
+    DEFAULT_CONFIG_HOME, DEFAULT_IDENTITY_PASSWORD, DEFAULT_LATENCY_PORT_BASE,
+    DEFAULT_NUM_EXTRA_IDENTITIES, DEFAULT_NUM_NODES, MAX_EXTRA_IDENTITIES, MAX_NUM_NODES,
 };
 
 fn parse_size(s: &str) -> Result<usize, String> {
@@ -150,6 +150,21 @@ pub struct Args {
     /// hoprd node. Useful for external tooling that needs a funded HOPR identity.
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
+
+    /// Inject artificial latency on inter-node P2P traffic via per-node UDP relays.
+    /// Accepts `100ms`, `100ms±30ms`, `uniform:50ms,150ms`, or `normal:100ms,30ms`.
+    /// Sets a global delay; combine with `--latency-config` for per-node/per-link overrides.
+    #[arg(long, value_parser = parse_latency_spec)]
+    pub latency: Option<String>,
+
+    /// Path to a YAML file with per-node / per-link latency overrides (see
+    /// docs/localcluster/README.md). Enables the latency relays even without `--latency`.
+    #[arg(long)]
+    pub latency_config: Option<PathBuf>,
+
+    /// Base port for latency relays; node `i`'s relay listens on `latency_port_base + i`.
+    #[arg(long, default_value_t = DEFAULT_LATENCY_PORT_BASE)]
+    pub latency_port_base: u16,
 }
 
 impl Args {
@@ -157,6 +172,28 @@ impl Args {
     pub fn control_base(&self) -> PathBuf {
         resolve_control_base(self.control_base.as_deref(), &self.data_dir)
     }
+
+    /// Build the effective latency config from `--latency-config` (per-node/per-link
+    /// overrides) and `--latency` (global default). Returns `None` when neither yields
+    /// any delay, leaving the cluster unshaped.
+    pub fn resolve_latency(&self) -> Result<Option<crate::latency::LatencyConfig>, String> {
+        let mut cfg = match &self.latency_config {
+            Some(path) => {
+                let contents = std::fs::read_to_string(path)
+                    .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+                crate::latency::LatencyConfig::from_yaml(&contents)?
+            }
+            None => crate::latency::LatencyConfig::default(),
+        };
+        if let Some(spec) = &self.latency {
+            cfg.default = Some(crate::latency::parse_delay(spec)?);
+        }
+        Ok((!cfg.is_empty()).then_some(cfg))
+    }
+}
+
+fn parse_latency_spec(s: &str) -> Result<String, String> {
+    crate::latency::parse_delay(s).map(|_| s.to_string())
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]

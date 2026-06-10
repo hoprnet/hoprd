@@ -236,6 +236,43 @@ Flags take precedence over env vars. Only the flags marked with an env var below
 | `--funding-amount`     | —                         | `1 wxHOPR`           | Per-channel funding amount                                                                                                |
 | `--channel-management` | —                         | `api`                | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
 | `--extra-identities`   | —                         | `0`                  | Extra pre-funded identities for external tooling (0–5)                                                                    |
+| `--latency`            | —                         | none                 | Global artificial latency on inter-node traffic (e.g. `100ms`, `100ms±30ms`, `uniform:50ms,150ms`, `normal:100ms,30ms`)  |
+| `--latency-config`     | —                         | none                 | Path to a YAML file with per-node / per-link latency overrides (enables relays even without `--latency`)                  |
+| `--latency-port-base`  | —                         | `9100`               | First latency-relay port (node `i`'s relay listens on base + id)                                                          |
+
+### Artificial latency
+
+`--latency` / `--latency-config` inject artificial delay on the P2P traffic between
+nodes, cross-platform (Linux + macOS) and without modifying `hoprd`.
+
+When enabled, each node `X` runs a small userspace **UDP relay**: the relay's port is
+announced on chain instead of the node's real listen port (and the node's own
+self-announce is disabled), so peers dial the relay, which forwards datagrams to the
+node after a sampled delay. Granularity:
+
+- **Global** — one delay for all links: `--latency 150ms±50ms`.
+- **Per-node / per-link** — a YAML file via `--latency-config`. Resolution order is
+  `per_link` → `per_node` (keyed by destination) → `default`:
+
+  ```yaml
+  default: "100ms±30ms"      # all links unless overridden
+  per_node:
+    2: "300ms"               # any link whose destination is node 2
+  per_link:
+    - { from: 0, to: 1, delay: "500ms" }   # directed link 0 → 1
+    - { from: 1, to: 0, delay: "10ms" }
+  ```
+
+Delay spec forms: `100ms` (fixed), `100ms±30ms` / `100ms+-30ms` (uniform
+`[mean-jitter, mean+jitter]`), `uniform:min,max`, `normal:mean,stddev`. Durations accept
+`us`/`µs`, `ms` (default), `s`.
+
+Caveats:
+
+- Per-datagram random delay can **reorder** datagrams — fine for QUIC and realistic.
+- Delay is applied per hop; a multi-hop HOPR path accumulates delay at each relayed node.
+- Latency mode flips `announce=false` and announces the relay port — only meaningful for
+  the local Anvil chain. Disabled by default, so normal runs are unaffected.
 
 ### Channel management modes
 
