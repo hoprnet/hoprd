@@ -111,6 +111,7 @@ jobs:
           - architecture: x86_64-linux
             runner: depot-ubuntu-24.04-8
             build_command: nix build -L .#binary-hoprd-x86_64-linux
+            build_debug_command: nix build -L .#binary-hoprd-profile-x86_64-linux
             build_file: ./hoprd/Cargo.toml
             binary: hoprd
             required_label: ""
@@ -170,8 +171,8 @@ jobs:
           {
             "runner": "depot-ubuntu-24.04-4",
             "architecture": "x86_64-linux",
-            "build_command": "nix build -L .#docker-hoprd-profile-x86_64-linux",
-            "build_debug_command": "nix build -L .#docker-hoprd-dev-x86_64-linux"
+            "build_command": "nix build -L .#docker-hoprd-x86_64-linux",
+            "build_debug_command": "nix build -L .#docker-hoprd-profile-x86_64-linux"
           }
         ]
       build_file: ./hoprd/Cargo.toml
