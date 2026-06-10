@@ -451,7 +451,43 @@
                 "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-                "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
+                "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19,lg_prof_interval:26"
+              ];
+            };
+            docker-hoprd-profile-aarch64-linux = nixLib.mkDockerImage {
+              name = "hoprd";
+              pathsToLink = [
+                "/bin"
+                "/etc"
+              ];
+              extraContents = [
+                dockerHoprdEntrypoint
+                pkgs.tini
+                hoprdPackages.binary-hoprd-profile-aarch64-linux
+                pkgs.cacert
+                pkgs.curl
+                analyzeMemoryScript
+                (pkgs.runCommand "jemalloc-lib-only" { } ''
+                  mkdir -p $out/lib
+                  cp -r ${pkgs.jemalloc}/lib/* $out/lib/
+                '')
+                jeprofPatched
+                pkgs.graphviz
+                pkgs.perl
+              ]
+              ++ profileDeps;
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
+              Cmd = [ "hoprd" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+                "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19,lg_prof_interval:26"
               ];
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
