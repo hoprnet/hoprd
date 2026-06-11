@@ -38,7 +38,7 @@ jobs:
             build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
             build_file: ./localcluster/Cargo.toml
             binary: hoprd-localcluster
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@build-binaries-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@b063eebe2dfb2f92e7177a8f81383aaac4835d09 # build-binaries-v2
     permissions:
       contents: read
     with:
@@ -57,7 +57,7 @@ jobs:
     name: Docker
     needs: build-binaries
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@build-docker-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@024a130d36187da87c46820d738ca737b1a9e716 # build-docker-v2
     permissions:
       contents: read
       pull-requests: write
@@ -155,7 +155,7 @@ jobs:
       - name: Increase git buffer size
         run: git config --global http.postBuffer 524288000
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./result/share/doc/
@@ -189,12 +189,12 @@ jobs:
       actions: write
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.ref }}
