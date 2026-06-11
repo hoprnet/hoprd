@@ -32,6 +32,7 @@ use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
 use hopr_network_graph::{ChannelGraph, SharedChannelGraph};
+#[cfg(feature = "session-server")]
 use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
 use hopr_ticket_manager::{HoprTicketManager, RedbStore, RedbTicketQueue, ticket_manager_from_chain};
 use hopr_transport_p2p::{HoprLibp2pNetworkBuilder, HoprNetwork, PeerDiscovery};
@@ -150,53 +151,54 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     let graph_for_ct = graph.clone();
     let safe_address = hopr_lib_cfg.safe_module.safe_address;
     let module_address = hopr_lib_cfg.safe_module.module_address;
+    #[cfg(feature = "session-server")]
     let server = HoprServerIpForwardingReactor::new(
         hopr_keys.packet_key.clone(),
         cfg.session_ip_forwarding.clone(),
     );
 
-    let node = Arc::new(
-        HoprBuilder
-            .with_identity(&hopr_keys.chain_key, &hopr_keys.packet_key)
-            .with_config(hopr_lib_cfg)
-            .with_safe_module(&safe_address, &module_address)
-            .with_chain_api(move |_ctx| chain_connector)
-            .with_graph(move |_ctx| graph)
-            .with_network(move |ctx| {
-                Box::pin(async move {
-                    let peer_discovery_rx = ctx
-                        .take_peer_discovery_rx()
-                        .ok_or(hopr_lib::errors::HoprLibError::BuilderError(
-                            "peer_discovery_rx already taken",
-                        ))?;
-                    let multiaddresses = vec![(&ctx.cfg.host)
-                        .try_into()
-                        .map_err(hopr_lib::errors::HoprLibError::TransportError)?];
-                    let nb = HoprLibp2pNetworkBuilder::new(
-                        peer_discovery_rx
-                            .map(|(peer_id, addrs)| PeerDiscovery::Announce(peer_id, addrs)),
-                    );
-                    nb.build(
-                        &ctx.packet_key,
-                        multiaddresses,
-                        "/hopr/mix/1.1.0",
-                        ctx.cfg.protocol.transport.prefer_local_addresses,
-                    )
-                    .await
-                    .map_err(|e| hopr_lib::errors::HoprLibError::GeneralError(e.to_string()))
-                })
-            })
-            .with_cover_traffic(move |ctx| {
-                hopr_ct_full_network::FullNetworkDiscovery::new(
-                    *ctx.packet_key.public(),
-                    prober_cfg,
-                    graph_for_ct,
+    let builder = HoprBuilder
+        .with_identity(&hopr_keys.chain_key, &hopr_keys.packet_key)
+        .with_config(hopr_lib_cfg)
+        .with_safe_module(&safe_address, &module_address)
+        .with_chain_api(move |_ctx| chain_connector)
+        .with_graph(move |_ctx| graph)
+        .with_network(move |ctx| {
+            Box::pin(async move {
+                let peer_discovery_rx = ctx
+                    .take_peer_discovery_rx()
+                    .ok_or(hopr_lib::errors::HoprLibError::BuilderError(
+                        "peer_discovery_rx already taken",
+                    ))?;
+                let multiaddresses = vec![(&ctx.cfg.host)
+                    .try_into()
+                    .map_err(hopr_lib::errors::HoprLibError::TransportError)?];
+                let nb = HoprLibp2pNetworkBuilder::new(
+                    peer_discovery_rx
+                        .map(|(peer_id, addrs)| PeerDiscovery::Announce(peer_id, addrs)),
+                );
+                nb.build(
+                    &ctx.packet_key,
+                    multiaddresses,
+                    "/hopr/mix/1.1.0",
+                    ctx.cfg.protocol.transport.prefer_local_addresses,
                 )
+                .await
+                .map_err(|e| hopr_lib::errors::HoprLibError::GeneralError(e.to_string()))
             })
-            .with_session_server(server)
-            .build_full(ticket_manager, ticket_factory)
-            .await?,
-    );
+        })
+        .with_cover_traffic(move |ctx| {
+            hopr_ct_full_network::FullNetworkDiscovery::new(
+                *ctx.packet_key.public(),
+                prober_cfg,
+                graph_for_ct,
+            )
+        });
+
+    #[cfg(feature = "session-server")]
+    let node = Arc::new(builder.with_session_server(server).build_full(ticket_manager, ticket_factory).await?);
+    #[cfg(not(feature = "session-server"))]
+    let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
     if cfg.api.enable {
         let list = init_rest_api(&cfg, node.clone()).await?;
