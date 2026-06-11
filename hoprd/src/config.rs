@@ -8,7 +8,7 @@ use hopr_lib::{
     },
     exports::transport::{HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig},
 };
-use hopr_node::config::SessionIpForwardingConfig;
+use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
@@ -310,6 +310,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 mixer: value.network.mixer,
+                stream: Default::default(),
             },
             ..Default::default()
         }

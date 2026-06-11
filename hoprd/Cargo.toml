@@ -71,7 +71,7 @@ allocator-jemalloc-stats = [
   "dep:tikv-jemalloc-ctl",
   "dep:humansize",
 ]
-session-server = ["hopr-lib/session-server", "hopr-node/session-server"]
+session-server = ["hopr-lib/session-server"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -122,14 +122,11 @@ hopr-lib = { workspace = true, features = [
 ] }
 hopr-utils-session = { workspace = true }
 hoprd-api = { workspace = true, features = ["telemetry"] }
-# impls
-hopr-node = { workspace = true, features = [
-  "runtime-tokio",
-  "session-client",
-] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }
 hopr-network-graph = { workspace = true, features = ["petgraph"] }
+hopr-session-server-forwarder = { workspace = true, features = ["runtime-tokio"] }
+hopr-ticket-manager = { workspace = true }
 hopr-transport-p2p = { workspace = true }
 
 # Target-specific dependencies for memory allocators

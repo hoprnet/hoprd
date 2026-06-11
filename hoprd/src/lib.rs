@@ -28,18 +28,21 @@ use hopr_chain_connector::{
     BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector,
 };
 use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliClient};
+use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
-use hopr_network_graph::SharedChannelGraph;
-use hopr_node::exit::HoprServerIpForwardingReactor;
-use hopr_transport_p2p::HoprNetwork;
+use hopr_network_graph::{ChannelGraph, SharedChannelGraph};
+use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
+use hopr_ticket_manager::{HoprTicketManager, RedbStore, RedbTicketQueue, ticket_manager_from_chain};
+use hopr_transport_p2p::{HoprLibp2pNetworkBuilder, HoprNetwork, PeerDiscovery};
 
 type HoprBlokliConnector = HoprBlockchainSafeConnector<BlokliClient>;
+type SharedTicketManager = Arc<HoprTicketManager<RedbStore, RedbTicketQueue>>;
 type HoprNode = hopr_lib::Hopr<
     Arc<HoprBlokliConnector>,
     SharedChannelGraph,
     HoprNetwork,
-    hopr_node::SharedTicketManager,
+    SharedTicketManager,
 >;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
@@ -132,19 +135,68 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         shuffle_ttl: cfg.hopr.network.probe_interval * 2,
         ..Default::default()
     };
+    prober_cfg.validate_against_probe_timeout(hopr_lib_cfg.protocol.probe.timeout)?;
 
-    let node = hopr_node::build_full_with_chain(
-        &hopr_keys.chain_key,
-        &hopr_keys.packet_key,
-        hopr_lib_cfg,
-        Some(prober_cfg),
-        chain_connector.clone(),
-        HoprServerIpForwardingReactor::new(
-            hopr_keys.packet_key.clone(),
-            cfg.session_ip_forwarding.clone(),
-        ),
-    )
-    .await?;
+    let (ticket_manager, ticket_factory) = ticket_manager_from_chain(&chain_connector)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to seed ticket manager: {e}"))?;
+
+    let path_cfg = hopr_lib_cfg.protocol.path_planner;
+    let graph: SharedChannelGraph = Arc::new(ChannelGraph::with_edge_params(
+        *hopr_keys.packet_key.public(),
+        path_cfg.edge_penalty,
+        path_cfg.min_ack_rate,
+    ));
+    let graph_for_ct = graph.clone();
+    let safe_address = hopr_lib_cfg.safe_module.safe_address;
+    let module_address = hopr_lib_cfg.safe_module.module_address;
+    let server = HoprServerIpForwardingReactor::new(
+        hopr_keys.packet_key.clone(),
+        cfg.session_ip_forwarding.clone(),
+    );
+
+    let node = Arc::new(
+        HoprBuilder
+            .with_identity(&hopr_keys.chain_key, &hopr_keys.packet_key)
+            .with_config(hopr_lib_cfg)
+            .with_safe_module(&safe_address, &module_address)
+            .with_chain_api(move |_ctx| chain_connector)
+            .with_graph(move |_ctx| graph)
+            .with_network(move |ctx| {
+                Box::pin(async move {
+                    let peer_discovery_rx = ctx
+                        .take_peer_discovery_rx()
+                        .ok_or(hopr_lib::errors::HoprLibError::BuilderError(
+                            "peer_discovery_rx already taken",
+                        ))?;
+                    let multiaddresses = vec![(&ctx.cfg.host)
+                        .try_into()
+                        .map_err(hopr_lib::errors::HoprLibError::TransportError)?];
+                    let nb = HoprLibp2pNetworkBuilder::new(
+                        peer_discovery_rx
+                            .map(|(peer_id, addrs)| PeerDiscovery::Announce(peer_id, addrs)),
+                    );
+                    nb.build(
+                        &ctx.packet_key,
+                        multiaddresses,
+                        "/hopr/mix/1.1.0",
+                        ctx.cfg.protocol.transport.prefer_local_addresses,
+                    )
+                    .await
+                    .map_err(|e| hopr_lib::errors::HoprLibError::GeneralError(e.to_string()))
+                })
+            })
+            .with_cover_traffic(move |ctx| {
+                hopr_ct_full_network::FullNetworkDiscovery::new(
+                    *ctx.packet_key.public(),
+                    prober_cfg,
+                    graph_for_ct,
+                )
+            })
+            .with_session_server(server)
+            .build_full(ticket_manager, ticket_factory)
+            .await?,
+    );
 
     if cfg.api.enable {
         let list = init_rest_api(&cfg, node.clone()).await?;
