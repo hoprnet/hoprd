@@ -26,10 +26,7 @@ hopr-strategy = { workspace = true, features = [
   "strategy-channel-lifecycle",
 ] }
 hopr-lib = { workspace = true }
-hopr-reference = { workspace = true, features = [
-  "runtime-tokio",
-  "session-server",
-] }
+hopr-session-server-forwarder = { workspace = true }
 hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }
 lazy_static = { workspace = true }
