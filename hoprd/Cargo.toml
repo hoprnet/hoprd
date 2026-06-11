@@ -125,7 +125,9 @@ hoprd-api = { workspace = true, features = ["telemetry"] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }
 hopr-network-graph = { workspace = true, features = ["petgraph"] }
-hopr-session-server-forwarder = { workspace = true, features = ["runtime-tokio"] }
+hopr-session-server-forwarder = { workspace = true, features = [
+  "runtime-tokio",
+] }
 hopr-ticket-manager = { workspace = true }
 hopr-transport-p2p = { workspace = true }
 

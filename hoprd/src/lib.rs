@@ -34,17 +34,15 @@ use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
 use hopr_network_graph::{ChannelGraph, SharedChannelGraph};
 #[cfg(feature = "session-server")]
 use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
-use hopr_ticket_manager::{HoprTicketManager, RedbStore, RedbTicketQueue, ticket_manager_from_chain};
+use hopr_ticket_manager::{
+    HoprTicketManager, RedbStore, RedbTicketQueue, ticket_manager_from_chain,
+};
 use hopr_transport_p2p::{HoprLibp2pNetworkBuilder, HoprNetwork, PeerDiscovery};
 
 type HoprBlokliConnector = HoprBlockchainSafeConnector<BlokliClient>;
 type SharedTicketManager = Arc<HoprTicketManager<RedbStore, RedbTicketQueue>>;
-type HoprNode = hopr_lib::Hopr<
-    Arc<HoprBlokliConnector>,
-    SharedChannelGraph,
-    HoprNetwork,
-    SharedTicketManager,
->;
+type HoprNode =
+    hopr_lib::Hopr<Arc<HoprBlokliConnector>, SharedChannelGraph, HoprNetwork, SharedTicketManager>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
 enum HoprdProcess {
@@ -165,14 +163,14 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         .with_graph(move |_ctx| graph)
         .with_network(move |ctx| {
             Box::pin(async move {
-                let peer_discovery_rx = ctx
-                    .take_peer_discovery_rx()
-                    .ok_or(hopr_lib::errors::HoprLibError::BuilderError(
-                        "peer_discovery_rx already taken",
-                    ))?;
-                let multiaddresses = vec![(&ctx.cfg.host)
-                    .try_into()
-                    .map_err(hopr_lib::errors::HoprLibError::TransportError)?];
+                let peer_discovery_rx = ctx.take_peer_discovery_rx().ok_or(
+                    hopr_lib::errors::HoprLibError::BuilderError("peer_discovery_rx already taken"),
+                )?;
+                let multiaddresses = vec![
+                    (&ctx.cfg.host)
+                        .try_into()
+                        .map_err(hopr_lib::errors::HoprLibError::TransportError)?,
+                ];
                 let nb = HoprLibp2pNetworkBuilder::new(
                     peer_discovery_rx
                         .map(|(peer_id, addrs)| PeerDiscovery::Announce(peer_id, addrs)),
@@ -196,7 +194,12 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         });
 
     #[cfg(feature = "session-server")]
-    let node = Arc::new(builder.with_session_server(server).build_full(ticket_manager, ticket_factory).await?);
+    let node = Arc::new(
+        builder
+            .with_session_server(server)
+            .build_full(ticket_manager, ticket_factory)
+            .await?,
+    );
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
