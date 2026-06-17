@@ -14,7 +14,6 @@ on:
       - ready_for_review
 permissions:
   contents: read
-  id-token: write
 concurrency:
   group: ${{ github.event.pull_request.head.ref || github.ref_name }}-pr
   cancel-in-progress: true
