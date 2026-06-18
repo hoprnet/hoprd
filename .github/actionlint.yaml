@@ -7,3 +7,4 @@ self-hosted-runner:
     - depot-ubuntu-24.04-16
     - depot-ubuntu-24.04-arm-4
     - depot-ubuntu-24.04-arm-8
+    - depot-macos-15
