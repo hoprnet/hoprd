@@ -15,16 +15,16 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-utils = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62" }
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "b5ee5069038ad8ef38f917e1b5a37c7331e2fe62", default-features = false }
+hopr-utils = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "50594ae61b8194ef45bb5cd499a86905c09c3968", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.10.0" }

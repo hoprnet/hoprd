@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 use hopr_lib::{
     api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
@@ -358,6 +358,9 @@ pub struct HoprdConfig {
     #[validate(url)]
     #[default(default_blokli_url())]
     pub blokli_url: String,
+    /// Optional override for the DNS resolution of the Blokli provider.
+    #[serde(default)]
+    pub blokli_dns_override: Option<(IpAddr, Option<u16>)>,
     /// Configuration of underlying node behavior in the form strategies
     ///
     /// Strategies represent automatically executable behavior performed by

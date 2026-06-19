@@ -1,4 +1,7 @@
-use std::{net::IpAddr, str::FromStr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+};
 
 use clap::{ArgAction, Parser, builder::ValueParser};
 use hopr_chain_connector::Address;
@@ -40,7 +43,7 @@ fn parse_host(s: &str) -> Result<HostConfig, String> {
 fn parse_session_listen_host(s: &str) -> Result<HostConfig, String> {
     let (host, port) = match s.split_once(':') {
         Some((h, p)) => (h, Some(p)),
-        None => (s, None),
+        _ => (s, None),
     };
 
     if host.eq_ignore_ascii_case(SESSION_LISTEN_HOST_AUTO) {
@@ -48,7 +51,7 @@ fn parse_session_listen_host(s: &str) -> Result<HostConfig, String> {
             Some(p) => p
                 .parse::<u16>()
                 .map_err(|e| format!("invalid port '{p}' in session listen host: {e}"))?,
-            None => 0,
+            _ => 0,
         };
         return Ok(HostConfig {
             address: HostType::Domain(SESSION_LISTEN_HOST_AUTO.to_string()),
@@ -111,6 +114,20 @@ fn parse_api_token(mut s: &str) -> Result<String, String> {
         (false, true) => Err("Found trailing quote but no leading quote".into()),
         (false, false) => Ok(s.into()),
     }
+}
+
+fn parse_blokli_dns_override(value: &str) -> Result<(IpAddr, Option<u16>), String> {
+    if let Ok(ip) = value.parse::<IpAddr>() {
+        return Ok((ip, None));
+    }
+
+    if let Ok(addr) = value.parse::<SocketAddr>() {
+        return Ok((addr.ip(), Some(addr.port())));
+    }
+
+    Err(format!(
+        "invalid DNS override '{value}', expected <IP_ADDRESS> or <IP_ADDRESS>:<PORT>"
+    ))
 }
 
 /// Takes all CLI arguments whose structure is known at compile-time.
@@ -229,6 +246,16 @@ pub struct CliArgs {
         value_name = "BLOKLI_URL"
     )]
     pub blokli_url: Option<String>,
+
+    #[arg(
+        long = "blokliDnsOverride",
+        alias = "blokli-dns-override",
+        help = "Override the DNS resolution for the Blokli provider, in the format <IP_ADDRESS>[:<PORT>]",
+        env = "HOPRD_BLOKLI_DNS_OVERRIDE",
+        value_name = "BLOKLI_DNS_OVERRIDE",
+        value_parser = parse_blokli_dns_override,
+    )]
+    pub blokli_dns_override: Option<(IpAddr, Option<u16>)>,
 
     #[arg(
         long,
@@ -398,6 +425,10 @@ impl TryFrom<CliArgs> for HoprdConfig {
 
         if let Some(x) = value.blokli_url {
             cfg.blokli_url = x;
+        }
+
+        if let Some(x) = value.blokli_dns_override {
+            cfg.blokli_dns_override = Some(x);
         }
 
         if let Some(x) = value.safe_address {
