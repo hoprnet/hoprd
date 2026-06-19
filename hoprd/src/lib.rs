@@ -27,7 +27,10 @@ use crate::config::HoprdConfig;
 use hopr_chain_connector::{
     BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector,
 };
-use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliClient};
+use hopr_chain_connector::{
+    HoprBlockchainSafeConnector,
+    blokli_client::{BlokliClient, BlokliDnsOverride},
+};
 use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
@@ -116,6 +119,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 timeout: std::time::Duration::from_secs(30),
                 stream_reconnect_timeout: std::time::Duration::from_secs(30),
                 subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
+                dns_override: cfg.blokli_dns_override.map(|(ip, port)| BlokliDnsOverride { ip, port }),
                 // Allow local clusters to skip the blokli version compatibility check:
                 // some dev images (e.g. bloklid-anvil) do index Safe events but don't
                 // yet advertise the IndexesSafeEvents feature flag in their API response.

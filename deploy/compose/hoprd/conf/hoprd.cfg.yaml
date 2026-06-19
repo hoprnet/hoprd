@@ -48,6 +48,7 @@ strategy:
           enabled: true
           finalize_max_concurrent: 4
         restart: {}
+        selector: default
         concurrency:
           max_concurrent_actions: 4
 hopr:
