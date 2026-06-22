@@ -154,7 +154,7 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
-            extraNativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
             extraBuildInputs = [
               pkgs.openssl
               pkgs.stdenv.cc.cc.lib
@@ -164,7 +164,7 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
             cargoToml = ./localcluster/Cargo.toml;
-            extraNativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
             extraBuildInputs = [ pkgs.stdenv.cc.cc.lib ];
           };
 
