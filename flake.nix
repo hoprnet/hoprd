@@ -159,6 +159,8 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
             cargoToml = ./localcluster/Cargo.toml;
+            extraNativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [ pkgs.stdenv.cc.cc.lib ];
           };
 
           # Build args for the memory-profiling variant (Linux).
