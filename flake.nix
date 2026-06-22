@@ -165,7 +165,10 @@
             cargoExtraArgs = "-p hoprd-localcluster";
             cargoToml = ./localcluster/Cargo.toml;
             extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
-            extraBuildInputs = [ pkgs.stdenv.cc.cc.lib ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
 
           # Build args for the memory-profiling variant (Linux).
