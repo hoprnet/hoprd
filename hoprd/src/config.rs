@@ -300,7 +300,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 },
                 session: SessionGlobalConfig {
                     idle_timeout: value.network.session_idle_timeout,
-                    establish_max_retries: value.network.session_establish_max_retries as u32,
+                    establish_max_retries: value.network.session_establish_max_retries as usize,
                     tag_allocator: TagAllocatorConfig {
                         session: value.network.maximum_sessions as u64,
                         ..Default::default()

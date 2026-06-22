@@ -10,7 +10,7 @@ use hopr_lib::api::chain::ChainKeyOperations;
 use hopr_lib::api::node::HasChainApi;
 use hopr_lib::{
     HopRouting, HoprSessionClientConfig,
-    api::types::primitive::{errors::GeneralError, prelude::Address},
+    api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
         SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
@@ -1002,7 +1002,7 @@ pub(crate) async fn adjust_session<H: Send + Sync + 'static>(
     Path(session_id): Path<String>,
     Json(args): Json<SessionConfig>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id = SessionId::from_str(&session_id)
+    let session_id = SessionId::from_hex(&session_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     if let Some(cfg) = Option::<SurbBalancerConfig>::from(args) {
@@ -1052,7 +1052,7 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
     State(state): State<Arc<InternalState<H>>>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id = SessionId::from_str(&session_id)
+    let session_id = SessionId::from_hex(&session_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     // Find the configurator for this session across all listeners
