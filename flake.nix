@@ -154,6 +154,11 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
+            extraNativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
