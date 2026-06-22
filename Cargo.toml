@@ -16,16 +16,16 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-utils = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache" }
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/p2p/liveness-stream-cache", default-features = false }
+hopr-utils = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "em/fix_session_being_broken", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=1.10.0" }
