@@ -31,8 +31,9 @@ Any runtime that accepts `run --rm --name <n> --platform linux/amd64 -p 8080:808
 
 ```bash
 # Nix (preferred — reproducible, no toolchain setup needed)
-nix build -L .#binary-hoprd .#binary-hoprd-localcluster
-# binaries: ./result/bin/hoprd  and  ./result-1/bin/hoprd-localcluster
+nix build -L --out-link result-hoprd .#binary-hoprd
+nix build -L --out-link result-localcluster .#binary-hoprd-localcluster
+# binaries: ./result-hoprd/bin/hoprd  and  ./result-localcluster/bin/hoprd-localcluster
 
 # Cargo (inside the dev shell)
 nix develop -c cargo build -p hoprd -p hoprd-localcluster
@@ -51,8 +52,8 @@ rm -rf /tmp/hopr-nodes   # clear any stale state
 CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
-./result-1/bin/hoprd-localcluster \
-  --hoprd-bin ./result/bin/hoprd \
+./result-localcluster/bin/hoprd-localcluster \
+  --hoprd-bin ./result-hoprd/bin/hoprd \
   --chain-image "$CHAIN_IMAGE" \
   --size 3
 ```
@@ -68,8 +69,8 @@ CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-an
 
 RUST_LOG=info \
 HOPRD_CONTAINER_RUNTIME=container \
-./result-1/bin/hoprd-localcluster \
-  --hoprd-bin ./result/bin/hoprd \
+./result-localcluster/bin/hoprd-localcluster \
+  --hoprd-bin ./result-hoprd/bin/hoprd \
   --chain-image "$CHAIN_IMAGE" \
   --size 3
 ```
@@ -82,8 +83,8 @@ If you already have Blokli running at a known URL, pass it directly and the cont
 
 ```bash
 HOPRD_CHAIN_URL=http://localhost:8080 \
-./result-1/bin/hoprd-localcluster \
-  --hoprd-bin ./result/bin/hoprd \
+./result-localcluster/bin/hoprd-localcluster \
+  --hoprd-bin ./result-hoprd/bin/hoprd \
   --size 3
 ```
 
@@ -135,9 +136,9 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 For CI and integration tooling, query the structured status instead of scraping stdout. A running cluster serves its **live** state on a unix domain socket at `<data-dir>/cluster.sock`. The `status` subcommand connects to it and prints the current snapshot as JSON:
 
 ```bash
-./result-1/bin/hoprd-localcluster status                       # reads <data-dir>/cluster.sock
-./result-1/bin/hoprd-localcluster status --data-dir /tmp/hopr-nodes
-./result-1/bin/hoprd-localcluster status --control-base /var/run/hopr/cluster   # reads <base>.sock
+./result-localcluster/bin/hoprd-localcluster status                       # reads <data-dir>/cluster.sock
+./result-localcluster/bin/hoprd-localcluster status --data-dir /tmp/hopr-nodes
+./result-localcluster/bin/hoprd-localcluster status --control-base /var/run/hopr/cluster   # reads <base>.sock
 ```
 
 `status` always exits `0` with a parseable answer:
@@ -150,7 +151,7 @@ The status is updated **as the cluster comes up**, so tooling can poll `status` 
 Example (`jq`-friendly) wait loop:
 
 ```bash
-until [ "$(./result-1/bin/hoprd-localcluster status | jq -r .state)" = "running" ]; do sleep 1; done
+until [ "$(./result-localcluster/bin/hoprd-localcluster status | jq -r .state)" = "running" ]; do sleep 1; done
 ```
 
 Shape:
@@ -302,8 +303,8 @@ Example:
 
 ```bash
 RUST_LOG=info \
-./result-1/bin/hoprd-localcluster \
-  --hoprd-bin ./result/bin/hoprd \
+./result-localcluster/bin/hoprd-localcluster \
+  --hoprd-bin ./result-hoprd/bin/hoprd \
   --chain-image "$CHAIN_IMAGE" \
   --size 3 \
   --extra-identities 2

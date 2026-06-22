@@ -154,11 +154,21 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
             cargoToml = ./localcluster/Cargo.toml;
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
 
           # Build args for the memory-profiling variant (Linux).
@@ -166,7 +176,7 @@
           memprofBuildArgs = projectBuildArgs // {
             CARGO_PROFILE = "memprof";
             cargoExtraArgs = "-F capture -F allocator-jemalloc-stats -F allocator-jemalloc-profiling";
-            extraNativeBuildInputs = [
+            extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [
               pkgs.autoconf
               pkgs.perl
             ];
@@ -248,7 +258,7 @@
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
@@ -270,7 +280,7 @@
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
@@ -292,7 +302,7 @@
                     runCoverage = true;
                     prependPackageName = false;
                     cargoLlvmCovExtraArgs = "--lcov --output-path $out --lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
