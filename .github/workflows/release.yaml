@@ -31,7 +31,7 @@ jobs:
           - architecture: aarch64-linux
             runner: depot-ubuntu-24.04-arm-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # 0.9.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.10.1
     permissions:
       contents: read
       id-token: write
