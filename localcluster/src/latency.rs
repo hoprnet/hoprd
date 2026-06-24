@@ -14,7 +14,7 @@ use rand::Rng;
 pub enum DelayDist {
     /// Constant delay.
     Fixed(Duration),
-    /// Uniformly distributed delay in `[min, max]`.
+    /// Uniformly distributed delay in `[min, max)`.
     Uniform { min: Duration, max: Duration },
     /// Normally distributed delay, clamped to be non-negative.
     Normal { mean: Duration, stddev: Duration },
@@ -177,10 +177,13 @@ pub fn parse_delay(s: &str) -> Result<DelayDist, String> {
 
     if let Some(rest) = s.strip_prefix("uniform:") {
         let (min, max) = split_pair(rest)?;
-        return Ok(DelayDist::Uniform {
-            min: parse_duration(min)?,
-            max: parse_duration(max)?,
-        });
+        let (min, max) = (parse_duration(min)?, parse_duration(max)?);
+        if max < min {
+            return Err(format!(
+                "uniform delay max ({max:?}) must be >= min ({min:?})"
+            ));
+        }
+        return Ok(DelayDist::Uniform { min, max });
     }
     if let Some(rest) = s.strip_prefix("normal:") {
         let (mean, stddev) = split_pair(rest)?;

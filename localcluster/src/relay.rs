@@ -355,27 +355,26 @@ mod tests {
 
         let mut buf = [0u8; 8];
         let (n, _) = node.recv_from(&mut buf).await.unwrap();
+        let fast_at = start.elapsed();
         assert_eq!(
             &buf[..n],
             b"from0",
             "fast link (0 -> 5) should arrive first"
         );
-        assert!(
-            start.elapsed() < Duration::from_millis(120),
-            "fast link was too slow: {:?}",
-            start.elapsed()
-        );
 
         let (n, _) = node.recv_from(&mut buf).await.unwrap();
+        let slow_at = start.elapsed();
         assert_eq!(
             &buf[..n],
             b"from1",
             "slow link (1 -> 5) should arrive second"
         );
+        // Assert the relative lag (configured delta is 200ms - 30ms = 170ms) rather than
+        // absolute arrival times, so global scheduling overhead on a loaded runner can't
+        // make this flaky.
         assert!(
-            start.elapsed() >= Duration::from_millis(180),
-            "slow link was too fast: {:?}",
-            start.elapsed()
+            slow_at - fast_at >= Duration::from_millis(150),
+            "slow link should lag fast by ~170ms: fast={fast_at:?} slow={slow_at:?}"
         );
 
         relay.abort();

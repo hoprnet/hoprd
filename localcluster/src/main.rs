@@ -170,10 +170,18 @@ async fn main() -> Result<()> {
                 args.latency_port_base
             );
             for id in 0..args.size {
-                let listen = resolve_socket(&args.p2p_host, args.latency_port_base + id as u16)
+                let listen_port = args
+                    .latency_port_base
+                    .checked_add(id as u16)
+                    .ok_or_else(|| anyhow::anyhow!("relay listen port overflow: base + node id {id} exceeds u16"))?;
+                let target_port = args
+                    .p2p_port_base
+                    .checked_add(id as u16)
+                    .ok_or_else(|| anyhow::anyhow!("relay target port overflow: base + node id {id} exceeds u16"))?;
+                let listen = resolve_socket(&args.p2p_host, listen_port)
                     .await
                     .context("resolving relay listen address")?;
-                let target = resolve_socket(&args.p2p_host, args.p2p_port_base + id as u16)
+                let target = resolve_socket(&args.p2p_host, target_port)
                     .await
                     .context("resolving relay target address")?;
                 let handle = relay::spawn_relay(RelayConfig {

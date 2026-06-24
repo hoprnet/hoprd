@@ -392,10 +392,13 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         // With latency enabled, peers must dial the relay, so announce the relay port
         // (the node still binds its real port; its own announce is disabled below).
         let announce_port = if config.latency.is_some() {
-            config.latency_port_base + id as u16
+            config.latency_port_base.checked_add(id as u16)
         } else {
-            config.p2p_port_base + id as u16
-        };
+            config.p2p_port_base.checked_add(id as u16)
+        }
+        .ok_or_else(|| {
+            anyhow::anyhow!("announce port overflow: port base + node id {id} exceeds u16")
+        })?;
         let multiaddr = build_announce_multiaddr(p2p_host, announce_port)?;
         match module_connector
             .announce(&[multiaddr], &kp.packet_key)
