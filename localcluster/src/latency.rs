@@ -168,7 +168,7 @@ struct RawLink {
 /// Accepted forms:
 /// - `100ms`                  → fixed
 /// - `100ms±30ms` / `100ms+-30ms` → uniform `[mean-jitter, mean+jitter]` (clamped ≥0)
-/// - `uniform:50ms,150ms`     → uniform `[min, max]`
+/// - `uniform:50ms,150ms`     → uniform `[min, max)` (requires `max > min`)
 /// - `normal:100ms,30ms`      → normal `{mean, stddev}`
 ///
 /// Durations accept `us`/`µs`, `ms`, `s` suffixes (default `ms` if unit-less).
@@ -178,9 +178,9 @@ pub fn parse_delay(s: &str) -> Result<DelayDist, String> {
     if let Some(rest) = s.strip_prefix("uniform:") {
         let (min, max) = split_pair(rest)?;
         let (min, max) = (parse_duration(min)?, parse_duration(max)?);
-        if max < min {
+        if max <= min {
             return Err(format!(
-                "uniform delay max ({max:?}) must be >= min ({min:?})"
+                "uniform delay max ({max:?}) must be > min ({min:?}); use a fixed delay for a degenerate range"
             ));
         }
         return Ok(DelayDist::Uniform { min, max });
@@ -245,7 +245,7 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
         "us" => value / 1_000_000.0,
         _ => unreachable!(),
     };
-    Ok(Duration::from_secs_f64(secs))
+    Duration::try_from_secs_f64(secs).map_err(|_| format!("duration '{s}' is out of range"))
 }
 
 #[cfg(test)]
@@ -314,6 +314,9 @@ mod tests {
     fn rejects_garbage() {
         assert!(parse_delay("abc").is_err());
         assert!(parse_delay("uniform:10ms").is_err());
+        // Degenerate range (max == min) is rejected; use a fixed delay instead.
+        assert!(parse_delay("uniform:50ms,50ms").is_err());
+        assert!(parse_delay("uniform:150ms,50ms").is_err());
     }
 
     #[test]

@@ -75,6 +75,7 @@ prettyplease = "0.2.37"
 proc-macro-regex = "~1.1.0"
 progenitor = "0.14.0"
 progenitor-client = "0.14.0"
+rand = "0.9"
 regex = "1.12.4"
 reqwest = { version = "0.13.4", default-features = false, features = [
   "json",

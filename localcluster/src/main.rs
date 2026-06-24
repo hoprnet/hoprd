@@ -169,19 +169,25 @@ async fn main() -> Result<()> {
                 "latency relays enabled (relay base port {})",
                 args.latency_port_base
             );
+            // `auto`/`0.0.0.0` aren't resolvable hostnames; map to the same loopback the
+            // rest of localcluster advertises so lookup_host never sees the sentinel.
+            let relay_host = hoprd_localcluster::summary::advertised_host(&args.p2p_host);
             for id in 0..args.size {
-                let listen_port = args
-                    .latency_port_base
-                    .checked_add(id as u16)
-                    .ok_or_else(|| anyhow::anyhow!("relay listen port overflow: base + node id {id} exceeds u16"))?;
-                let target_port = args
-                    .p2p_port_base
-                    .checked_add(id as u16)
-                    .ok_or_else(|| anyhow::anyhow!("relay target port overflow: base + node id {id} exceeds u16"))?;
-                let listen = resolve_socket(&args.p2p_host, listen_port)
+                let listen_port =
+                    args.latency_port_base
+                        .checked_add(id as u16)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "relay listen port overflow: base + node id {id} exceeds u16"
+                            )
+                        })?;
+                let target_port = args.p2p_port_base.checked_add(id as u16).ok_or_else(|| {
+                    anyhow::anyhow!("relay target port overflow: base + node id {id} exceeds u16")
+                })?;
+                let listen = resolve_socket(relay_host, listen_port)
                     .await
                     .context("resolving relay listen address")?;
-                let target = resolve_socket(&args.p2p_host, target_port)
+                let target = resolve_socket(relay_host, target_port)
                     .await
                     .context("resolving relay target address")?;
                 let handle = relay::spawn_relay(RelayConfig {

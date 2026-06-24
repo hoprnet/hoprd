@@ -188,7 +188,16 @@ impl Args {
         if let Some(spec) = &self.latency {
             cfg.default = Some(crate::latency::parse_delay(spec)?);
         }
-        Ok((!cfg.is_empty()).then_some(cfg))
+        if cfg.is_empty() {
+            if let Some(path) = &self.latency_config {
+                tracing::warn!(
+                    "latency config {} produced no delays; no relays will be started",
+                    path.display()
+                );
+            }
+            return Ok(None);
+        }
+        Ok(Some(cfg))
     }
 }
 

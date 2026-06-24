@@ -265,8 +265,8 @@ node after a sampled delay. Granularity:
   ```
 
 Delay spec forms: `100ms` (fixed), `100ms±30ms` / `100ms+-30ms` (uniform
-`[mean-jitter, mean+jitter]`), `uniform:min,max`, `normal:mean,stddev`. Durations accept
-`us`/`µs`, `ms` (default), `s`.
+`[mean-jitter, mean+jitter]`), `uniform:min,max` (half-open `[min, max)`, requires `max > min` — a degenerate
+range is a parse error; use a fixed delay instead), `normal:mean,stddev`. Durations accept `us`/`µs`, `ms` (default), `s`.
 
 Caveats:
 
@@ -277,6 +277,9 @@ Caveats:
   links will see slower / failing session establishment. That is realistic behaviour, not
   a relay defect.
 - Delay is applied per hop; a multi-hop HOPR path accumulates delay at each relayed node.
+- Each relay flow buffers a bounded number of in-flight datagrams; under sustained
+  saturation (e.g. unthrottled bulk transfer) excess datagrams are dropped, exactly as a
+  real link tail-drops. Throttle the offered load to avoid loss-induced throughput collapse.
 - Latency mode flips `announce=false` and announces the relay port — only meaningful for
   the local Anvil chain. Disabled by default, so normal runs are unaffected.
 - When latency is enabled, the `status` JSON `p2p` field reports the **relay** port (the

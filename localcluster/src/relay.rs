@@ -35,7 +35,7 @@ use anyhow::Context;
 use tokio::{
     net::UdpSocket,
     sync::mpsc,
-    task::JoinHandle,
+    task::{JoinHandle, JoinSet},
     time::{Instant, sleep_until},
 };
 use tracing::warn;
@@ -45,6 +45,11 @@ use crate::latency::{DelayDist, LatencyConfig};
 /// Largest datagram the relay will buffer. QUIC datagrams stay well under this.
 const MAX_DATAGRAM: usize = 64 * 1024;
 
+/// Max in-flight datagrams a single directed flow buffers (channel + release heap).
+/// Bounds memory under high throughput / large delay; excess datagrams are dropped,
+/// matching how a saturated real link sheds packets.
+const RELAY_QUEUE_CAP: usize = 1024;
+
 /// Sentinel peer index used when a datagram's source port is not a known node port.
 /// It never matches a `per_link`/`per_node` entry, so such traffic falls back to the
 /// global default delay (or no delay).
@@ -53,6 +58,22 @@ const UNKNOWN_PEER: usize = usize::MAX;
 /// A datagram tagged with the instant it arrived at the relay, so the sender worker can
 /// schedule its release relative to arrival rather than to when it is dequeued.
 type Pending = (Instant, Vec<u8>);
+
+/// Upper bound on concurrent peer sessions a relay tracks. A legitimate cluster has a
+/// handful of peers (stable source ports); the cap stops a peer rotating UDP source ports
+/// from exhausting sockets/tasks. The least-recently-active session is evicted on overflow.
+const MAX_SESSIONS: usize = 256;
+
+/// Per-peer relay state. Its `tasks` owns every worker spawned for the peer (forward
+/// sender, return sender, return reader); dropping the `Session` — on eviction or when the
+/// relay loop stops/aborts — cancels them all, so no worker is left detached.
+struct Session {
+    forward_tx: mpsc::Sender<Pending>,
+    last_seen: Instant,
+    /// Held only for its drop: aborting the `JoinSet` cancels every per-peer worker.
+    #[allow(dead_code)]
+    tasks: JoinSet<()>,
+}
 
 /// Parameters for a single node's relay.
 pub struct RelayConfig {
@@ -105,8 +126,8 @@ pub async fn spawn_relay(cfg: RelayConfig) -> anyhow::Result<RelayHandle> {
 }
 
 async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
-    // One forward queue per peer; the node then sees each peer as a stable distinct source.
-    let mut sessions: HashMap<SocketAddr, mpsc::UnboundedSender<Pending>> = HashMap::new();
+    // One session per peer; the node then sees each peer as a stable distinct source.
+    let mut sessions: HashMap<SocketAddr, Session> = HashMap::new();
     let mut buf = vec![0u8; MAX_DATAGRAM];
 
     loop {
@@ -122,9 +143,20 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
         // that may `continue` on error, which `entry().or_insert_with` can't express.
         #[allow(clippy::map_entry)]
         if !sessions.contains_key(&peer) {
+            if sessions.len() >= MAX_SESSIONS {
+                if let Some(lru) = sessions
+                    .iter()
+                    .min_by_key(|(_, s)| s.last_seen)
+                    .map(|(addr, _)| *addr)
+                {
+                    // Dropping the evicted Session cancels its workers via its JoinSet.
+                    sessions.remove(&lru);
+                    warn!(%peer, evicted = %lru, "relay session table full; evicting LRU peer");
+                }
+            }
             match new_upstream(cfg.clone(), listen.clone(), peer).await {
-                Ok(tx) => {
-                    sessions.insert(peer, tx);
+                Ok(session) => {
+                    sessions.insert(peer, session);
                 }
                 Err(e) => {
                     warn!(error = %e, %peer, "relay failed to create upstream socket");
@@ -134,20 +166,30 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
         }
 
         let datagram = buf[..len].to_vec();
-        // Forward leg: peer Y -> node X, shaped by resolve(Y, X).
-        if sessions[&peer].send((Instant::now(), datagram)).is_err() {
-            sessions.remove(&peer);
+        let session = sessions.get_mut(&peer).expect("inserted above");
+        session.last_seen = Instant::now();
+        // Forward leg: peer Y -> node X, shaped by resolve(Y, X). Drop on a full queue
+        // (link saturated), tear the session down only when the worker is gone.
+        match session.forward_tx.try_send((Instant::now(), datagram)) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                warn!(%peer, "relay forward queue full; dropping datagram");
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                sessions.remove(&peer);
+            }
         }
     }
 }
 
-/// Create an upstream socket toward the node and spawn the return-path reader. Returns
-/// the queue that the forward leg (peer → node) feeds.
+/// Create an upstream socket toward the node and spawn the per-peer workers. All workers
+/// are owned by the returned [`Session`]'s `JoinSet`, so they are cancelled together when
+/// the session is dropped (eviction or relay shutdown).
 async fn new_upstream(
     cfg: Arc<RelayConfig>,
     listen: Arc<UdpSocket>,
     peer: SocketAddr,
-) -> anyhow::Result<mpsc::UnboundedSender<Pending>> {
+) -> anyhow::Result<Session> {
     let bind_addr: SocketAddr = if cfg.target.is_ipv6() {
         "[::]:0".parse().expect("valid v6 wildcard")
     } else {
@@ -167,31 +209,39 @@ async fn new_upstream(
     let forward_delay = cfg.latency.resolve(peer_idx, cfg.node_id);
     let return_delay = cfg.latency.resolve(cfg.node_id, peer_idx);
 
+    let mut tasks = JoinSet::new();
+
     // Return leg: node X -> peer Y, sent from the listen socket back to the peer.
-    let return_tx = spawn_sender(listen, ForwardTarget::SendTo(peer), return_delay);
+    let (return_tx, return_worker) =
+        sender_worker(listen, ForwardTarget::SendTo(peer), return_delay);
+    tasks.spawn(return_worker);
+
     let reader = upstream.clone();
-    tokio::spawn(async move {
+    tasks.spawn(async move {
         let mut buf = vec![0u8; MAX_DATAGRAM];
         loop {
             match reader.recv(&mut buf).await {
-                Ok(len) => {
-                    if return_tx
-                        .send((Instant::now(), buf[..len].to_vec()))
-                        .is_err()
-                    {
-                        return;
+                Ok(len) => match return_tx.try_send((Instant::now(), buf[..len].to_vec())) {
+                    Ok(()) => {}
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        warn!(%peer, "relay return queue full; dropping datagram");
                     }
-                }
+                    Err(mpsc::error::TrySendError::Closed(_)) => return,
+                },
                 Err(_) => return,
             }
         }
     });
 
-    Ok(spawn_sender(
-        upstream,
-        ForwardTarget::Connected,
-        forward_delay,
-    ))
+    let (forward_tx, forward_worker) =
+        sender_worker(upstream, ForwardTarget::Connected, forward_delay);
+    tasks.spawn(forward_worker);
+
+    Ok(Session {
+        forward_tx,
+        last_seen: Instant::now(),
+        tasks,
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -202,18 +252,20 @@ enum ForwardTarget {
     SendTo(SocketAddr),
 }
 
-/// Spawn a delaying forwarder for one directed flow.
+/// Build a delaying forwarder for one directed flow: the sender end of its queue plus the
+/// worker future (caller spawns it, typically into a session [`JoinSet`] so it is cancelled
+/// with the session).
 ///
 /// Each datagram's release time is `arrival + sampled_delay`; datagrams are sent in
 /// release-time order via a min-heap. A fixed delay preserves order; jitter lets a packet
 /// with a smaller delay overtake an earlier one, so reordering happens naturally.
-fn spawn_sender(
+fn sender_worker(
     socket: Arc<UdpSocket>,
     target: ForwardTarget,
     delay: Option<DelayDist>,
-) -> mpsc::UnboundedSender<Pending> {
-    let (tx, mut rx) = mpsc::unbounded_channel::<Pending>();
-    tokio::spawn(async move {
+) -> (mpsc::Sender<Pending>, impl std::future::Future<Output = ()>) {
+    let (tx, mut rx) = mpsc::channel::<Pending>(RELAY_QUEUE_CAP);
+    let worker = async move {
         // Ordered by release instant; `seq` breaks ties so payloads are never compared.
         let mut heap: BinaryHeap<Reverse<(Instant, u64, Vec<u8>)>> = BinaryHeap::new();
         let mut seq: u64 = 0;
@@ -237,9 +289,18 @@ fn spawn_sender(
             tokio::select! {
                 maybe = rx.recv() => match maybe {
                     Some((arrival, datagram)) => {
-                        let release = arrival + delay.map(|d| d.sample()).unwrap_or_default();
-                        heap.push(Reverse((release, seq, datagram)));
-                        seq += 1;
+                        if heap.len() >= RELAY_QUEUE_CAP {
+                            warn!("relay release heap full; dropping datagram");
+                        } else {
+                            let sampled = delay.map(|d| d.sample()).unwrap_or_default();
+                            match arrival.checked_add(sampled) {
+                                Some(release) => {
+                                    heap.push(Reverse((release, seq, datagram)));
+                                    seq += 1;
+                                }
+                                None => warn!("relay release time overflow; dropping datagram"),
+                            }
+                        }
                     }
                     None => return,
                 },
@@ -251,8 +312,8 @@ fn spawn_sender(
                 } => {}
             }
         }
-    });
-    tx
+    };
+    (tx, worker)
 }
 
 /// Recover a peer's node index from its source port, or [`UNKNOWN_PEER`].

@@ -317,7 +317,7 @@ impl NodeSummary {
 }
 
 /// `0.0.0.0` and `auto` (bind-all) are not routable for clients; advertise loopback instead.
-fn advertised_host(host: &str) -> &str {
+pub fn advertised_host(host: &str) -> &str {
     match host {
         "0.0.0.0" | "auto" => "127.0.0.1",
         other => other,

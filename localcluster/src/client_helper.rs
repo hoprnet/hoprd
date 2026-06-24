@@ -133,7 +133,9 @@ impl HoprdApiClient {
             .await
             .map_err(|e| anyhow::anyhow!("create {protocol} session to {destination}: {e}"))?
             .into_inner();
-        Ok((resp.ip, resp.port as u16))
+        let port = u16::try_from(resp.port)
+            .map_err(|_| anyhow::anyhow!("session port {} out of u16 range", resp.port))?;
+        Ok((resp.ip, port))
     }
 }
 

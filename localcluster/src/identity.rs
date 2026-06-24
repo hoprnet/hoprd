@@ -399,7 +399,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         .ok_or_else(|| {
             anyhow::anyhow!("announce port overflow: port base + node id {id} exceeds u16")
         })?;
-        let multiaddr = build_announce_multiaddr(p2p_host, announce_port)?;
+        // The relay binds the normalized host (`auto`/`0.0.0.0` → loopback); the announced
+        // relay address must match that reachable endpoint, not the raw sentinel.
+        let announce_host = if config.latency.is_some() {
+            crate::summary::advertised_host(p2p_host)
+        } else {
+            p2p_host.as_str()
+        };
+        let multiaddr = build_announce_multiaddr(announce_host, announce_port)?;
         match module_connector
             .announce(&[multiaddr], &kp.packet_key)
             .await

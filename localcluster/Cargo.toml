@@ -31,7 +31,7 @@ hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }
 lazy_static = { workspace = true }
 nix = { workspace = true, features = ["fs", "signal"] }
-rand = "0.9"
+rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde-saphyr = { workspace = true }
