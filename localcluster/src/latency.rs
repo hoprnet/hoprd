@@ -7,7 +7,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use rand::Rng;
+use rand::RngExt;
 
 /// A delay distribution sampled once per forwarded datagram.
 #[derive(Clone, Copy, Debug, PartialEq)]
