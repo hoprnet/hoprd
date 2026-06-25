@@ -1226,6 +1226,15 @@ mod tests {
             .with_state(state)
     }
 
+    #[test]
+    fn session_id_to_string_round_trips_via_from_hex() {
+        use hopr_lib::api::types::crypto_random::Randomizable;
+        let id = SessionId::random();
+        let hex = id.to_string();
+        let parsed = SessionId::from_hex(&hex).expect("from_hex must accept to_string output");
+        assert_eq!(id, parsed);
+    }
+
     #[tokio::test]
     async fn list_clients_should_return_empty_when_no_sessions() -> anyhow::Result<()> {
         let app = session_router();

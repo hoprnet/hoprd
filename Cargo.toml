@@ -2,7 +2,6 @@
 resolver = "2"
 members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 
-# just kicking build
 [workspace.package]
 rust-version = "1.91"
 authors = ["HOPR Association <tech@hoprnet.org>"]
@@ -178,3 +177,4 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["oas3", "humantime-serde", "hopr-api", "hopr-utils"]
+
