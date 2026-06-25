@@ -139,7 +139,7 @@ fn default_session_establish_max_retries() -> usize {
     HoprLibConfig::default()
         .protocol
         .session
-        .establish_max_retries as usize
+        .establish_max_retries
 }
 
 fn default_probe_recheck_threshold() -> Duration {
