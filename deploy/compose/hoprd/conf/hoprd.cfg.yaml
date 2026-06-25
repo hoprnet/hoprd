@@ -50,6 +50,7 @@ strategy:
         restart: {}
         concurrency:
           max_concurrent_actions: 4
+        selector: default
 hopr:
   network:
     probe_interval: "3s"
