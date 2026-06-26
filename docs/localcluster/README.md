@@ -169,6 +169,7 @@ Shape:
       "api_url": "http://127.0.0.1:3000",
       "api_token": null,
       "p2p": "127.0.0.1:9000",
+      "latency": null,
       "node_admin_url": "http://localhost:4677/node/info?apiEndpoint=http://127.0.0.1:3000",
       "pid": 12345
     }
@@ -218,24 +219,71 @@ The lock is released automatically by the OS when the owner exits — including 
 
 Flags take precedence over env vars. Only the flags marked with an env var below support one.
 
-| Flag                   | Env var                   | Default              | Description                                                                                                               |
-| ---------------------- | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--size`               | —                         | `3`                  | Number of nodes to start (1–5)                                                                                            |
-| `--api-host`           | —                         | `localhost`          | Host to bind the REST API on                                                                                              |
-| `--api-port-base`      | —                         | `3000`               | First API port (each node gets base + id)                                                                                 |
-| `--p2p-host`           | —                         | `localhost`          | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time) |
-| `--p2p-port-base`      | —                         | `9000`               | First P2P port                                                                                                            |
-| `--data-dir`           | —                         | `/tmp/hopr-nodes`    | Root for configs, identities, DBs, logs                                                                                   |
-| `--control-base`       | —                         | `<data-dir>/cluster` | Path prefix for the lock (`<base>.lock`) and status socket (`<base>.sock`)                                                |
-| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                    | Container image for Blokli + Anvil                                                                                        |
-| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                    | External Blokli URL; skips the container step                                                                             |
-| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`             | Container CLI (`docker`, `container`, `podman`, …)                                                                        |
-| `--hoprd-bin`          | —                         | `hoprd`              | Path to the `hoprd` binary                                                                                                |
-| `--identity-password`  | —                         | `password`           | Password for identity encryption                                                                                          |
-| `--api-token`          | —                         | none                 | Bearer token for the REST API                                                                                             |
-| `--funding-amount`     | —                         | `1 wxHOPR`           | Per-channel funding amount                                                                                                |
-| `--channel-management` | —                         | `api`                | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                  |
-| `--extra-identities`   | —                         | `0`                  | Extra pre-funded identities for external tooling (0–5)                                                                    |
+| Flag                   | Env var                   | Default              | Description                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--size`               | —                         | `3`                  | Number of nodes to start (1–5)                                                                                                                                                                                                                                                                    |
+| `--api-host`           | —                         | `localhost`          | Host to bind the REST API on                                                                                                                                                                                                                                                                      |
+| `--api-port-base`      | —                         | `3000`               | First API port (each node gets base + id)                                                                                                                                                                                                                                                         |
+| `--p2p-host`           | —                         | `localhost`          | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time)                                                                                                                                                                         |
+| `--p2p-port-base`      | —                         | `9000`               | First P2P port                                                                                                                                                                                                                                                                                    |
+| `--data-dir`           | —                         | `/tmp/hopr-nodes`    | Root for configs, identities, DBs, logs                                                                                                                                                                                                                                                           |
+| `--control-base`       | —                         | `<data-dir>/cluster` | Path prefix for the lock (`<base>.lock`) and status socket (`<base>.sock`)                                                                                                                                                                                                                        |
+| `--chain-image`        | `HOPRD_CHAIN_IMAGE`       | —                    | Container image for Blokli + Anvil                                                                                                                                                                                                                                                                |
+| `--chain-url`          | `HOPRD_CHAIN_URL`         | —                    | External Blokli URL; skips the container step                                                                                                                                                                                                                                                     |
+| `--container-runtime`  | `HOPRD_CONTAINER_RUNTIME` | `docker`             | Container CLI (`docker`, `container`, `podman`, …)                                                                                                                                                                                                                                                |
+| `--hoprd-bin`          | —                         | `hoprd`              | Path to the `hoprd` binary                                                                                                                                                                                                                                                                        |
+| `--identity-password`  | —                         | `password`           | Password for identity encryption                                                                                                                                                                                                                                                                  |
+| `--api-token`          | —                         | none                 | Bearer token for the REST API                                                                                                                                                                                                                                                                     |
+| `--funding-amount`     | —                         | `1 wxHOPR`           | Per-channel funding amount                                                                                                                                                                                                                                                                        |
+| `--channel-management` | —                         | `api`                | Channel management mode: `api` (manual REST open), `strategy` (channel strategy only), `both`, or `none`                                                                                                                                                                                          |
+| `--extra-identities`   | —                         | `0`                  | Extra pre-funded identities for external tooling (0–5)                                                                                                                                                                                                                                            |
+| `--latency`            | —                         | none                 | Artificial latency on inter-node traffic. A global delay spec (`100ms`, `100ms±30ms`, `uniform:50ms,150ms`, `normal:100ms,30ms`) or `config:<path>` for a per-node/per-link YAML file. Optional `@<port>` suffix sets the relay base port (default `9100`); node `i`'s relay listens on base + id |
+
+### Artificial latency
+
+`--latency` injects artificial delay on the P2P traffic between nodes,
+cross-platform (Linux + macOS) and without modifying `hoprd`.
+
+When enabled, each node `X` runs a small userspace **UDP relay**: the relay's port is
+announced on chain instead of the node's real listen port (and the node's own
+self-announce is disabled), so peers dial the relay, which forwards datagrams to the
+node after a sampled delay. Granularity:
+
+- **Global** — one delay for all links: `--latency 150ms±50ms`.
+- **Per-node / per-link** — a YAML file via `--latency config:<path>`. Resolution order is
+  `per_link` → `per_node` (keyed by destination) → `default`:
+
+  ```yaml
+  default: "100ms±30ms" # all links unless overridden
+  per_node:
+    2: "300ms" # any link whose destination is node 2
+  per_link:
+    - { from: 0, to: 1, delay: "500ms" } # directed link 0 → 1
+    - { from: 1, to: 0, delay: "10ms" }
+  ```
+
+Delay spec forms: `100ms` (fixed), `100ms±30ms` / `100ms+-30ms` (uniform
+`[mean-jitter, mean+jitter]`), `uniform:min,max` (half-open `[min, max)`, requires `max > min` — a degenerate
+range is a parse error; use a fixed delay instead), `normal:mean,stddev`. Durations accept `us`/`µs`, `ms` (default), `s`.
+
+Caveats:
+
+- Delay is modelled physically: each packet is released at `arrival + sampled_delay`. A
+  **fixed** delay preserves packet order (like a real fixed-latency link); **jitter** lets
+  packets overtake one another, so they **reorder** — exactly as on the real internet.
+  Reordering stresses the HOPR session layer (segment reassembly), so heavily jittered
+  links will see slower / failing session establishment. That is realistic behaviour, not
+  a relay defect.
+- Delay is applied per hop; a multi-hop HOPR path accumulates delay at each relayed node.
+- Each relay flow buffers a bounded number of in-flight datagrams; under sustained
+  saturation (e.g. unthrottled bulk transfer) excess datagrams are dropped, exactly as a
+  real link tail-drops. Throttle the offered load to avoid loss-induced throughput collapse.
+- Latency mode flips `announce=false` and announces the relay port — only meaningful for
+  the local Anvil chain. Disabled by default, so normal runs are unaffected.
+- When latency is enabled, the `status` JSON `p2p` field reports the **relay** port (the
+  address peers dial, `latency_port_base + id`), not the node's real listen port, and each
+  node's `latency` field describes the delay applied to its inbound traffic (a single value,
+  or a per-source breakdown when links differ). It is `null` when latency is disabled.
 
 ### Channel management modes
 

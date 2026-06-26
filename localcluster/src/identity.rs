@@ -42,6 +42,8 @@ pub const DEFAULT_TX_TIMEOUT_MULTIPLIER: u32 = 10;
 
 pub const DEFAULT_NUM_EXTRA_IDENTITIES: usize = 0;
 pub const MAX_EXTRA_IDENTITIES: usize = 5;
+/// Base port for latency relays; relay for node `i` listens on `DEFAULT_LATENCY_PORT_BASE + i`.
+pub const DEFAULT_LATENCY_PORT_BASE: u16 = 9100;
 /// Password for extra identity keystores.
 ///
 /// Intentionally a known constant so external tooling can hardcode it without
@@ -65,6 +67,9 @@ pub struct GenerationConfig {
     pub p2p_port_base: u16,
     /// Enables channel lifecycle strategy in generated hoprd configs.
     pub enable_channel_strategy: bool,
+    /// When set, each node announces its latency-relay port instead of its real
+    /// listen port and disables its own on-chain announce, so peers dial the relay.
+    pub latency: Option<crate::cli::Latency>,
 }
 
 impl Default for GenerationConfig {
@@ -80,6 +85,7 @@ impl Default for GenerationConfig {
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
             enable_channel_strategy: false,
+            latency: None,
         }
     }
 }
@@ -380,7 +386,23 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             Err(e) => return Err(anyhow::anyhow!("safe registration failed: {e}")),
         }
 
-        let multiaddr = build_announce_multiaddr(p2p_host, config.p2p_port_base + id as u16)?;
+        // With latency enabled, peers must dial the relay, so announce the relay port
+        // (the node still binds its real port; its own announce is disabled below).
+        let announce_port = match &config.latency {
+            Some(latency) => latency.port_base.checked_add(id as u16),
+            None => config.p2p_port_base.checked_add(id as u16),
+        }
+        .ok_or_else(|| {
+            anyhow::anyhow!("announce port overflow: port base + node id {id} exceeds u16")
+        })?;
+        // The relay binds the normalized host (`auto`/`0.0.0.0` → loopback); the announced
+        // relay address must match that reachable endpoint, not the raw sentinel.
+        let announce_host = if config.latency.is_some() {
+            crate::summary::advertised_host(p2p_host)
+        } else {
+            p2p_host.as_str()
+        };
+        let multiaddr = build_announce_multiaddr(announce_host, announce_port)?;
         match module_connector
             .announce(&[multiaddr], &kp.packet_key)
             .await
@@ -403,7 +425,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
         let node_cfg = HoprdConfig {
             hopr: UserHoprLibConfig {
-                announce: true,
+                // When relaying through the latency proxy, the relay port is pre-announced
+                // here; the node must not self-announce its real port (it would publish a
+                // second, undelayed address peers could dial).
+                announce: config.latency.is_none(),
                 network: UserHoprNetworkConfig {
                     announce_local_addresses: true,
                     prefer_local_addresses: true,

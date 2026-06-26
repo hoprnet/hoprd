@@ -5,7 +5,9 @@ use std::{
 
 use anyhow::{Context, Result};
 use hoprd_api_client;
-use hoprd_api_client::types::OpenChannelBodyRequest;
+use hoprd_api_client::types::{
+    OpenChannelBodyRequest, RoutingOptions, SessionClientRequest, SessionTargetSpec,
+};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
 
@@ -98,6 +100,42 @@ impl HoprdApiClient {
             .await
             .map_err(|e| anyhow::anyhow!("open_channel to {destination}: {e}"))?;
         Ok(())
+    }
+
+    /// Open a session (`protocol` = `"tcp"` or `"udp"`) to `destination` (exit node
+    /// on-chain address) using `hops` intermediate relays on both forward and return
+    /// paths. The exit forwards the plaintext to `target` (`ip:port`). Returns the
+    /// `(ip, port)` of the listener bound on this (entry) node.
+    ///
+    /// SURB knobs (`response_buffer`, `max_surb_upstream`) are left at protocol defaults.
+    pub async fn open_session(
+        &self,
+        protocol: &str,
+        destination: &str,
+        target: &str,
+        hops: u64,
+    ) -> Result<(String, u16)> {
+        let body = SessionClientRequest {
+            destination: destination.to_string(),
+            forward_path: RoutingOptions::Hops(hops),
+            return_path: RoutingOptions::Hops(hops),
+            target: SessionTargetSpec::Plain(target.to_string()),
+            capabilities: None,
+            listen_host: None,
+            max_client_sessions: None,
+            max_surb_upstream: None,
+            response_buffer: None,
+            session_pool: None,
+        };
+        let resp = self
+            .inner
+            .create_client(protocol, &body)
+            .await
+            .map_err(|e| anyhow::anyhow!("create {protocol} session to {destination}: {e}"))?
+            .into_inner();
+        let port = u16::try_from(resp.port)
+            .map_err(|_| anyhow::anyhow!("session port {} out of u16 range", resp.port))?;
+        Ok((resp.ip, port))
     }
 }
 
