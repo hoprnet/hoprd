@@ -88,8 +88,12 @@ async fn main() -> Result<()> {
 
     let args = cli.run;
 
-    let latency = args
-        .resolve_latency()
+    // Resolve the relay delay model once; `args.latency` keeps the source + relay base port.
+    let latency_model = args
+        .latency
+        .as_ref()
+        .map(|l| l.resolve())
+        .transpose()
         .map_err(|e| anyhow::anyhow!("invalid latency configuration: {e}"))?;
 
     let data_dir = args.data_dir.clone();
@@ -107,8 +111,10 @@ async fn main() -> Result<()> {
     let _lock = ClusterLock::acquire(&control_base)?;
 
     // Live status, updated through the lifecycle and served on the control socket.
-    let summary: SharedSummary =
-        Arc::new(Mutex::new(ClusterSummary::initial(&args, latency.as_ref())));
+    let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(
+        &args,
+        latency_model.as_ref(),
+    )));
     let _control = ControlServer::start(control::socket_path(&control_base), summary.clone())?;
 
     let explicit_chain_url = args.chain_url.clone();
@@ -149,8 +155,7 @@ async fn main() -> Result<()> {
                 args.channel_management,
                 cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
             ),
-            latency: latency.clone(),
-            latency_port_base: args.latency_port_base,
+            latency: args.latency.clone(),
             ..Default::default()
         };
 
@@ -162,25 +167,18 @@ async fn main() -> Result<()> {
         let identities = identity::generate(&config).await?;
         summary.lock().await.set_extras(&identities.extras);
 
-        if let Some(latency_cfg) = &latency {
+        if let (Some(latency_cfg), Some(latency)) = (&latency_model, &args.latency) {
             // Relays must be listening before nodes start dialing the announced relay ports.
             let latency_cfg = Arc::new(latency_cfg.clone());
-            info!(
-                "latency relays enabled (relay base port {})",
-                args.latency_port_base
-            );
+            let port_base = latency.port_base;
+            info!("latency relays enabled (relay base port {port_base})");
             // `auto`/`0.0.0.0` aren't resolvable hostnames; map to the same loopback the
             // rest of localcluster advertises so lookup_host never sees the sentinel.
             let relay_host = hoprd_localcluster::summary::advertised_host(&args.p2p_host);
             for id in 0..args.size {
-                let listen_port =
-                    args.latency_port_base
-                        .checked_add(id as u16)
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "relay listen port overflow: base + node id {id} exceeds u16"
-                            )
-                        })?;
+                let listen_port = port_base.checked_add(id as u16).ok_or_else(|| {
+                    anyhow::anyhow!("relay listen port overflow: base + node id {id} exceeds u16")
+                })?;
                 let target_port = args.p2p_port_base.checked_add(id as u16).ok_or_else(|| {
                     anyhow::anyhow!("relay target port overflow: base + node id {id} exceeds u16")
                 })?;

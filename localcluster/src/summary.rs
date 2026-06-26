@@ -119,10 +119,9 @@ impl ClusterSummary {
     /// peers actually dial (not the real listen port), and each node's `latency` field
     /// describes the delay applied to its inbound traffic.
     pub fn initial(args: &cli::Args, latency: Option<&LatencyConfig>) -> Self {
-        let p2p_port_base = if latency.is_some() {
-            args.latency_port_base
-        } else {
-            args.p2p_port_base
+        let p2p_port_base = match &args.latency {
+            Some(l) => l.port_base,
+            None => args.p2p_port_base,
         } as usize;
         let nodes = (0..args.size)
             .map(|id| {

@@ -69,9 +69,7 @@ pub struct GenerationConfig {
     pub enable_channel_strategy: bool,
     /// When set, each node announces its latency-relay port instead of its real
     /// listen port and disables its own on-chain announce, so peers dial the relay.
-    pub latency: Option<crate::latency::LatencyConfig>,
-    /// Base port for latency relays; node `i`'s relay listens on `latency_port_base + i`.
-    pub latency_port_base: u16,
+    pub latency: Option<crate::cli::Latency>,
 }
 
 impl Default for GenerationConfig {
@@ -88,7 +86,6 @@ impl Default for GenerationConfig {
             p2p_port_base: 9000,
             enable_channel_strategy: false,
             latency: None,
-            latency_port_base: DEFAULT_LATENCY_PORT_BASE,
         }
     }
 }
@@ -391,10 +388,9 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
         // With latency enabled, peers must dial the relay, so announce the relay port
         // (the node still binds its real port; its own announce is disabled below).
-        let announce_port = if config.latency.is_some() {
-            config.latency_port_base.checked_add(id as u16)
-        } else {
-            config.p2p_port_base.checked_add(id as u16)
+        let announce_port = match &config.latency {
+            Some(latency) => latency.port_base.checked_add(id as u16),
+            None => config.p2p_port_base.checked_add(id as u16),
         }
         .ok_or_else(|| {
             anyhow::anyhow!("announce port overflow: port base + node id {id} exceeds u16")

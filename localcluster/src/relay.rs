@@ -143,16 +143,15 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
         // that may `continue` on error, which `entry().or_insert_with` can't express.
         #[allow(clippy::map_entry)]
         if !sessions.contains_key(&peer) {
-            if sessions.len() >= MAX_SESSIONS {
-                if let Some(lru) = sessions
+            if sessions.len() >= MAX_SESSIONS
+                && let Some(lru) = sessions
                     .iter()
                     .min_by_key(|(_, s)| s.last_seen)
                     .map(|(addr, _)| *addr)
-                {
-                    // Dropping the evicted Session cancels its workers via its JoinSet.
-                    sessions.remove(&lru);
-                    warn!(%peer, evicted = %lru, "relay session table full; evicting LRU peer");
-                }
+            {
+                // Dropping the evicted Session cancels its workers via its JoinSet.
+                sessions.remove(&lru);
+                warn!(%peer, evicted = %lru, "relay session table full; evicting LRU peer");
             }
             match new_upstream(cfg.clone(), listen.clone(), peer).await {
                 Ok(session) => {

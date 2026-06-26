@@ -152,19 +152,15 @@ pub struct Args {
     pub extra_identities: usize,
 
     /// Inject artificial latency on inter-node P2P traffic via per-node UDP relays.
-    /// Accepts `100ms`, `100ms±30ms`, `uniform:50ms,150ms`, or `normal:100ms,30ms`.
-    /// Sets a global delay; combine with `--latency-config` for per-node/per-link overrides.
-    #[arg(long, value_parser = parse_latency_spec)]
-    pub latency: Option<String>,
-
-    /// Path to a YAML file with per-node / per-link latency overrides (see
-    /// docs/localcluster/README.md). Enables the latency relays even without `--latency`.
-    #[arg(long)]
-    pub latency_config: Option<PathBuf>,
-
-    /// Base port for latency relays; node `i`'s relay listens on `latency_port_base + i`.
-    #[arg(long, default_value_t = DEFAULT_LATENCY_PORT_BASE)]
-    pub latency_port_base: u16,
+    ///
+    /// One value selects the delay source; an optional `@<port>` suffix overrides the
+    /// relay base port (node `i`'s relay listens on `port + i`):
+    /// - a global delay spec — `100ms`, `100ms±30ms`, `uniform:50ms,150ms`, `normal:100ms,30ms`
+    /// - `config:<path>` — YAML file with per-node / per-link overrides (see docs)
+    ///
+    /// e.g. `--latency 100ms±30ms`, `--latency config:lat.yaml@9100`.
+    #[arg(long, value_parser = parse_latency)]
+    pub latency: Option<Latency>,
 }
 
 impl Args {
@@ -172,37 +168,69 @@ impl Args {
     pub fn control_base(&self) -> PathBuf {
         resolve_control_base(self.control_base.as_deref(), &self.data_dir)
     }
+}
 
-    /// Build the effective latency config from `--latency-config` (per-node/per-link
-    /// overrides) and `--latency` (global default). Returns `None` when neither yields
-    /// any delay, leaving the cluster unshaped.
-    pub fn resolve_latency(&self) -> Result<Option<crate::latency::LatencyConfig>, String> {
-        let mut cfg = match &self.latency_config {
-            Some(path) => {
+/// Where the latency delays come from. The two forms are mutually exclusive.
+#[derive(Clone, Debug)]
+pub enum LatencyKind {
+    /// A single global delay, parsed at CLI-parse time.
+    Fixed(crate::latency::DelayDist),
+    /// A YAML file with per-node / per-link overrides (read lazily by [`Latency::resolve`]).
+    Config(PathBuf),
+}
+
+/// Latency shaping requested on the CLI: the delay source plus the relay base port.
+#[derive(Clone, Debug)]
+pub struct Latency {
+    pub kind: LatencyKind,
+    pub port_base: u16,
+}
+
+impl Latency {
+    /// Resolve the delay model the relays apply. Errors on an unreadable/invalid config
+    /// file or a config that yields no delays.
+    pub fn resolve(&self) -> Result<crate::latency::LatencyConfig, String> {
+        match &self.kind {
+            LatencyKind::Fixed(dist) => Ok(crate::latency::LatencyConfig::global(*dist)),
+            LatencyKind::Config(path) => {
                 let contents = std::fs::read_to_string(path)
                     .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-                crate::latency::LatencyConfig::from_yaml(&contents)?
+                let cfg = crate::latency::LatencyConfig::from_yaml(&contents)?;
+                if cfg.is_empty() {
+                    return Err(format!(
+                        "latency config {} produced no delays",
+                        path.display()
+                    ));
+                }
+                Ok(cfg)
             }
-            None => crate::latency::LatencyConfig::default(),
-        };
-        if let Some(spec) = &self.latency {
-            cfg.default = Some(crate::latency::parse_delay(spec)?);
         }
-        if cfg.is_empty() {
-            if let Some(path) = &self.latency_config {
-                tracing::warn!(
-                    "latency config {} produced no delays; no relays will be started",
-                    path.display()
-                );
-            }
-            return Ok(None);
-        }
-        Ok(Some(cfg))
     }
 }
 
-fn parse_latency_spec(s: &str) -> Result<String, String> {
-    crate::latency::parse_delay(s).map(|_| s.to_string())
+/// Relay base port; node `i`'s relay listens on `port_base + i`.
+impl From<&Latency> for u16 {
+    fn from(l: &Latency) -> u16 {
+        l.port_base
+    }
+}
+
+/// Parse `--latency`: `<spec-or-config>[@<port>]`. The body is either a delay spec or a
+/// `config:<path>`; the optional `@<port>` overrides the relay base port.
+fn parse_latency(s: &str) -> Result<Latency, String> {
+    let (body, port_base) = match s.rsplit_once('@') {
+        Some((body, port)) => (
+            body,
+            port.parse()
+                .map_err(|_| format!("invalid relay base port '{port}'"))?,
+        ),
+        None => (s, DEFAULT_LATENCY_PORT_BASE),
+    };
+    let kind = match body.strip_prefix("config:") {
+        Some(path) => LatencyKind::Config(PathBuf::from(path)),
+        None => LatencyKind::Fixed(crate::latency::parse_delay(body)?),
+    };
+    Ok(Latency { kind, port_base })
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
