@@ -86,10 +86,38 @@ jobs:
       deployment_label_selector: app.kubernetes.io/component=node
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+  integration-gate:
+    name: Integration gate
+    runs-on: depot-ubuntu-24.04
+    needs: build-docker
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    steps:
+      # Trigger the cross-repo integration throughput test against this merged
+      # rev and block until it concludes. A red run fails this job, which gates
+      # deploy-dev below — the first-network deploy only proceeds on green.
+      - name: Trigger and wait for integration test
+        env:
+          GH_TOKEN: ${{ secrets.HOPRD_TEST_DISPATCH_TOKEN }}
+          REV: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          REPO=hoprnet/hoprd-test
+          before=$(gh run list -R "$REPO" --workflow=integration.yaml -L 1 --json databaseId -q '.[0].databaseId // 0')
+          gh workflow run integration.yaml -R "$REPO" -r main -f project=hoprd -f rev="$REV"
+          id="$before"
+          for _ in $(seq 1 60); do
+            id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 1 --json databaseId -q '.[0].databaseId // 0')
+            [ "$id" != "$before" ] && break
+            sleep 5
+          done
+          echo "watching integration run $id"
+          gh run watch "$id" -R "$REPO" --exit-status
   deploy-dev:
     name: Deploy Gnosis Dev
     runs-on: depot-ubuntu-24.04
-    needs: build-docker
+    needs: [build-docker, integration-gate]
     if: github.event.pull_request.merged == true
     permissions:
       contents: read
@@ -162,6 +190,7 @@ jobs:
     needs:
       - build-binaries
       - build-docker
+      - integration-gate
       - deploy-dev
       - docs
     if: ${{ always() && github.event.pull_request.merged == true && !success() }}
