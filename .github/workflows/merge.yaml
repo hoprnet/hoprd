@@ -38,7 +38,7 @@ jobs:
             build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
             build_file: ./localcluster/Cargo.toml
             binary: hoprd-localcluster
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.10.1
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@eedb4b7701714299852ca5243f1544b817653f33 # 0.11.1
     permissions:
       contents: read
       id-token: write
@@ -57,7 +57,7 @@ jobs:
     name: Docker
     needs: build-binaries
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # 0.9.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@eedb4b7701714299852ca5243f1544b817653f33 # 0.11.1
     permissions:
       contents: read
       pull-requests: write
@@ -168,7 +168,7 @@ jobs:
     runs-on: depot-ubuntu-24.04
     steps:
       - name: Notify failed merge pipeline
-        uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa # v2.0.1
+        uses: zulip/github-actions-zulip/send-message@f675f2b4eb2a95fae974215476dcb7ad8dfeff6b # v2.0.2
         with:
           api-key: ${{ secrets.ZULIP_API_KEY }}
           email: ${{ secrets.ZULIP_EMAIL }}

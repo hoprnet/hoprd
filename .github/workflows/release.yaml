@@ -31,7 +31,7 @@ jobs:
           - architecture: aarch64-linux
             runner: depot-ubuntu-24.04-arm-8
             build_command: nix build -L .#binary-hoprd-aarch64-linux
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.10.1
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@eedb4b7701714299852ca5243f1544b817653f33 # 0.11.1
     permissions:
       contents: read
       id-token: write
@@ -48,7 +48,7 @@ jobs:
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
   build-docker:
     name: Docker
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # 0.9.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@eedb4b7701714299852ca5243f1544b817653f33 # 0.11.1
     needs: build-binaries
     permissions:
       contents: read
@@ -89,7 +89,7 @@ jobs:
     steps:
       - name: Release version
         id: release_version
-        uses: hoprnet/hopr-workflows/actions/release-version@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.9.4
+        uses: hoprnet/hopr-workflows/actions/release-version@eedb4b7701714299852ca5243f1544b817653f33 # 0.11.1
         with:
           source_branch: ${{ github.ref_name }}
           file: ./hoprd/Cargo.toml
