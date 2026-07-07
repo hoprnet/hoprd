@@ -1009,7 +1009,7 @@ pub(crate) async fn adjust_session<H: Send + Sync + 'static>(
         let configurator = state.open_listeners.find_configurator(&session_id);
 
         match configurator {
-            Some(configurator) => match configurator.update_surb_balancer_config(cfg).await {
+            Some(configurator) => match configurator.update_surb_balancer_config(cfg) {
                 Ok(_) => Ok::<_, (StatusCode, ApiErrorStatus)>(
                     (StatusCode::NO_CONTENT, "").into_response(),
                 ),
@@ -1065,7 +1065,7 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
     });
 
     match configurator {
-        Some(configurator) => match configurator.get_surb_balancer_config().await {
+        Some(configurator) => match configurator.get_surb_balancer_config() {
             Ok(Some(cfg)) => Ok::<_, (StatusCode, ApiErrorStatus)>(
                 (StatusCode::OK, Json(SessionConfig::from(cfg))).into_response(),
             ),
@@ -1196,7 +1196,9 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
                 .map(|c| c.value().configurator.clone())
                 .collect();
 
-            futures::future::join_all(configurators.iter().map(|cfg| cfg.close())).await;
+            for cfg in &configurators {
+                cfg.close();
+            }
 
             entry.abort_handle.abort();
         }

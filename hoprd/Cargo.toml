@@ -104,6 +104,7 @@ opentelemetry-otlp = { workspace = true, features = [
   "reqwest-client",
   "tls-roots",
   "http-proto",
+  "http-json",
   "grpc-tonic",
 ], optional = true }
 opentelemetry_sdk = { workspace = true, optional = true, features = [
