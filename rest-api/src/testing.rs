@@ -301,6 +301,16 @@ impl ChainWriteAccountOperations for StubChain {
         Err(StubError("stub cannot withdraw".into()))
     }
 
+    async fn withdraw_from_signer<C: Currency + Send>(
+        &self,
+        _key: &ChainKeypair,
+        _balance: Balance<C>,
+        _recipient: &Address,
+    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot withdraw from signer".into()))
+    }
+
     async fn register_safe(
         &self,
         _safe_address: &Address,
