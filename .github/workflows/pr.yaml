@@ -157,7 +157,7 @@ jobs:
   build-docker:
     name: Docker
     needs: build-binaries
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@ausias/remove-deployment
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@ausias/remove-deployment # temporary
     permissions:
       contents: read
       pull-requests: write
