@@ -311,6 +311,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 mixer: value.network.mixer,
                 stream: Default::default(),
+                ..Default::default()
             },
             ..Default::default()
         }
