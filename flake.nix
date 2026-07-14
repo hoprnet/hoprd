@@ -370,7 +370,6 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
@@ -387,8 +386,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -396,7 +395,6 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
@@ -413,8 +411,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -422,7 +420,6 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
@@ -448,8 +445,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
                 "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
               ];
@@ -458,7 +455,6 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
@@ -475,8 +471,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -484,7 +480,6 @@
               name = "hoprd-localcluster";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
