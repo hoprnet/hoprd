@@ -922,6 +922,7 @@ mod tests {
 
     fn channels_router(node: MockChainNode) -> Router {
         let state = Arc::new(crate::InternalState {
+            version: "test-version".to_string(),
             hoprd_cfg: serde_json::Value::Null,
             auth: Arc::new(crate::config::Auth::Token("test".into())),
             hopr: Arc::new(node),
