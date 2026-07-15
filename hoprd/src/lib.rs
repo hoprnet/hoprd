@@ -289,6 +289,7 @@ async fn init_rest_api(
         async move {
             if let Err(e) = serve_api(RestApiParameters {
                 listener: api_listener,
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 hoprd_cfg: node_cfg_value,
                 cfg: api_cfg,
                 hopr,
