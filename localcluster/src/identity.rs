@@ -192,7 +192,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let blokli_client = BlokliClient::new(
         config.blokli_url.parse()?,
         BlokliClientConfig {
-            auto_compatibility_check: false,
             ..Default::default()
         },
     );
