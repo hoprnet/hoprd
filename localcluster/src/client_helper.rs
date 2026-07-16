@@ -124,6 +124,7 @@ impl HoprdApiClient {
             listen_host: None,
             max_client_sessions: None,
             max_surb_upstream: None,
+            pix_ssa_quota: None,
             response_buffer: None,
             session_pool: None,
         };

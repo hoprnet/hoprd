@@ -6,7 +6,10 @@ use hopr_lib::{
         HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
         SafeModule, SessionGlobalConfig, TransportConfig,
     },
-    exports::transport::{HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig},
+    exports::transport::{
+        HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig, config::PixGlobalConfig,
+        session::IncomingSessionPixConfig,
+    },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
 use hoprd_api::config::{Api, Auth};
@@ -181,6 +184,92 @@ fn build_mixer_cfg_from_env() -> MixerConfig {
     }
 }
 
+/// User-facing PIX global configuration (wraps upstream [`PixGlobalConfig`] which has `serde(skip)`).
+#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserPixGlobalConfig {
+    /// Number of parts an SSA is split into.
+    ///
+    /// Default is 4096.
+    #[default(4096)]
+    #[serde(default = "default_pix_num_ssa_parts")]
+    pub num_ssa_parts: usize,
+    /// Number of shares required to reconstruct an SSA part.
+    ///
+    /// Default is 128.
+    #[default(128)]
+    #[serde(default = "default_pix_ssa_part_size")]
+    pub ssa_part_size: usize,
+    /// Number of additional shares sent beyond `ssa_part_size`.
+    ///
+    /// Default is 64.
+    #[default(64)]
+    #[serde(default = "default_pix_additional_shares")]
+    pub additional_shares: usize,
+}
+
+fn default_pix_num_ssa_parts() -> usize {
+    PixGlobalConfig::default().num_ssa_parts
+}
+fn default_pix_ssa_part_size() -> usize {
+    PixGlobalConfig::default().ssa_part_size
+}
+fn default_pix_additional_shares() -> usize {
+    PixGlobalConfig::default().additional_shares
+}
+
+/// User-facing incoming session PIX configuration (wraps upstream [`IncomingSessionPixConfig`] which has `serde(skip)`).
+#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserIncomingSessionPixConfig {
+    /// Reject incoming Sessions that do not opt into PIX.
+    #[default(false)]
+    #[serde(default)]
+    pub enforce_pix: bool,
+    /// Minimum acceptable PIX quota per SSA in bytes.
+    ///
+    /// Default is 134217728 (128 MB).
+    #[default(134_217_728)]
+    #[serde(default = "default_pix_quota_range_min")]
+    pub quota_range_min: u64,
+    /// Maximum acceptable PIX quota per SSA in bytes.
+    ///
+    /// Default is 536870912 (512 MB).
+    #[default(536_870_912)]
+    #[serde(default = "default_pix_quota_range_max")]
+    pub quota_range_max: u64,
+    /// Maximum time to wait for SSA commitment delivery.
+    ///
+    /// Default is 20 seconds.
+    #[default(Duration::from_secs(20))]
+    #[serde(
+        default = "default_pix_max_ssa_delivery_time",
+        with = "humantime_serde"
+    )]
+    pub max_ssa_delivery_time: Duration,
+    /// Maximum time to wait for deposit into SSA.
+    ///
+    /// Default is 60 seconds.
+    #[default(Duration::from_secs(60))]
+    #[serde(default = "default_pix_max_deposit_wait", with = "humantime_serde")]
+    pub max_deposit_wait: Duration,
+}
+
+fn default_pix_quota_range_min() -> u64 {
+    let range = IncomingSessionPixConfig::default().quota_range;
+    *range.start()
+}
+fn default_pix_quota_range_max() -> u64 {
+    let range = IncomingSessionPixConfig::default().quota_range;
+    *range.end()
+}
+fn default_pix_max_ssa_delivery_time() -> Duration {
+    IncomingSessionPixConfig::default().max_ssa_delivery_time
+}
+fn default_pix_max_deposit_wait() -> Duration {
+    IncomingSessionPixConfig::default().max_deposit_wait
+}
+
 /// Subset of various selected HOPR library network-related configuration options.
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -229,6 +318,12 @@ pub struct UserHoprNetworkConfig {
     #[default(build_mixer_cfg_from_env())]
     #[serde(default = "build_mixer_cfg_from_env")]
     pub mixer: MixerConfig,
+    /// PIX global configuration.
+    #[serde(default)]
+    pub pix: UserPixGlobalConfig,
+    /// PIX configuration for incoming sessions (Exit node).
+    #[serde(default)]
+    pub incoming_session_pix: UserIncomingSessionPixConfig,
 }
 
 /// Subset of the [`HoprLibConfig`] that is tuned to be user-facing and more user-friendly.
@@ -307,11 +402,22 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     ..Default::default()
                 },
+                pix: PixGlobalConfig {
+                    num_ssa_parts: value.network.pix.num_ssa_parts,
+                    ssa_part_size: value.network.pix.ssa_part_size,
+                    additional_shares: value.network.pix.additional_shares,
+                },
+                incoming_session_pix_config: IncomingSessionPixConfig {
+                    enforce_pix: value.network.incoming_session_pix.enforce_pix,
+                    quota_range: value.network.incoming_session_pix.quota_range_min
+                        ..=value.network.incoming_session_pix.quota_range_max,
+                    max_ssa_delivery_time: value.network.incoming_session_pix.max_ssa_delivery_time,
+                    max_deposit_wait: value.network.incoming_session_pix.max_deposit_wait,
+                },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 mixer: value.network.mixer,
                 stream: Default::default(),
-                ..Default::default()
             },
             ..Default::default()
         }
