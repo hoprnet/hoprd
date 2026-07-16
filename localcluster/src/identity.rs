@@ -191,10 +191,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     let blokli_client = BlokliClient::new(
         config.blokli_url.parse()?,
-        BlokliClientConfig {
-            auto_compatibility_check: false,
-            ..Default::default()
-        },
+        BlokliClientConfig::default(),
     );
     let status = blokli_client.query_health().await?;
     if !status.eq_ignore_ascii_case("ok") {
