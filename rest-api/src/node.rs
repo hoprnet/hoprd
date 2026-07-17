@@ -317,7 +317,7 @@ mod tests {
 
     fn node_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
-            version: "test-version".to_string(),
+        assert_eq!(body["version"], "test-version");
             hoprd_cfg: serde_json::json!({
                 "network": "test-network",
                 "provider": "http://localhost:8545"
