@@ -104,6 +104,7 @@ impl<H> Clone for AppState<H> {
 pub type MessageEncoder = fn(&[u8]) -> Box<[u8]>;
 
 pub(crate) struct InternalState<H> {
+    pub version: String,
     pub hoprd_cfg: serde_json::Value,
     pub auth: Arc<Auth>,
     pub hopr: Arc<H>,
@@ -114,6 +115,7 @@ pub(crate) struct InternalState<H> {
 impl<H> Clone for InternalState<H> {
     fn clone(&self) -> Self {
         Self {
+            version: self.version.clone(),
             hoprd_cfg: self.hoprd_cfg.clone(),
             auth: self.auth.clone(),
             hopr: self.hopr.clone(),
@@ -284,6 +286,7 @@ where
 /// Parameters needed to construct the Rest API via [`serve_api`].
 pub struct RestApiParameters<H> {
     pub listener: TcpListener,
+    pub version: String,
     pub hoprd_cfg: serde_json::Value,
     pub cfg: crate::config::Api,
     pub hopr: Arc<H>,
@@ -301,6 +304,7 @@ where
 {
     let RestApiParameters {
         listener,
+        version,
         hoprd_cfg,
         cfg,
         hopr,
@@ -309,6 +313,7 @@ where
     } = params;
 
     let router = build_api(
+        version,
         hoprd_cfg,
         cfg,
         hopr,
@@ -321,6 +326,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 async fn build_api<H: HoprNode + RestApiSessionFactory>(
+    version: String,
     hoprd_cfg: serde_json::Value,
     cfg: crate::config::Api,
     hopr: Arc<H>,
@@ -335,6 +341,7 @@ where
     let state = AppState { hopr };
     let enable_explicit_path_sessions = cfg.enable_explicit_path_sessions;
     let inner_state = InternalState {
+        version,
         auth: Arc::new(cfg.auth.clone()),
         hoprd_cfg,
         hopr: state.hopr.clone(),
@@ -416,7 +423,7 @@ where
                 .route("/network/connected", get(network::connected::<H>))
                 .route("/network/announced", get(network::announced::<H>))
                 .route("/network/graph", get(network::graph::<H>))
-                .route("/node/version", get(node::version))
+                .route("/node/version", get(node::version::<H>))
                 .route("/node/configuration", get(node::configuration::<H>))
                 .route("/node/info", get(node::info::<H>))
                 .route("/node/status", get(node::status::<H>))

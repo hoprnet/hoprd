@@ -1217,6 +1217,7 @@ mod tests {
 
     fn session_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
+            version: "test-version".to_string(),
             hoprd_cfg: serde_json::json!({}),
             auth: Arc::new(crate::config::Auth::None),
             hopr: Arc::new(NoopNode),
