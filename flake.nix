@@ -160,6 +160,18 @@
               pkgs.stdenv.cc.cc.lib
             ];
           };
+          ticketInspectorBuildArgs = projectBuildArgs // {
+            cargoExtraArgs = "-p hopr-ticket-manager --bin ticket-inspector";
+          };
+
+          # Crane only auto-installs binaries from the crate referenced by cargoToml.
+          # For git-dep binaries we must copy them manually after build.
+          installTicketInspector = old: {
+            postInstall = (if old ? postInstall && old.postInstall != null then old.postInstall else "") + ''
+              mkdir -p "$out/bin"
+              find target -maxdepth 4 -executable -type f -name "ticket-inspector" -exec cp {} "$out/bin/" \;
+            '';
+          };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
@@ -247,6 +259,10 @@
               cargoExtraArgs = "-p hoprd --bin hoprd-cfg";
               cargoToml = ./hoprd/Cargo.toml;
             };
+
+            binary-ticket-inspector = (rust-builder-local.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs).overrideAttrs installTicketInspector;
+            binary-ticket-inspector-x86_64-linux = (rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs).overrideAttrs installTicketInspector;
+            binary-ticket-inspector-aarch64-linux = (rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs).overrideAttrs installTicketInspector;
 
             test-unit =
               (fixUtoipaEmbedPaths (
@@ -375,6 +391,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -400,6 +417,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -460,6 +478,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
+                hoprdPackages.binary-ticket-inspector-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -484,6 +503,7 @@
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];
