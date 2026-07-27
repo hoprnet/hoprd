@@ -155,6 +155,7 @@ async fn main() -> Result<()> {
                 args.channel_management,
                 cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
             ),
+            enable_pix: args.enable_pix,
             latency: args.latency.clone(),
             ..Default::default()
         };
@@ -218,6 +219,7 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
+            enable_pix: args.enable_pix,
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

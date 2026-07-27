@@ -161,6 +161,13 @@ pub struct Args {
     /// e.g. `--latency 100ms±30ms`, `--latency config:lat.yaml@9100`.
     #[arg(long, value_parser = parse_latency)]
     pub latency: Option<Latency>,
+
+    /// Enable the NonAnonymousPix strategy.
+    ///
+    /// Each node will participate in PIX as both entry and exit, handling
+    /// deposit addresses and sweeps using non-anonymous on-chain transactions.
+    #[arg(long)]
+    pub enable_pix: bool,
 }
 
 impl Args {

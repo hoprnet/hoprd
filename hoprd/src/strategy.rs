@@ -152,6 +152,11 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// and returns a single `Box<dyn Strategy + Send>` that runs all sub-strategies
 /// concurrently.
 ///
+/// When the `HOPRD_ENABLE_PIX` environment variable is set to `1`, the
+/// `NonAnonymousPix` strategy is added programmatically (it is intentionally
+/// not a YAML-configurable [`StrategyKind`] because its config type's serde
+/// representation is incompatible with `serde_saphyr`).
+///
 /// External strategies can be composed by building this result first, then wrapping
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
 /// call site.
@@ -184,7 +189,39 @@ where
         .iter()
         .for_each(|s| METRIC_ENABLED_STRATEGIES.set(&[*s], 0_f64));
 
-    build_strategies_inner(cfg, node)
+    let mut multi = build_strategies_inner(cfg, Arc::clone(&node));
+
+    // NonAnonymousPix is not a YAML-configurable StrategyKind because its
+    // HoprBalance fields don't round-trip through serde_saphyr. Instead it's
+    // enabled via environment variable for test/development use.
+    #[cfg(feature = "runtime-tokio")]
+    if std::env::var("HOPRD_ENABLE_PIX")
+        .ok()
+        .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        let pix_cfg = hopr_strategy::non_anonymous_pix::NonAnonymousPixStrategyConfig {
+            price_per_byte: "1 wxHOPR".parse().expect("valid static amount"),
+            max_ssa_allocation: "100 wxHOPR".parse().expect("valid static amount"),
+            max_deposit_tracking_time: std::time::Duration::from_secs(3600),
+            pix_recovery_db_path: None,
+            pix_recovery_password_env: None,
+            gas_xdai_per_sweep: Default::default(),
+        };
+        match hopr_strategy::non_anonymous_pix::NonAnonymousPixStrategy::new(pix_cfg)
+            .build(Arc::clone(&node))
+        {
+            Ok(pix) => {
+                multi = Box::new(MultiStrategy::new(vec![multi, pix]));
+                #[cfg(all(feature = "telemetry", not(test)))]
+                METRIC_ENABLED_STRATEGIES.set(&["non_anonymous_pix"], 1_f64);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to build NonAnonymousPixStrategy");
+            }
+        }
+    }
+
+    multi
 }
 
 fn build_strategies_inner<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn Strategy + Send>

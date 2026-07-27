@@ -30,6 +30,7 @@ runtime-tokio = [
   "hopr-strategy/strategy-auto-redeeming",
   "hopr-strategy/strategy-closure-finalizer",
   "hopr-strategy/strategy-channel-lifecycle",
+  "hopr-strategy/strategy-pix",
   "hopr-transport-p2p/runtime-tokio",
 ]
 telemetry = [

@@ -95,6 +95,8 @@ async fn run() -> Result<()> {
         random_identities: true,
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
+        enable_channel_strategy: true,
+        enable_pix: true,
         ..Default::default()
     };
     identity::generate(&gen_cfg).await?;
@@ -111,6 +113,7 @@ async fn run() -> Result<()> {
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
+        enable_pix: true,
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 

@@ -67,6 +67,8 @@ pub struct GenerationConfig {
     pub p2p_port_base: u16,
     /// Enables channel lifecycle strategy in generated hoprd configs.
     pub enable_channel_strategy: bool,
+    /// Enables the NonAnonymousPix strategy in generated hoprd configs.
+    pub enable_pix: bool,
     /// When set, each node announces its latency-relay port instead of its real
     /// listen port and disables its own on-chain announce, so peers dial the relay.
     pub latency: Option<crate::cli::Latency>,
@@ -85,6 +87,7 @@ impl Default for GenerationConfig {
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
             enable_channel_strategy: false,
+            enable_pix: false,
             latency: None,
         }
     }

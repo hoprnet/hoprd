@@ -5122,7 +5122,9 @@ source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#963c449738e9
 dependencies = [
  "anyhow",
  "async-trait",
+ "backon",
  "bytesize",
+ "chacha20poly1305",
  "dashmap",
  "futures",
  "futures-concurrency",
@@ -5135,6 +5137,8 @@ dependencies = [
  "moka",
  "multiaddr",
  "parking_lot",
+ "redb",
+ "scrypt",
  "serde",
  "serde_with",
  "smart-default",
