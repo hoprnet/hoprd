@@ -89,7 +89,7 @@ serde_with = { version = "3.21.0", features = ["base64"] }
 signal-hook = "0.4.4"
 smart-default = "0.7.1"
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "2.0.117", features = ["full"] }
+syn = { version = "3.0.3", features = ["full"] }
 tempfile = "3.27.0"
 test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.18"
