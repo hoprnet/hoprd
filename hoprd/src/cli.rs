@@ -307,66 +307,6 @@ pub struct CliArgs {
         env = "HOPRD_MODULE_ADDRESS"
     )]
     pub module_address: Option<String>,
-
-    // ===== PIX Global Configuration =====
-    #[arg(
-        long = "pixNumSsaParts",
-        env = "HOPRD_PIX_NUM_SSA_PARTS",
-        help = "Number of parts an SSA is split into (default: 4096, range: 8-16192)",
-        value_parser = clap::value_parser!(usize),
-    )]
-    pub pix_num_ssa_parts: Option<usize>,
-    #[arg(
-        long = "pixSsaPartSize",
-        env = "HOPRD_PIX_SSA_PART_SIZE",
-        help = "Number of shares required to reconstruct an SSA part (default: 128, range: 2-4096)",
-        value_parser = clap::value_parser!(usize),
-    )]
-    pub pix_ssa_part_size: Option<usize>,
-    #[arg(
-        long = "pixAdditionalShares",
-        env = "HOPRD_PIX_ADDITIONAL_SHARES",
-        help = "Number of additional shares sent beyond ssa_part_size (default: 64, range: 0-4096)",
-        value_parser = clap::value_parser!(usize),
-    )]
-    pub pix_additional_shares: Option<usize>,
-
-    // ===== IncomingSessionPixConfig (Exit node) =====
-    #[arg(
-        long = "pixEnforce",
-        env = "HOPRD_PIX_ENFORCE",
-        help = "Reject incoming Sessions that do not opt into PIX",
-        action = ArgAction::SetTrue,
-    )]
-    pub pix_enforce: bool,
-    #[arg(
-        long = "pixQuotaRangeMin",
-        env = "HOPRD_PIX_QUOTA_RANGE_MIN",
-        help = "Minimum acceptable PIX quota per SSA in bytes (default: 134217728 = 128 MB)",
-        value_parser = clap::value_parser!(u64),
-    )]
-    pub pix_quota_range_min: Option<u64>,
-    #[arg(
-        long = "pixQuotaRangeMax",
-        env = "HOPRD_PIX_QUOTA_RANGE_MAX",
-        help = "Maximum acceptable PIX quota per SSA in bytes (default: 536870912 = 512 MB)",
-        value_parser = clap::value_parser!(u64),
-    )]
-    pub pix_quota_range_max: Option<u64>,
-    #[arg(
-        long = "pixMaxSsaDeliveryTimeSecs",
-        env = "HOPRD_PIX_MAX_SSA_DELIVERY_TIME_SECS",
-        help = "Maximum time in seconds to wait for SSA commitment delivery (default: 20)",
-        value_parser = clap::value_parser!(u64),
-    )]
-    pub pix_max_ssa_delivery_time_secs: Option<u64>,
-    #[arg(
-        long = "pixMaxDepositWaitSecs",
-        env = "HOPRD_PIX_MAX_DEPOSIT_WAIT_SECS",
-        help = "Maximum time in seconds to wait for deposit into SSA (default: 60)",
-        value_parser = clap::value_parser!(u64),
-    )]
-    pub pix_max_deposit_wait_secs: Option<u64>,
 }
 
 impl TryFrom<CliArgs> for HoprdConfig {
@@ -482,40 +422,6 @@ impl TryFrom<CliArgs> for HoprdConfig {
                 .map(|h| h.as_path().display().to_string())
                 .expect("home dir for a user must be specified")
                 + &cfg.identity.file[1..];
-        }
-
-        // PIX global config
-        if let Some(x) = value.pix_num_ssa_parts {
-            cfg.hopr.network.pix.num_ssa_parts = x;
-        }
-        if let Some(x) = value.pix_ssa_part_size {
-            cfg.hopr.network.pix.ssa_part_size = x;
-        }
-        if let Some(x) = value.pix_additional_shares {
-            cfg.hopr.network.pix.additional_shares = x;
-        }
-
-        // PIX incoming session config
-        if value.pix_enforce {
-            cfg.hopr.network.incoming_session_pix.enforce_pix = true;
-        }
-        if let Some(x) = value.pix_quota_range_min {
-            let current_max = cfg.hopr.network.incoming_session_pix.quota_range_max;
-            cfg.hopr.network.incoming_session_pix.quota_range_min = x;
-            cfg.hopr.network.incoming_session_pix.quota_range_max = current_max;
-        }
-        if let Some(x) = value.pix_quota_range_max {
-            let current_min = cfg.hopr.network.incoming_session_pix.quota_range_min;
-            cfg.hopr.network.incoming_session_pix.quota_range_min = current_min;
-            cfg.hopr.network.incoming_session_pix.quota_range_max = x;
-        }
-        if let Some(x) = value.pix_max_ssa_delivery_time_secs {
-            cfg.hopr.network.incoming_session_pix.max_ssa_delivery_time =
-                std::time::Duration::from_secs(x);
-        }
-        if let Some(x) = value.pix_max_deposit_wait_secs {
-            cfg.hopr.network.incoming_session_pix.max_deposit_wait =
-                std::time::Duration::from_secs(x);
         }
 
         Ok(cfg)
