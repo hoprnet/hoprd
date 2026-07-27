@@ -276,7 +276,6 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
                 "HOPR_TX_TIMEOUT_MULTIPLIER",
                 crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
             )
-            .env("HOPR_BLOKLI_NO_COMPAT_CHECK", "1")
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
