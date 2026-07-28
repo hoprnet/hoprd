@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result};
 use hoprd_api_client;
 use hoprd_api_client::types::{
-    OpenChannelBodyRequest, RoutingOptions, SessionClientRequest, SessionTargetSpec,
+    IpProtocol, OpenChannelBodyRequest, RoutingOptions, SessionClientRequest, SessionTargetSpec,
 };
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
@@ -166,6 +166,14 @@ impl HoprdApiClient {
         let port = u16::try_from(resp.port)
             .map_err(|_| anyhow::anyhow!("session port {} out of u16 range", resp.port))?;
         Ok((resp.ip, port))
+    }
+
+    /// Close a UDP session listener identified by its listening IP and port.
+    pub async fn close_client(&self, ip: &str, port: u16) -> Result<()> {
+        self.inner
+            .close_client(IpProtocol::Udp, ip, port as i32)
+            .await?;
+        Ok(())
     }
 }
 
