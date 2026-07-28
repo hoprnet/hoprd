@@ -11,10 +11,13 @@
 //!   HOPRD_BIN              – path to the hoprd binary (default: "hoprd" on PATH)
 //!   HOPRD_CONTAINER_RUNTIME – container runtime CLI (default: "docker")
 
-use std::{path::PathBuf, time::Duration};
+mod common;
+
+use std::time::Duration;
 
 use anyhow::Result;
-use hoprd_localcluster::{blokli_helper, client_helper, identity};
+use common::{ClusterCleanup, ClusterEnv, TempCluster};
+use hoprd_localcluster::{client_helper, identity};
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -25,61 +28,20 @@ async fn localcluster_channels_opened_by_strategy() {
 }
 
 async fn run() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
-        .with_target(false)
-        .try_init()
-        .ok();
+    common::init_tracing();
 
-    let hoprd_bin =
-        PathBuf::from(std::env::var("HOPRD_BIN").unwrap_or_else(|_| "hoprd".to_string()));
-    let chain_url_env = std::env::var("HOPRD_CHAIN_URL").ok();
-    let chain_image = std::env::var("HOPRD_CHAIN_IMAGE").ok();
-    let container_runtime =
-        std::env::var("HOPRD_CONTAINER_RUNTIME").unwrap_or_else(|_| "docker".to_string());
+    let env = ClusterEnv::from_env()?;
+    let cluster = TempCluster::new()?;
 
-    anyhow::ensure!(
-        chain_url_env.is_some() || chain_image.is_some(),
-        "set HOPRD_CHAIN_URL (existing chain) or HOPRD_CHAIN_IMAGE (to start a container)"
-    );
-
-    let temp_dir = tempfile::tempdir()?;
-    let data_dir = temp_dir.path().to_path_buf();
-    let log_dir = data_dir.join("logs");
-    std::fs::create_dir_all(&log_dir)?;
-
-    struct Cleanup {
-        chain: Option<blokli_helper::ChainHandle>,
-        nodes: Vec<client_helper::NodeProcess>,
-    }
-    impl Drop for Cleanup {
-        fn drop(&mut self) {
-            for n in &mut self.nodes {
-                let _ = n.child.kill();
-            }
-            if let Some(c) = &mut self.chain {
-                c.stop();
-            }
-        }
-    }
-
-    let mut cleanup = Cleanup {
+    let mut cleanup = ClusterCleanup {
         chain: None,
         nodes: vec![],
     };
 
-    let blokli_url = if let Some(url) = chain_url_env {
-        url.trim_end_matches('/').to_string()
-    } else {
-        let img = chain_image.as_deref().unwrap();
-        let handle = blokli_helper::ChainHandle::start(&container_runtime, img, &log_dir)?;
-        let url = handle.chain_url();
-        cleanup.chain = Some(handle);
-        url
-    };
+    let blokli_url = common::start_chain(&env, &cluster.log_dir, &mut cleanup).await?;
 
     // Wait for chain to be ready.
-    wait_for_blokli_ready(&blokli_url, WAIT_TIMEOUT).await?;
+    common::wait_for_blokli_ready(&blokli_url, WAIT_TIMEOUT).await?;
 
     // Generate identities and per-node configs.  The ChannelLifecycleStrategy
     // population thresholds are set to num_nodes-1 inside `generate` so the
@@ -91,7 +53,7 @@ async fn run() -> Result<()> {
     let gen_cfg = identity::GenerationConfig {
         blokli_url: blokli_url.clone(),
         num_nodes,
-        config_home: data_dir.clone(),
+        config_home: cluster.data_dir.clone(),
         random_identities: true,
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
@@ -104,9 +66,9 @@ async fn run() -> Result<()> {
     // Spawn hoprd processes.
     let start_cfg = client_helper::NodeStartConfig {
         num_nodes,
-        hoprd_bin: &hoprd_bin,
-        data_dir: &data_dir,
-        log_dir: &log_dir,
+        hoprd_bin: &env.hoprd_bin,
+        data_dir: &cluster.data_dir,
+        log_dir: &cluster.log_dir,
         api_host: "127.0.0.1",
         api_port_base: 13000,
         p2p_host: P2P_HOST,
@@ -163,23 +125,4 @@ async fn run() -> Result<()> {
 
     tracing::info!("smoke test passed: full mesh established by strategy");
     Ok(())
-}
-
-async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let readyz = format!("{url}/readyz");
-    let start = std::time::Instant::now();
-    loop {
-        if let Ok(resp) = client.get(&readyz).send().await
-            && resp.status().is_success()
-        {
-            return Ok(());
-        }
-        if start.elapsed() > timeout {
-            anyhow::bail!("timeout waiting for blokli at {readyz}");
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
 }
