@@ -8,7 +8,7 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.0";
-    nix-lib.url = "github:hoprnet/nix-lib/ausias/build-docker-aarch64";
+    nix-lib.url = "github:hoprnet/nix-lib/v1.2.1";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";

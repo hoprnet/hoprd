@@ -134,16 +134,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1785224583,
+        "lastModified": 1785227162,
         "narHash": "sha256-ASCxte061GyYy3S9+1oIAB4IVAA4ScdRt33IVCz3BQc=",
         "owner": "hoprnet",
         "repo": "nix-lib",
-        "rev": "a22fb3d05ee6ab6ae3c99f17d2ceb1bd13d3df8c",
+        "rev": "ee06545d444a446778d9d6637179c46a807b08f5",
         "type": "github"
       },
       "original": {
         "owner": "hoprnet",
-        "ref": "ausias/build-docker-aarch64",
+        "ref": "v1.2.1",
         "repo": "nix-lib",
         "type": "github"
       }
@@ -166,11 +166,11 @@
     },
     "nixpkgs-unstable": {
       "locked": {
-        "lastModified": 1785224950,
-        "narHash": "sha256-lk+2su6nxVsUySq4DKlWwILr7PQrGGG2lMQZOdFut9I=",
+        "lastModified": 1785227066,
+        "narHash": "sha256-HmKXwBDQEe85O6nwMSdn8QheXqBOyPhcs2TFtXbBf1c=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "788fc8edc286b1fd742c69e5382d298eac619d22",
+        "rev": "d10ce5fd5962dc368e2c4cc8df6c9c645fe8dc68",
         "type": "github"
       },
       "original": {
