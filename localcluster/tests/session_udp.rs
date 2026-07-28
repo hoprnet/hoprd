@@ -129,13 +129,8 @@ async fn run() -> anyhow::Result<()> {
     // SSE subscription drops frequently, causing hoprd to enter a Degraded
     // state.  Channel-opening transactions require a healthy connection.
     tracing::info!("waiting for chain health…");
-    futures::future::try_join_all(
-        cleanup
-            .nodes
-            .iter()
-            .map(|n| n.api.wait_ready(WAIT_TIMEOUT)),
-    )
-    .await?;
+    futures::future::try_join_all(cleanup.nodes.iter().map(|n| n.api.wait_ready(WAIT_TIMEOUT)))
+        .await?;
     tracing::info!("all nodes ready");
 
     tracing::info!("opening full-mesh channels ({} each)…", CHANNEL_AMOUNT);
@@ -166,10 +161,7 @@ async fn run() -> anyhow::Result<()> {
         "creating UDP session: entry=node{} exit={exit_addr} target={target}",
         entry.id,
     );
-    let (session_ip, session_port) = entry
-        .api
-        .open_session("udp", exit_addr, &target, 1)
-        .await?;
+    let (session_ip, session_port) = entry.api.open_session("udp", exit_addr, &target, 1).await?;
     tracing::info!("session listening on {session_ip}:{session_port}");
 
     // ── Phase 3: Send / receive UDP packets ────────────────────────────
@@ -215,11 +207,8 @@ async fn run() -> anyhow::Result<()> {
     entry.api.close_client(&session_ip, session_port).await?;
 
     // Verify the session socket is unreachable.
-    let result = tokio::time::timeout(
-        Duration::from_secs(5),
-        test_sock.send(b"should-not-arrive"),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(Duration::from_secs(5), test_sock.send(b"should-not-arrive")).await;
     // Sending to a closed socket may succeed at the UDP level (no connection
     // state), but there's no listener to process it — just log it.
     tracing::info!("session closed (send after close: {result:?})");

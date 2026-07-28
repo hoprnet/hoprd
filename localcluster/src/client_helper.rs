@@ -93,7 +93,10 @@ impl HoprdApiClient {
     pub async fn close_channel(&self, destination: &str) -> Result<()> {
         match self
             .inner
-            .close_channel(destination, Some(hoprd_api_client::types::ChannelDirection::Outgoing))
+            .close_channel(
+                destination,
+                Some(hoprd_api_client::types::ChannelDirection::Outgoing),
+            )
             .await
         {
             Ok(_) => Ok(()),
