@@ -90,6 +90,35 @@ impl HoprdApiClient {
         Ok(())
     }
 
+    pub async fn close_channel(&self, destination: &str) -> Result<()> {
+        match self
+            .inner
+            .close_channel(destination, Some(hoprd_api_client::types::ChannelDirection::Outgoing))
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(hoprd_api_client::Error::UnexpectedResponse(resp)) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!("close_channel to {destination}: HTTP {status} - {body}")
+            }
+            Err(e) => anyhow::bail!("close_channel to {destination}: {e}"),
+        }
+    }
+
+    /// Return the channel status string for the outgoing channel to `destination`,
+    /// or `None` if no such channel exists.
+    pub async fn outgoing_channel_status(&self, destination: &str) -> Result<Option<String>> {
+        let resp = self.inner.list_channels(None, None).await?;
+        let dest_lower = destination.to_lowercase();
+        Ok(resp
+            .into_inner()
+            .outgoing
+            .into_iter()
+            .find(|ch| ch.peer_address.to_lowercase() == dest_lower)
+            .map(|ch| ch.status))
+    }
+
     pub async fn open_channel(&self, destination: &str, amount: &str) -> Result<()> {
         let body = OpenChannelBodyRequest {
             amount: amount.to_string(),
