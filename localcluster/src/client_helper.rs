@@ -6,7 +6,8 @@ use std::{
 use anyhow::{Context, Result};
 use hoprd_api_client;
 use hoprd_api_client::types::{
-    IpProtocol, OpenChannelBodyRequest, RoutingOptions, SessionClientRequest, SessionTargetSpec,
+    IpProtocol, OpenChannelBodyRequest, RoutingOptions, SessionCapability, SessionClientRequest,
+    SessionTargetSpec,
 };
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
@@ -139,25 +140,30 @@ impl HoprdApiClient {
     /// paths. The exit forwards the plaintext to `target` (`ip:port`). Returns the
     /// `(ip, port)` of the listener bound on this (entry) node.
     ///
-    /// SURB knobs (`response_buffer`, `max_surb_upstream`) are left at protocol defaults.
+    /// SURB knobs (`response_buffer`, `max_surb_upstream`) are left at protocol
+    /// defaults when `None`.  When `capabilities` is `None`, no capabilities are set
+    /// (UDP gets only Segmentation by default on the server).
     pub async fn open_session(
         &self,
         protocol: &str,
         destination: &str,
         target: &str,
         hops: u64,
+        capabilities: Option<Vec<SessionCapability>>,
+        response_buffer: Option<String>,
+        max_surb_upstream: Option<String>,
     ) -> Result<(String, u16)> {
         let body = SessionClientRequest {
             destination: destination.to_string(),
             forward_path: RoutingOptions::Hops(hops),
             return_path: RoutingOptions::Hops(hops),
             target: SessionTargetSpec::Plain(target.to_string()),
-            capabilities: None,
+            capabilities,
             listen_host: None,
             max_client_sessions: None,
-            max_surb_upstream: None,
+            max_surb_upstream,
             pix_ssa_quota: None,
-            response_buffer: None,
+            response_buffer,
             session_pool: None,
         };
         let resp = self

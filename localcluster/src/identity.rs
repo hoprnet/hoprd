@@ -72,6 +72,12 @@ pub struct GenerationConfig {
     /// When set, each node announces its latency-relay port instead of its real
     /// listen port and disables its own on-chain announce, so peers dial the relay.
     pub latency: Option<crate::cli::Latency>,
+    /// When true, no strategies (including AutoRedeeming) are included in the
+    /// generated hoprd config.  Useful for tests that send large amounts of
+    /// packet traffic and don't want ticket-redeem transactions burning gas.
+    pub disable_strategies: bool,
+    /// Override the strategy execution interval. When None, the default (60s) is used.
+    pub strategy_execution_interval: Option<std::time::Duration>,
 }
 
 impl Default for GenerationConfig {
@@ -89,6 +95,8 @@ impl Default for GenerationConfig {
             enable_channel_strategy: false,
             enable_pix: false,
             latency: None,
+            disable_strategies: false,
+            strategy_execution_interval: None,
         }
     }
 }
@@ -220,10 +228,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let p2p_host = &config.p2p_host;
 
     let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
-    let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
-        redeem_on_winning: true,
-        ..Default::default()
-    })];
+    let mut strategies = if config.disable_strategies {
+        vec![]
+    } else {
+        vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+            redeem_on_winning: true,
+            ..Default::default()
+        })]
+    };
     if config.enable_channel_strategy {
         let mesh_target = effective_num_nodes.saturating_sub(1);
         strategies.push(StrategyKind::ChannelLifecycle(Box::new(
@@ -240,9 +252,12 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             },
         )));
     }
+    let strategy_interval = config
+        .strategy_execution_interval
+        .unwrap_or(std::time::Duration::from_secs(60));
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
-        execution_interval: std::time::Duration::from_secs(60),
+        execution_interval: strategy_interval,
         strategies,
     };
 
