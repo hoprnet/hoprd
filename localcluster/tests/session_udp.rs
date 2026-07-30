@@ -18,9 +18,19 @@
 //! processing, cryptography, and control loops, pushing the 1 MB test past
 //! the 5-minute target.
 //!
+//! Each test must be run individually — the cluster is a singleton on the
+//! machine and cannot be shared across parallel tests.
+//!
 //! ```bash
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
-//! cargo nextest run -p hoprd-localcluster --test session_udp --run-ignored ignored-only -j 1
+//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//!   -E 'test(localcluster_udp_session_pingpong_32b)' --run-ignored ignored-only -j 1
+//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//!   -E 'test(localcluster_udp_session_pingpong_200b)' --run-ignored ignored-only -j 1
+//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//!   -E 'test(localcluster_udp_session_pingpong_64kb)' --run-ignored ignored-only -j 1
+//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//!   -E 'test(localcluster_udp_session_pingpong_1mb)' --run-ignored ignored-only -j 1
 //! ```
 
 mod common;
@@ -116,7 +126,7 @@ async fn setup_cluster(env: &ClusterEnv, cluster: &TempCluster, cleanup: &mut Cl
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
         strategies: identity::StrategySet {
-            auto_redeeming: true,
+            auto_redeeming: false,
             channel_lifecycle: false,
             pix: false,
         },
