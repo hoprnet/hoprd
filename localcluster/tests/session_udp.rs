@@ -115,9 +115,11 @@ async fn setup_cluster(env: &ClusterEnv, cluster: &TempCluster, cleanup: &mut Cl
         random_identities: true,
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
-        enable_channel_strategy: false,
-        enable_pix: false,
-        disable_strategies: false,
+        strategies: identity::StrategySet {
+            auto_redeeming: true,
+            channel_lifecycle: false,
+            pix: false,
+        },
         strategy_execution_interval: Some(Duration::from_secs(600)),
         ..Default::default()
     })
@@ -136,7 +138,7 @@ async fn setup_cluster(env: &ClusterEnv, cluster: &TempCluster, cleanup: &mut Cl
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        enable_pix: false,
+        pix: false,
     })
     .await
     .unwrap();

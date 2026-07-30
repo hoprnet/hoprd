@@ -49,8 +49,11 @@ async fn run() -> anyhow::Result<()> {
         random_identities: true,
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
-        enable_channel_strategy: false,
-        enable_pix: false,
+        strategies: identity::StrategySet {
+            auto_redeeming: true,
+            channel_lifecycle: false,
+            pix: false,
+        },
         ..Default::default()
     };
     let gen_output = identity::generate(&gen_cfg).await?;
@@ -67,7 +70,7 @@ async fn run() -> anyhow::Result<()> {
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        enable_pix: false,
+        pix: false,
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 

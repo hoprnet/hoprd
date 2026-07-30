@@ -50,6 +50,33 @@ pub const DEFAULT_LATENCY_PORT_BASE: u16 = 9100;
 /// per-run configuration. Not a secret — this is a local-dev cluster only.
 pub const EXTRA_IDENTITY_PASSWORD: &str = "local-cluster";
 
+/// Which strategies to include in generated hoprd configs and runtime flags.
+///
+/// Controls both the YAML-generated strategy config (AutoRedeeming, ChannelLifecycle)
+/// and the `HOPRD_ENABLE_PIX` env var that activates NonAnonymousPix at runtime
+/// (PIX cannot be YAML-configured because its `HoprBalance` fields don't round-trip
+/// through `serde_saphyr`).
+#[derive(Clone, Copy, Debug)]
+pub struct StrategySet {
+    /// Include AutoRedeeming strategy (ticket auto-redeem).
+    pub auto_redeeming: bool,
+    /// Include ChannelLifecycle strategy (opens full-mesh channels automatically).
+    /// Implies `auto_redeeming` when constructing the strategy list.
+    pub channel_lifecycle: bool,
+    /// Enable NonAnonymousPix strategy via `HOPRD_ENABLE_PIX=1`.
+    pub pix: bool,
+}
+
+impl Default for StrategySet {
+    fn default() -> Self {
+        Self {
+            auto_redeeming: true,
+            channel_lifecycle: false,
+            pix: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct GenerationConfig {
     pub blokli_url: String,
@@ -65,17 +92,11 @@ pub struct GenerationConfig {
     pub p2p_host: String,
     /// Base P2P port; node `i` listens on `p2p_port_base + i`.
     pub p2p_port_base: u16,
-    /// Enables channel lifecycle strategy in generated hoprd configs.
-    pub enable_channel_strategy: bool,
-    /// Enables the NonAnonymousPix strategy in generated hoprd configs.
-    pub enable_pix: bool,
+    /// Strategy set to include in the generated hoprd configs.
+    pub strategies: StrategySet,
     /// When set, each node announces its latency-relay port instead of its real
     /// listen port and disables its own on-chain announce, so peers dial the relay.
     pub latency: Option<crate::cli::Latency>,
-    /// When true, no strategies (including AutoRedeeming) are included in the
-    /// generated hoprd config.  Useful for tests that send large amounts of
-    /// packet traffic and don't want ticket-redeem transactions burning gas.
-    pub disable_strategies: bool,
     /// Override the strategy execution interval. When None, the default (60s) is used.
     pub strategy_execution_interval: Option<std::time::Duration>,
 }
@@ -92,10 +113,8 @@ impl Default for GenerationConfig {
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
-            enable_channel_strategy: false,
-            enable_pix: false,
+            strategies: StrategySet::default(),
             latency: None,
-            disable_strategies: false,
             strategy_execution_interval: None,
         }
     }
@@ -228,15 +247,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let p2p_host = &config.p2p_host;
 
     let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
-    let mut strategies = if config.disable_strategies {
-        vec![]
-    } else {
-        vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+    let mut strategies = vec![];
+    if config.strategies.auto_redeeming || config.strategies.channel_lifecycle {
+        strategies.push(StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
             redeem_on_winning: true,
             ..Default::default()
-        })]
-    };
-    if config.enable_channel_strategy {
+        }));
+    }
+    if config.strategies.channel_lifecycle {
         let mesh_target = effective_num_nodes.saturating_sub(1);
         strategies.push(StrategyKind::ChannelLifecycle(Box::new(
             ChannelLifecycleConfig {
@@ -245,8 +263,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     target_open_channels: mesh_target,
                     ..Default::default()
                 },
-                // probe_recheck_threshold=3s → first probe within 3s → EMA converges
-                // immediately → peer_score ≥ 0.5 well before this 10s tick fires.
                 tick_interval: std::time::Duration::from_secs(10),
                 ..Default::default()
             },

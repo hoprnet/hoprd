@@ -151,11 +151,15 @@ async fn main() -> Result<()> {
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,
-            enable_channel_strategy: matches!(
-                args.channel_management,
-                cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
-            ),
-            enable_pix: args.enable_pix,
+            strategies: match args.channel_management {
+                cli::ChannelManagement::Strategy | cli::ChannelManagement::Both => {
+                    identity::StrategySet {
+                        channel_lifecycle: true,
+                        ..Default::default()
+                    }
+                }
+                _ => identity::StrategySet::default(),
+            },
             latency: args.latency.clone(),
             ..Default::default()
         };
@@ -219,7 +223,7 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
-            enable_pix: args.enable_pix,
+            pix: config.strategies.pix,
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

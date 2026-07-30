@@ -257,8 +257,8 @@ pub struct NodeStartConfig<'a> {
     pub p2p_port_base: u16,
     pub identity_password: &'a str,
     pub api_token: Option<String>,
-    /// When true, the `HOPRD_ENABLE_PIX=1` env var is passed to each hoprd process.
-    pub enable_pix: bool,
+    /// When `pix` is true, the `HOPRD_ENABLE_PIX=1` env var is passed to each hoprd process.
+    pub pix: bool,
 }
 
 /// Spawn `config.num_nodes` hoprd processes and return their handles.
@@ -326,10 +326,7 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
                 crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
             )
             .env("HOPR_BLOKLI_NO_COMPAT_CHECK", "1")
-            .env(
-                "HOPRD_ENABLE_PIX",
-                if config.enable_pix { "1" } else { "0" },
-            )
+            .env("HOPRD_ENABLE_PIX", if config.pix { "1" } else { "0" })
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
