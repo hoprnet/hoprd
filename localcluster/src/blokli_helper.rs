@@ -155,17 +155,36 @@ fn detect_container_ip(runtime: &str, name: &str) -> Option<String> {
 }
 
 fn try_get_container_ip(runtime: &str, name: &str) -> Option<String> {
-    // `container ls` output: NAME IMAGE OS ARCH STATE ADDR ...
-    // The container name appears in col[0], the ADDR (with CIDR prefix) in col[5].
     let out = Command::new(runtime).arg("ls").output().ok()?;
-
     let text = String::from_utf8_lossy(&out.stdout);
+
+    let basename = std::path::Path::new(runtime)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(runtime);
+
     for line in text.lines() {
         let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.first().copied() == Some(name) && cols.len() >= 6 {
-            let addr = cols[5];
+
+        let (matches, ip_col) = if basename == "container" {
+            // Apple `container ls` format: UUID IMAGE OS ARCH STATE IP CPUS MEMORY ...
+            // Apple does not show the container name in any column. Instead identify
+            // our container by: arch=="amd64" (we pass --arch amd64) + state=="running".
+            let matches = cols.len() >= 6
+                && cols.get(3).copied() == Some("amd64")
+                && cols.get(4).copied() == Some("running");
+            (matches, 5)
+        } else {
+            // Docker/Podman: NAME IMAGE COMMAND CREATED STATUS PORTS NAMES
+            // The container name appears in col[0].
+            let matches = cols.len() >= 6 && cols.first().copied() == Some(name);
+            (matches, 5)
+        };
+
+        if matches {
+            let addr = cols[ip_col];
             // Strip CIDR prefix (e.g. "192.168.64.2/24" → "192.168.64.2")
-            let ip = addr.split('/').next()?;
+            let ip = addr.split('/').next().unwrap_or("");
             if !ip.is_empty() && ip != "127.0.0.1" && ip != "::1" {
                 return Some(ip.to_string());
             }

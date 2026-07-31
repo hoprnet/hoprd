@@ -310,6 +310,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 mixer: value.network.mixer,
+                transit_latency: None,
                 stream: Default::default(),
             },
             ..Default::default()
