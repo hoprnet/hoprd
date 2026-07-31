@@ -1,5 +1,22 @@
 //! Shared utilities for localcluster integration tests.
 //!
+//! # Serial execution
+//!
+//! **These tests MUST run one at a time.**  Each test starts a chain container
+//! and spawns 3 hoprd processes that use fixed port ranges (P2P, API), a on-
+//! chain state, and the local loopback — all of which conflict when multiple
+//! tests share the machine.  There is no locking or namespace isolation; the
+//! cluster is a singleton on the host.
+//!
+//! When invoked via `cargo nextest`, use `-j 1` and an expression that matches
+//! exactly one test.  Running all tests of an integration-test binary in
+//! parallel (nextest default) will corrupt cluster state and produce spurious
+//! failures.
+//!
+//! ```bash
+//! cargo nextest run -p hoprd-localcluster --test smoke --run-ignored ignored-only -j 1
+//! ```
+//!
 //! Each test sets up a temporary directory, resolves the chain source (an
 //! existing Blokli URL or a Docker container launched from `HOPRD_CHAIN_IMAGE`),
 //! and tracks `Cleanup` to kill processes on drop.

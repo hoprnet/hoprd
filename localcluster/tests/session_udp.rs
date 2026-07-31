@@ -18,8 +18,7 @@
 //! processing, cryptography, and control loops, pushing the 1 MB test past
 //! the 5-minute target.
 //!
-//! Each test must be run individually — the cluster is a singleton on the
-//! machine and cannot be shared across parallel tests.
+//! Each test must be run individually — see [`common`] for details.
 //!
 //! ```bash
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
