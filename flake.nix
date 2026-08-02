@@ -4,11 +4,11 @@
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.0";
-    nix-lib.url = "github:hoprnet/nix-lib/v1.1.0";
+    nix-lib.url = "github:hoprnet/nix-lib/v1.2.1";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -453,6 +453,12 @@
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              # nix-lib's mkDockerImage defaults to a hardcoded x86_64-linux
+              # nixpkgs import for the image-building tooling (base.json,
+              # layers.json, etc). Building that tooling for x86_64-linux can
+              # fail on non-x86_64 Linux runners, so pass the ambient pkgs
+              # (native for the current runner) explicitly.
+              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
               pathsToLink = [
                 "/bin"
               ];
@@ -556,6 +562,14 @@
                 files = "^\\.github/workflows/.*\\.ya?ml$";
                 language = "system";
                 pass_filenames = false;
+              };
+              dependabot-validator = {
+                enable = true;
+                name = "Dependabot config validator";
+                entry = "${pkgs.check-jsonschema}/bin/check-jsonschema --builtin-schema vendor.dependabot";
+                files = "\\.github/dependabot\\.yml$";
+                language = "system";
+                pass_filenames = true;
               };
             };
           };

@@ -157,7 +157,7 @@ jobs:
   build-docker:
     name: Docker
     needs: build-binaries
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@7263182fc9a2bab22cc5a029929940914eb9748d # setup-gcp-v4
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
       contents: read
       pull-requests: write
@@ -177,8 +177,6 @@ jobs:
       build_file: ./hoprd/Cargo.toml
       docker_image_name: hoprd
       docker_image_format: skopeo
-      deployment_namespace: core-team
-      deployment_label_selector: app.kubernetes.io/component=node
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
