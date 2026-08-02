@@ -1,7 +1,8 @@
 //! Integration test: start a 3-node local cluster and verify that every node's
 //! `/account/addresses` REST API response matches the identity generated for it.
 //!
-//! This test is `#[ignore]` because it requires external binaries and services.
+//! This test is `#[ignore]` (long runtime, external chain container + `hoprd`
+//! binary) and is not intended for CI — run it explicitly by name.
 //!
 //! Required (at least one chain source):
 //!   HOPRD_CHAIN_URL        – Blokli URL of a running Anvil+Blokli stack
@@ -10,6 +11,16 @@
 //! Optional:
 //!   HOPRD_BIN              – path to the hoprd binary (default: "hoprd" on PATH)
 //!   HOPRD_CONTAINER_RUNTIME – container runtime CLI (default: "docker")
+//!
+//! # Prerequisites
+//!
+//! The `hoprd` binary must be built in **release** mode.  Debug builds incur
+//! significant overhead that can push the test past the default timeout:
+//!
+//! ```bash
+//! cargo build --release -p hoprd
+//! export HOPRD_BIN=$(pwd)/target/release/hoprd
+//! ```
 
 mod common;
 
@@ -17,7 +28,7 @@ use common::{ClusterCleanup, ClusterEnv, TempCluster};
 use hoprd_localcluster::{client_helper, identity};
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary — run explicitly, not in CI"]
 async fn localcluster_addresses_match_generated_identities() {
     run().await.expect("address-identity verification failed");
 }

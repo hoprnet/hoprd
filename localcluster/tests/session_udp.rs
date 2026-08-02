@@ -1,4 +1,4 @@
-//! UDP session ping-pong tests.
+//! UDP session ping-pong tests (not for CI — run explicitly).
 //!
 //! Opens a 3-node localcluster, creates a UDP session via the entry node
 //! through a relay to an exit node, then sends a payload through the HOPR
@@ -13,10 +13,16 @@
 //!   HOPRD_CHAIN_URL   or HOPRD_CHAIN_IMAGE
 //! Optional: HOPRD_BIN, HOPRD_CONTAINER_RUNTIME
 //!
-//! Tests must run against a **release** build of `hoprd` (or a `--profile`
-//! build when profiling).  Debug builds add significant overhead to packet
-//! processing, cryptography, and control loops, pushing the 1 MB test past
-//! the 5-minute target.
+//! # Prerequisites
+//!
+//! The `hoprd` binary must be built in **release** mode.  Debug builds add
+//! significant overhead to packet processing, cryptography, and control loops,
+//! pushing the 1 MB test past the 5-minute target:
+//!
+//! ```bash
+//! cargo build --release -p hoprd
+//! export HOPRD_BIN=$(pwd)/target/release/hoprd
+//! ```
 //!
 //! Each test must be run individually — see [`common`] for details.
 //!
@@ -53,24 +59,24 @@ const TIMEOUT: Duration = Duration::from_secs(300);
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_udp_session_pingpong_32b() {
     go(32).await
 }
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_udp_session_pingpong_200b() {
     go(200).await
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_udp_session_pingpong_64kb() {
     go(65536).await
 }
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_udp_session_pingpong_1mb() {
     go(1048576).await
 }

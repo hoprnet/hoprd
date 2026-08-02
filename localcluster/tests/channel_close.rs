@@ -2,7 +2,8 @@
 //! channels, then initiate closure on every channel and verify the transition
 //! from `Open` to `PendingToClose`.
 //!
-//! This test is `#[ignore]` because it requires external binaries and services.
+//! This test is `#[ignore]` (long runtime, external chain container + `hoprd`
+//! binary) and is not intended for CI — run it explicitly by name.
 //!
 //! Required (at least one chain source):
 //!   HOPRD_CHAIN_URL        – Blokli URL of a running Anvil+Blokli stack
@@ -11,6 +12,16 @@
 //! Optional:
 //!   HOPRD_BIN              – path to the hoprd binary (default: "hoprd" on PATH)
 //!   HOPRD_CONTAINER_RUNTIME – container runtime CLI (default: "docker")
+//!
+//! # Prerequisites
+//!
+//! The `hoprd` binary must be built in **release** mode.  Debug builds incur
+//! significant overhead that can push the test past the default timeout:
+//!
+//! ```bash
+//! cargo build --release -p hoprd
+//! export HOPRD_BIN=$(pwd)/target/release/hoprd
+//! ```
 
 mod common;
 
@@ -34,7 +45,7 @@ const P2P_HOST: &str = "127.0.0.1";
 const P2P_PORT_BASE: u16 = 19200;
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary — run explicitly, not in CI"]
 async fn localcluster_channel_initiate_closure() {
     run().await.expect("channel initiate closure test failed");
 }

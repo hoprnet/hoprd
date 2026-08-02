@@ -1,7 +1,8 @@
 //! Smoke test: start a 3-node local cluster and verify the ChannelLifecycleStrategy
 //! opens a full-mesh topology without any explicit REST open_channel calls.
 //!
-//! This test is `#[ignore]` because it requires external binaries and services.
+//! This test is `#[ignore]` (long runtime, external chain container + `hoprd`
+//! binary) and is not intended for CI — run it explicitly by name.
 //!
 //! Required (at least one chain source):
 //!   HOPRD_CHAIN_URL        – Blokli URL of a running Anvil+Blokli stack
@@ -10,6 +11,16 @@
 //! Optional:
 //!   HOPRD_BIN              – path to the hoprd binary (default: "hoprd" on PATH)
 //!   HOPRD_CONTAINER_RUNTIME – container runtime CLI (default: "docker")
+//!
+//! # Prerequisites
+//!
+//! The `hoprd` binary must be built in **release** mode.  Debug builds incur
+//! significant overhead that can push the test past the default timeout:
+//!
+//! ```bash
+//! cargo build --release -p hoprd
+//! export HOPRD_BIN=$(pwd)/target/release/hoprd
+//! ```
 
 mod common;
 
@@ -22,7 +33,7 @@ use hoprd_localcluster::{client_helper, identity};
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio::test]
-#[ignore]
+#[ignore = "requires external chain container and hoprd binary — run explicitly, not in CI"]
 async fn localcluster_channels_opened_by_strategy() {
     run().await.expect("localcluster smoke test failed");
 }

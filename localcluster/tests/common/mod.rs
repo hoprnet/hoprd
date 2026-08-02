@@ -1,12 +1,27 @@
 //! Shared utilities for localcluster integration tests.
 //!
+//! # Prerequisites
+//!
+//! The `hoprd` binary must be built in **release** mode before running any
+//! localcluster test.  Each test file documents this in its own `# Prerequisites`
+//! section.
+//!
+//! ```bash
+//! cargo build --release -p hoprd
+//! export HOPRD_BIN=$(pwd)/target/release/hoprd
+//! ```
+//!
 //! # Serial execution
 //!
 //! **These tests MUST run one at a time.**  Each test starts a chain container
-//! and spawns 3 hoprd processes that use fixed port ranges (P2P, API), a on-
+//! and spawns 3 hoprd processes that use fixed port ranges (P2P, API), on-
 //! chain state, and the local loopback — all of which conflict when multiple
 //! tests share the machine.  There is no locking or namespace isolation; the
 //! cluster is a singleton on the host.
+//!
+//! All tests are `#[ignore = "..."]` with a description indicating they require
+//! a chain container and the `hoprd` binary.  They are not intended for CI —
+//! invoke them explicitly by name with `--run-ignored ignored-only`.
 //!
 //! When invoked via `cargo nextest`, use `-j 1` and an expression that matches
 //! exactly one test.  Running all tests of an integration-test binary in
