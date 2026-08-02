@@ -170,6 +170,8 @@ fn pix_settings() -> identity::PixSettings {
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         // Only the Exit refuses non-PIX Sessions; the relay never terminates one.
         enforce_on_nodes: vec![EXIT],
+        // ~60 SSA deposits at this test's ~1.66 wxHOPR per cycle; it needs four.
+        node_deposit_float: "100 wxHOPR".parse().expect("valid static amount"),
     }
 }
 

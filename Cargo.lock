@@ -5170,7 +5170,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "0.22.1"
-source = "git+https://github.com/hoprnet/hopr-strategy?branch=lukas%2Fpix#1d89a9d679f197b3b39f6fd52dddbb96dec89e28"
+source = "git+https://github.com/hoprnet/hopr-strategy?branch=lukas%2Fpix#30bad6c5cae3e89290d73e151f9b68fbebab8f68"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5627,6 +5627,7 @@ dependencies = [
  "hoprd",
  "hoprd-api",
  "hoprd-api-client",
+ "humantime-serde",
  "lazy_static",
  "nix 0.31.3",
  "rand 0.10.2",
@@ -5800,7 +5801,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8241,7 +8242,7 @@ dependencies = [
  "quinn-udp 0.5.15",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -8281,7 +8282,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -8294,7 +8295,7 @@ checksum = "76150b617afc75e6e21ac5f39bc196e80b65415ae48d62dbef8e2519d040ce42"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "windows-sys 0.61.2",
 ]
 

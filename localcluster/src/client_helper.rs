@@ -99,9 +99,82 @@ pub struct NodeBalances {
     pub safe_native: XDaiBalance,
 }
 
+/// A parsed Prometheus text-format scrape of one node's `/metrics`.
+///
+/// Note that hoprd deliberately strips every `hopr_session_*` series from this endpoint
+/// (`rest-api::root::collect_hopr_metrics`) because they are labelled by session id and
+/// so unbounded in cardinality. Per-session counters are exported over OTLP only; what
+/// remains here is node-wide, including `hopr_packets_count` and the
+/// `hopr_strategy_pix_*` lifecycle counters.
+#[derive(Clone, Debug, Default)]
+pub struct MetricsSnapshot {
+    /// `(name, label block including braces or empty, value)` per sample line.
+    samples: Vec<(String, String, f64)>,
+}
+
+impl MetricsSnapshot {
+    /// Parse the Prometheus text exposition format, skipping `# HELP` / `# TYPE`.
+    ///
+    /// Label values containing whitespace would split wrongly here; none of the series
+    /// this is used for have any.
+    pub fn parse(body: &str) -> Self {
+        let samples = body
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+            .filter_map(|line| {
+                let mut parts = line.split_whitespace();
+                let series = parts.next()?;
+                // Trailing token after the value is an optional timestamp; ignore it.
+                let value = parts.next()?.parse::<f64>().ok()?;
+                let (name, labels) = match series.split_once('{') {
+                    Some((name, rest)) => (name, format!("{{{rest}")),
+                    None => (series, String::new()),
+                };
+                Some((name.to_string(), labels, value))
+            })
+            .collect();
+        Self { samples }
+    }
+
+    /// Sum of `name` across every label set, or 0.0 when the series is absent.
+    pub fn sum(&self, name: &str) -> f64 {
+        self.sum_where(name, "")
+    }
+
+    /// Sum of `name` restricted to label sets containing `label_filter` verbatim,
+    /// e.g. `sum_where("hopr_packets_count", r#"type="sent""#)`.
+    ///
+    /// Metric names are compared with any trailing `_total` segments removed on both
+    /// sides: OpenTelemetry's Prometheus exporter appends `_total` to counters, and
+    /// whether a name that already ends in `_total` gets a second one is exporter- and
+    /// version-dependent.
+    pub fn sum_where(&self, name: &str, label_filter: &str) -> f64 {
+        let wanted = strip_total_suffixes(name);
+        self.samples
+            .iter()
+            .filter(|(sample, labels, _)| {
+                strip_total_suffixes(sample) == wanted && labels.contains(label_filter)
+            })
+            .map(|(_, _, value)| value)
+            .sum()
+    }
+}
+
+fn strip_total_suffixes(name: &str) -> &str {
+    let mut name = name;
+    while let Some(stripped) = name.strip_suffix("_total") {
+        name = stripped;
+    }
+    name
+}
+
 #[derive(Debug, Clone)]
 pub struct HoprdApiClient {
     inner: hoprd_api_client::Client,
+    /// Kept alongside `inner` for the `/metrics` scrape: that endpoint returns a
+    /// Prometheus text body, and the generated client hands back an opaque byte stream.
+    http: reqwest::Client,
+    base_url: String,
 }
 
 impl HoprdApiClient {
@@ -122,8 +195,34 @@ impl HoprdApiClient {
             .context("failed to build http client")?;
 
         Ok(Self {
-            inner: hoprd_api_client::Client::new_with_client(base_url.as_ref(), http_client),
+            inner: hoprd_api_client::Client::new_with_client(
+                base_url.as_ref(),
+                http_client.clone(),
+            ),
+            http: http_client,
+            base_url,
         })
+    }
+
+    /// Scrape this node's Prometheus `/metrics` endpoint.
+    ///
+    /// Returns an empty snapshot rather than an error when the node answers with a
+    /// non-200 — it responds `422 BUILT WITHOUT METRICS SUPPORT` when compiled without
+    /// the `telemetry` feature, which should degrade a live progress report, not fail it.
+    pub async fn metrics(&self) -> Result<MetricsSnapshot> {
+        let url = format!("{}/metrics", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .with_context(|| format!("scraping {url}"))?;
+        if !resp.status().is_success() {
+            return Ok(MetricsSnapshot::default());
+        }
+        Ok(MetricsSnapshot::parse(
+            &resp.text().await.context("reading metrics body")?,
+        ))
     }
 
     pub async fn wait_started(&self, timeout: std::time::Duration) -> Result<()> {

@@ -115,6 +115,13 @@ pub struct PixSettings {
     /// Typically just the Exit — a relay never terminates a Session, so enforcement
     /// there has no effect.
     pub enforce_on_nodes: Vec<usize>,
+    /// wxHOPR left in each node's *own* account to pay for SSA deposits.
+    ///
+    /// Separate from the Safe's stake because deposits do not go through the Safe: see
+    /// the comment at the funding site. Sized by the caller against
+    /// `price_per_byte × quota_per_ssa × expected cycles` — a run that outlives this
+    /// float stops depositing, and the Exit's kill switch closes the Session.
+    pub node_deposit_float: HoprBalance,
 }
 
 impl PixSettings {
@@ -319,7 +326,11 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     // the node key rather than routing through the module the way `announce` does — so
     // PIX deposits are paid out of the node's own account, which is left at zero.
     // Re-fund the node so it can make them.
-    let initial_pix_deposit_balance: HoprBalance = "100 wxHOPR".parse()?;
+    let initial_pix_deposit_balance: HoprBalance = config
+        .pix
+        .as_ref()
+        .map(|pix| pix.node_deposit_float)
+        .unwrap_or_default();
     // `fund_sweep_gas_impl` gates on the *Safe's* xDai balance before topping a
     // recovered stealth address up for gas, so the Safe needs native funds even though
     // the transfer itself is signed by the node.
