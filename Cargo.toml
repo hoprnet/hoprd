@@ -15,13 +15,13 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-utils = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix" }
+hopr-utils = { package = "hopr-utilities", version = "0.5.0" }
 hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix" }
 hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/pix", default-features = false }
 hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
