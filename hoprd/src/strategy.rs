@@ -5,7 +5,10 @@ use hopr_lib::api::{
         ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
         ChainValues, ChainWriteChannelOperations, ChainWriteTicketOperations,
     },
-    node::{ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement},
+    node::{
+        ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement,
+        PacketTransport,
+    },
     tickets::TicketManagement,
 };
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
@@ -163,6 +166,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 pub fn build_strategies<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn Strategy + Send>
 where
     N: ActionableEventSource
+        + PacketTransport
         + HasChainApi<
             ChainApi: ChainReadAccountOperations
                           + ChainReadChannelOperations
@@ -197,7 +201,7 @@ where
     #[cfg(feature = "runtime-tokio")]
     if std::env::var("HOPRD_ENABLE_PIX")
         .ok()
-        .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
     {
         let pix_cfg = hopr_strategy::non_anonymous_pix::NonAnonymousPixStrategyConfig {
             price_per_byte: "1 wxHOPR".parse().expect("valid static amount"),
@@ -227,6 +231,7 @@ where
 fn build_strategies_inner<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn Strategy + Send>
 where
     N: ActionableEventSource
+        + PacketTransport
         + HasChainApi<
             ChainApi: ChainReadAccountOperations
                           + ChainReadChannelOperations

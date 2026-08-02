@@ -143,6 +143,7 @@ impl HoprdApiClient {
     /// SURB knobs (`response_buffer`, `max_surb_upstream`) are left at protocol
     /// defaults when `None`.  When `capabilities` is `None`, no capabilities are set
     /// (UDP gets only Segmentation by default on the server).
+    #[allow(clippy::too_many_arguments)]
     pub async fn open_session(
         &self,
         protocol: &str,

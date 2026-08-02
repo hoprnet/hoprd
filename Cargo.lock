@@ -4912,7 +4912,7 @@ dependencies = [
 [[package]]
 name = "hopr-chain-connector"
 version = "0.22.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4936,13 +4936,13 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-crypto-packet"
 version = "1.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "bimap",
  "const-hex",
@@ -4961,7 +4961,7 @@ dependencies = [
 [[package]]
 name = "hopr-ct-full-network"
 version = "0.3.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -4972,13 +4972,13 @@ dependencies = [
  "hopr-utilities",
  "smart-default",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-lib"
 version = "4.0.2-rc.9"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5012,13 +5012,13 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-network-graph"
 version = "0.3.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "bimap",
@@ -5038,7 +5038,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-app"
 version = "1.0.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "hopr-crypto-packet",
  "hopr-types",
@@ -5051,7 +5051,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-hopr"
 version = "4.7.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5075,13 +5075,13 @@ dependencies = [
  "strum",
  "thiserror 2.0.19",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-protocol-pix"
 version = "0.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "ahash",
  "auto_impl",
@@ -5097,14 +5097,14 @@ dependencies = [
  "strum",
  "thiserror 2.0.19",
  "tracing",
- "validator 0.21.0",
+ "validator",
  "vsss-rs",
 ]
 
 [[package]]
 name = "hopr-protocol-session"
 version = "1.2.3"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -5135,7 +5135,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "1.2.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "aquamarine",
  "flagset",
@@ -5151,7 +5151,7 @@ dependencies = [
 [[package]]
 name = "hopr-session-server-forwarder"
 version = "0.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "async-trait",
  "hopr-api",
@@ -5164,13 +5164,13 @@ dependencies = [
  "tokio",
  "tokio-retry",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-strategy"
 version = "0.22.1"
-source = "git+https://github.com/hoprnet/hopr-strategy?branch=lukas%2Fpix#99cb9fee59c9b67c2bd15ab880b9f257d84f97fe"
+source = "git+https://github.com/hoprnet/hopr-strategy?branch=lukas%2Fpix#1d89a9d679f197b3b39f6fd52dddbb96dec89e28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5196,13 +5196,13 @@ dependencies = [
  "statrs",
  "thiserror 2.0.19",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-ticket-manager"
 version = "0.5.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5224,7 +5224,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport"
 version = "0.34.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5265,13 +5265,13 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio-util",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5288,7 +5288,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-p2p"
 version = "0.9.4"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "async-broadcast",
  "async-trait",
@@ -5310,7 +5310,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.8.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5330,13 +5330,13 @@ dependencies = [
  "strum",
  "thiserror 2.0.19",
  "tracing",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
 name = "hopr-transport-session"
 version = "0.23.3"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5370,13 +5370,13 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "hopr-protocol-app",
  "serde",
  "smart-default",
  "thiserror 2.0.19",
- "validator 0.21.0",
+ "validator",
 ]
 
 [[package]]
@@ -5479,7 +5479,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#c4f22c55b799c7ecd5b5911aa3ea4397334721e1"
+source = "git+https://github.com/hoprnet/hoprnet?branch=lukas%2Fpix#d764cd0d0d26d51a0a50c557478b4201d6ea8398"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5505,7 +5505,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "4.0.3-rc.4"
+version = "4.0.3"
 dependencies = [
  "anyhow",
  "async-signal",
@@ -5548,13 +5548,13 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "validator 0.20.0",
+ "validator",
  "vergen-gix",
 ]
 
 [[package]]
 name = "hoprd-api"
-version = "4.12.0"
+version = "4.12.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5586,7 +5586,7 @@ dependencies = [
  "utoipa",
  "utoipa-scalar",
  "utoipa-swagger-ui",
- "validator 0.20.0",
+ "validator",
 ]
 
 [[package]]
@@ -5615,7 +5615,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd-localcluster"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -9538,9 +9538,9 @@ dependencies = [
 
 [[package]]
 name = "simba"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f45c644a9f3a386f9288625d9f0c1e999e1acf07a37df35d0516c7f199d9cb2"
+checksum = "834a9952211d4a60ff10ac1d20cc01640a75bdc0a0c688d62f359ea7d17459f3"
 dependencies = [
  "approx",
  "num-complex",
@@ -10654,22 +10654,6 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "validator"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43fb22e1a008ece370ce08a3e9e4447a910e92621bb49b85d6e48a45397e7cfa"
-dependencies = [
- "idna",
- "once_cell",
- "regex",
- "serde",
- "serde_derive",
- "serde_json",
- "url",
- "validator_derive",
 ]
 
 [[package]]
