@@ -43,6 +43,42 @@ fn empty_strategies() -> Vec<StrategyKind> {
     vec![]
 }
 
+/// Reads `var` and parses it as `T`, falling back to `default` when the variable is
+/// unset or does not parse.
+///
+/// Used for the `NonAnonymousPix` knobs, which cannot be expressed in YAML (see
+/// [`build_strategies`]). A malformed value is a configuration mistake rather than a
+/// reason to refuse to start, so it is logged and the default is kept.
+#[cfg(feature = "runtime-tokio")]
+fn pix_env_or<T>(var: &str, default: T) -> T
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    match std::env::var(var) {
+        Ok(raw) => raw.trim().parse().unwrap_or_else(|error| {
+            tracing::warn!(%error, var, %raw, "invalid PIX override, keeping the default");
+            default
+        }),
+        Err(_) => default,
+    }
+}
+
+/// [`pix_env_or`] for [`Duration`], which has no `FromStr`; accepts humantime syntax
+/// such as `30s` or `2m`.
+#[cfg(feature = "runtime-tokio")]
+fn pix_env_duration_or(var: &str, default: Duration) -> Duration {
+    match std::env::var(var) {
+        Ok(raw) => humantime_serde::re::humantime::parse_duration(raw.trim()).unwrap_or_else(
+            |error| {
+                tracing::warn!(%error, var, %raw, "invalid PIX duration override, keeping the default");
+                default
+            },
+        ),
+        Err(_) => default,
+    }
+}
+
 fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), ValidationError> {
     if interval < &Duration::from_secs(10) {
         Err(ValidationError::new(
@@ -160,6 +196,21 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// not a YAML-configurable [`StrategyKind`] because its config type's serde
 /// representation is incompatible with `serde_saphyr`).
 ///
+/// For the same reason its knobs are read from the environment rather than from the
+/// config file. All are optional and fall back to the defaults shown:
+///
+/// | Variable | Default |
+/// |---|---|
+/// | `HOPRD_PIX_PRICE_PER_BYTE` | `1 wxHOPR` |
+/// | `HOPRD_PIX_MAX_SSA_ALLOCATION` | `100 wxHOPR` |
+/// | `HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME` | `1h` |
+/// | `HOPRD_PIX_GAS_XDAI_PER_SWEEP` | `0.01 xdai` |
+///
+/// Note that `max_deposit_tracking_time` drives the Exit's deposit poll cadence
+/// (`tracking_time / 10`), which must stay below the Exit's
+/// `max_deposit_wait + max_ssa_delivery_time` kill-switch deadline — otherwise only the
+/// single immediate balance check can land in time.
+///
 /// External strategies can be composed by building this result first, then wrapping
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
 /// call site.
@@ -204,13 +255,35 @@ where
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
     {
         let pix_cfg = hopr_strategy::non_anonymous_pix::NonAnonymousPixStrategyConfig {
-            price_per_byte: "1 wxHOPR".parse().expect("valid static amount"),
-            max_ssa_allocation: "100 wxHOPR".parse().expect("valid static amount"),
-            max_deposit_tracking_time: std::time::Duration::from_secs(3600),
+            price_per_byte: pix_env_or(
+                "HOPRD_PIX_PRICE_PER_BYTE",
+                "1 wxHOPR".parse().expect("valid static amount"),
+            ),
+            max_ssa_allocation: pix_env_or(
+                "HOPRD_PIX_MAX_SSA_ALLOCATION",
+                "100 wxHOPR".parse().expect("valid static amount"),
+            ),
+            max_deposit_tracking_time: pix_env_duration_or(
+                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
+                Duration::from_secs(3600),
+            ),
             pix_recovery_db_path: None,
             pix_recovery_password_env: None,
-            gas_xdai_per_sweep: Default::default(),
+            // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
+            // `fund_sweep_gas_impl` a no-op and leaves the recovered stealth address
+            // without gas to pay for its own `withdraw_from_signer` sweep.
+            gas_xdai_per_sweep: pix_env_or(
+                "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
+                "0.01 xdai".parse().expect("valid static amount"),
+            ),
         };
+        tracing::info!(
+            price_per_byte = %pix_cfg.price_per_byte,
+            max_ssa_allocation = %pix_cfg.max_ssa_allocation,
+            max_deposit_tracking_time = ?pix_cfg.max_deposit_tracking_time,
+            gas_xdai_per_sweep = %pix_cfg.gas_xdai_per_sweep,
+            "enabling the NonAnonymousPix strategy"
+        );
         match hopr_strategy::non_anonymous_pix::NonAnonymousPixStrategy::new(pix_cfg)
             .build(Arc::clone(&node))
         {

@@ -223,7 +223,10 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
-            pix: config.strategies.pix,
+            pix: config
+                .strategies
+                .pix
+                .then(client_helper::PixStrategyEnv::default),
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

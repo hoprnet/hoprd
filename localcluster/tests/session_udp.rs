@@ -153,7 +153,7 @@ async fn setup_cluster(env: &ClusterEnv, cluster: &TempCluster, cleanup: &mut Cl
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: false,
+        pix: None,
     })
     .await
     .unwrap();
@@ -228,18 +228,19 @@ async fn go(payload_size: usize) {
 
     let (ip, port) = entry
         .api
-        .open_session(
-            "udp",
-            exit,
-            &target,
-            1,
-            Some(vec![
+        .open_session(client_helper::OpenSessionRequest {
+            protocol: "udp",
+            destination: exit,
+            target: &target,
+            hops: 1,
+            capabilities: Some(vec![
                 hoprd_api_client::types::SessionCapability::Segmentation,
                 hoprd_api_client::types::SessionCapability::NoDelay,
             ]),
-            Some("10 MB".to_string()),
-            Some("50 Mb/s".to_string()),
-        )
+            response_buffer: Some("10 MB".to_string()),
+            max_surb_upstream: Some("50 Mb/s".to_string()),
+            pix_ssa_quota: None,
+        })
         .await
         .unwrap();
     tracing::info!("session on {ip}:{port} (elapsed={:?})", t0.elapsed());

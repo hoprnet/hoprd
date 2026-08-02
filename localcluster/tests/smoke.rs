@@ -89,7 +89,7 @@ async fn run() -> Result<()> {
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: true,
+        pix: Some(client_helper::PixStrategyEnv::default()),
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 

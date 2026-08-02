@@ -81,7 +81,7 @@ async fn run() -> anyhow::Result<()> {
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: false,
+        pix: None,
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 
