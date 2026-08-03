@@ -30,6 +30,7 @@ strategy:
           allowlist: ~
           blocklist: []
         funding:
+          sizing_mode: deterministic
           initial_capacity: "1 GiB"
           topup_capacity: "512 MiB"
           lower_capacity_threshold: "512 MiB"
