@@ -47,14 +47,7 @@ hopr-lib = { workspace = true, features = [
   "utils_futures",
 ] }
 
-hopr-utils = { workspace = true, optional = true }
 hopr-utils-session = { workspace = true, features = ["explicit-path"] }
-
-[package.metadata.cargo-machete]
-ignored = ["hopr-utils"]
-
-[package.metadata.cargo-shear]
-ignored = ["hopr-utils"]
 
 [dev-dependencies]
 anyhow = { workspace = true }

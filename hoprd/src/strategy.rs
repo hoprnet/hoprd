@@ -5,7 +5,10 @@ use hopr_lib::api::{
         ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
         ChainValues, ChainWriteChannelOperations, ChainWriteTicketOperations,
     },
-    node::{ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement},
+    node::{
+        ActionableEventSource, HasChainApi, HasGraphView, HasNetworkView, HasTicketManagement,
+        PacketTransport,
+    },
     tickets::TicketManagement,
 };
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
@@ -172,6 +175,7 @@ where
         > + HasGraphView
         + HasNetworkView
         + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        + PacketTransport
         + Send
         + Sync
         + 'static,
@@ -204,6 +208,7 @@ where
         > + HasGraphView
         + HasNetworkView
         + HasTicketManagement<TicketManager: TicketManagement + Clone + Send + Sync + 'static>
+        + PacketTransport
         + Send
         + Sync
         + 'static,
