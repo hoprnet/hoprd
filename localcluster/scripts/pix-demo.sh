@@ -17,8 +17,12 @@
 #
 #   watch -n 2 -c ./localcluster/scripts/pix-demo.sh --dashboard
 #
-# Requires: curl, jq. Plus whatever the test itself needs — see the test's module docs
-# for HOPRD_BIN and HOPRD_CHAIN_IMAGE.
+# Requires curl, jq, bc, docker and cargo-nextest, so run it inside `nix develop`. Plus a
+# release `hoprd` at HOPRD_BIN (default `target/release/hoprd`) and HOPRD_CHAIN_IMAGE — see
+# the test's module docs.
+#
+# Safe to re-run: a stale chain container or leftover nodes from an interrupted attempt are
+# cleared on the way in, and Ctrl-C tears the cluster down on the way out.
 
 set -uo pipefail
 
@@ -246,6 +250,23 @@ command -v bc >/dev/null || {
   echo "pix-demo needs bc"
   exit 1
 }
+cargo nextest --version >/dev/null 2>&1 || {
+  echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
+  exit 1
+}
+
+# Tear down whatever a previous run left behind. This is not hygiene, it is the difference
+# between a rehearsal and the live run working: the chain container is a fixed name and the
+# nodes bind a fixed port block, so one stale process from an interrupted run makes the next
+# one fail during bootstrap — in front of the audience, two minutes in.
+#
+# The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
+# whose own command line contains the pattern; without it the script SIGTERMs itself.
+reset_cluster() {
+  docker rm -f hopr-chain >/dev/null 2>&1
+  pkill -f "release/hoprd --configuration[F]ilePath" >/dev/null 2>&1
+  sleep 2
+}
 
 : "${HOPRD_BIN:=$REPO_ROOT/target/release/hoprd}"
 : "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
@@ -262,6 +283,7 @@ fi
 # last good read when an endpoint refuses, which would otherwise show the *previous* run's
 # totals during the couple of minutes this one takes to bring the cluster up.
 rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* "$TEST_LOG"
+reset_cluster
 date +%s >"$STATE_DIR/started"
 
 echo "starting the localcluster (chain, 3 nodes, channels) — this takes a couple of minutes"
@@ -270,10 +292,16 @@ echo "full test output: $TEST_LOG"
   --run-ignored ignored-only -j 1 --no-capture) >"$TEST_LOG" 2>&1 &
 TEST_PID=$!
 
+# Killing the nextest process alone is not enough: the three `hoprd` children and the chain
+# container outlive it, and on Ctrl-C the test's own teardown never runs. Left behind, they
+# are exactly what `reset_cluster` has to clear before the next attempt — so clear them here
+# and a re-run needs no manual intervention. Safe on the normal-exit path too, where the
+# test has already torn everything down and both commands are no-ops.
 cleanup() {
   printf '\033[?25h'
   kill "$TEST_PID" 2>/dev/null
   wait "$TEST_PID" 2>/dev/null
+  reset_cluster
 }
 trap cleanup EXIT INT TERM
 
