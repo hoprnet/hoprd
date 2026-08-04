@@ -267,6 +267,7 @@ impl SessionClientRequest {
     pub(crate) async fn into_protocol_session_config(
         self,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
         Ok((
@@ -296,6 +297,7 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
+                flow_control,
                 ..Default::default()
             },
         ))
@@ -740,7 +742,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::TCP)
+                .into_protocol_session_config(
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -772,7 +777,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::UDP)
+                .into_protocol_session_config(
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -1223,6 +1231,7 @@ mod tests {
             hopr: Arc::new(NoopNode),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            session_flow_control: Default::default(),
         });
         Router::new()
             .route("/session/{protocol}", get(list_clients::<NoopNode>))

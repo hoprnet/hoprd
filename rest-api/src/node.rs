@@ -326,6 +326,7 @@ mod tests {
             hopr: Arc::new(NoopNode),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            session_flow_control: Default::default(),
         });
         Router::new()
             .route(
