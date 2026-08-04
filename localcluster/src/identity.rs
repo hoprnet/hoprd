@@ -66,7 +66,7 @@ pub struct StrategySet {
     /// Include ChannelLifecycle strategy (opens full-mesh channels automatically).
     /// Implies `auto_redeeming` when constructing the strategy list.
     pub channel_lifecycle: bool,
-    /// Enable NonAnonymousPix strategy via `HOPRD_ENABLE_PIX=1`.
+    /// Enable PIX strategy via `HOPRD_ENABLE_PIX=1`.
     pub pix: bool,
 }
 

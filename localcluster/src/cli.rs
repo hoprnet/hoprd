@@ -162,10 +162,10 @@ pub struct Args {
     #[arg(long, value_parser = parse_latency)]
     pub latency: Option<Latency>,
 
-    /// Enable the NonAnonymousPix strategy.
+    /// Enable the PIX strategy.
     ///
     /// Each node will participate in PIX as both entry and exit, handling
-    /// deposit addresses and sweeps using non-anonymous on-chain transactions.
+    /// deposit addresses and sweeps.
     #[arg(long)]
     pub enable_pix: bool,
 }

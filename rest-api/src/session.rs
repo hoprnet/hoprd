@@ -14,7 +14,7 @@ use hopr_lib::{
     errors::HoprLibError,
     exports::transport::{
         SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
-        SurbBalancerConfig,
+        SsaDimensions, SurbBalancerConfig,
     },
 };
 #[allow(deprecated)]
@@ -265,10 +265,14 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
-    /// PIX SSA quota `(polys_per_ssa, shares_per_poly)`.
+    /// PIX SSA quota `[polys_per_ssa, shares_per_poly]`.
     ///
     /// When set, the Session will use the PIX protocol with the given quota
     /// parameters. When not set, PIX is not advertised to the Exit node.
+    ///
+    /// The wire form is a positional pair, so the two are transposable here; they stop
+    /// being so at [`SsaDimensions`], which this is mapped onto in
+    /// [`into_protocol_session_config`](Self::into_protocol_session_config).
     #[serde(default)]
     #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4]))]
     pub pix_ssa_quota: Option<(u16, u16)>,
@@ -308,7 +312,9 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
-                pix_ssa_quota: self.pix_ssa_quota,
+                pix_ssa_quota: self
+                    .pix_ssa_quota
+                    .map(|(polys, shares)| SsaDimensions::new(polys, shares)),
                 ..Default::default()
             },
         ))
