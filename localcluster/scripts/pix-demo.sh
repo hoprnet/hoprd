@@ -168,6 +168,14 @@ render() {
   per_cycle=$(from_log "per_cycle")
   local funded
   funded=$(from_log "funded_cycles")
+  # The run's fixed parameters, announced once in the test's startup banner. All empty when
+  # attached with `--dashboard` to a cluster somebody else started, in which case the geometry
+  # line is simply skipped rather than shown full of blanks.
+  local polys shares quota price_per_byte
+  polys=$(from_log "ssa_polys")
+  shares=$(from_log "ssa_shares")
+  quota=$(from_log "quota")
+  price_per_byte=$(from_log "price_per_byte")
   [ -f "$STATE_DIR/started" ] || date +%s >"$STATE_DIR/started"
   local started
   started=$(cat "$STATE_DIR/started")
@@ -194,8 +202,19 @@ render() {
     "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_BOLD" $((elapsed / 60)) $((elapsed % 60)) "$C_RESET" "$C_CYAN" "$C_RESET"
   printf '%s╚══════════════════════════════════════════════════════════════════════════╝%s\n\n' "$C_CYAN" "$C_RESET"
 
+  # Why a deposit is the size it is, shown as the derivation rather than as a bare number: the
+  # dimensions fix the quota, and the quota priced per byte fixes what the Entry has to pay.
+  if [ -n "$polys" ] && [ -n "$shares" ]; then
+    printf '  %sSSA GEOMETRY%s         %s%s polys × %s shares%s  %s→%s  %s%s B%s %squota per SSA%s\n' \
+      "$C_BOLD" "$C_RESET" "$C_BOLD" "$polys" "$shares" "$C_RESET" "$C_DIM" "$C_RESET" \
+      "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET" "$C_DIM" "$C_RESET"
+    printf '                       %s%s wxHOPR/byte%s  %s→%s  %s%s wxHOPR%s %sper deposit%s\n\n' \
+      "$C_BOLD" "${price_per_byte:-?}" "$C_RESET" "$C_DIM" "$C_RESET" \
+      "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET" "$C_DIM" "$C_RESET"
+  fi
+
   printf '  %sSSA CYCLE PIPELINE%s   %seach cycle: Entry deposits, Exit confirms, collects\n' "$C_BOLD" "$C_RESET" "$C_DIM"
-  printf '                        shares from the SURBs it spends, then sweeps%s\n\n' "$C_RESET"
+  printf '                       shares from the SURBs it spends, then sweeps%s\n\n' "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "Entry deposits" "$(bar "$deposits" "$scale")" "$C_BOLD" "$deposits" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "Exit confirmed" "$(bar "$confirmed" "$scale")" "" "$confirmed" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "SSA keys recovered" "$(bar "$keys" "$scale")" "" "$keys" "$C_RESET"

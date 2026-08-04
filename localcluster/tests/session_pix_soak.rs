@@ -520,12 +520,19 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         }
     });
 
+    // `ssa_polys`/`ssa_shares` are deliberately not named `polys`/`shares`: `pix-demo.sh`
+    // greps this banner for `<name>=<number>` and takes the first match in the whole log, so
+    // a field name that could occur in any other line would be read out of that line instead.
     tracing::info!(
-        rate, quota, %per_cycle, %float, funded_cycles,
+        rate, quota, %price_per_byte, %per_cycle, %float, funded_cycles,
+        ssa_polys = PIX_POLYS,
+        ssa_shares = PIX_SHARES,
         emissions_per_ssa = emissions_per_ssa(),
         response_buffer = %response_buffer(),
         est_cycle_secs = emissions_per_ssa() as f64 / rate as f64,
-        "PIX geometry: the run ends when {funded_cycles} deposits have drained the float"
+        "PIX geometry: {PIX_POLYS} polys x {PIX_SHARES} shares = {quota} B per SSA at \
+         {price_per_byte}/B = {per_cycle} per deposit; the run ends when {funded_cycles} \
+         deposits have drained the float"
     );
 
     setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)).await?;
