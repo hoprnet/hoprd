@@ -293,6 +293,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     ..Default::default()
                 },
+                // Simulated transit-latency shim (testing only); production leaves it disabled.
+                transit_latency: None,
                 probe: ProbeConfig {
                     interval: value.network.probe_interval,
                     recheck_threshold: value.network.probe_recheck_threshold,

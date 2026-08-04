@@ -580,6 +580,15 @@
             };
           };
 
+          # Build with `--cfg tokio_unstable` so the hoprnet crates (incl. the
+          # utilities/transport stack) get Tokio's improved cooperative yielding.
+          # nix-lib's shells set CARGO_BUILD_RUSTFLAGS (linker flag), which Cargo
+          # lets *replace* .cargo/config.toml — so append the cfg here to keep it
+          # in effect. `--check-cfg` keeps the workspace clean under `-D warnings`.
+          tokioUnstableHook = ''
+            export CARGO_BUILD_RUSTFLAGS="''${CARGO_BUILD_RUSTFLAGS:-} --cfg tokio_unstable --check-cfg cfg(tokio_unstable)"
+          '';
+
           devShell = nixLib.mkDevShell {
             rustToolchainFile = ./rust-toolchain.toml;
             shellName = "hoprd Development";
@@ -598,6 +607,7 @@
             ];
             shellHook = ''
               export GITHUB_TOKEN="''${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
+              ${tokioUnstableHook}
               ${pre-commit-check.shellHook}
             '';
           };
@@ -620,6 +630,7 @@
               gnupg
               perl
             ];
+            shellHook = tokioUnstableHook;
           };
 
           testShell = nixLib.mkDevShell {
@@ -631,6 +642,7 @@
               foundry-bin
               cargo-nextest
             ];
+            shellHook = tokioUnstableHook;
           };
 
           run-check = nixLib.mkCheckApp { inherit system; };
