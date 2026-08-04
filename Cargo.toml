@@ -22,7 +22,11 @@ hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8
 hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { version = "0.22.0", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false, features = [
+  "redb",
+  "cli",
+  "serde",
+] }
 hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 
@@ -89,7 +93,7 @@ serde_with = { version = "3.21.0", features = ["base64"] }
 signal-hook = "0.4.4"
 smart-default = "0.7.1"
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "2.0.119", features = ["full"] }
+syn = { version = "3.0.3", features = ["full"] }
 tempfile = "3.27.0"
 test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.19"
