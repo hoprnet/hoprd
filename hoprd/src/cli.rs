@@ -126,7 +126,7 @@ fn parse_blokli_dns_override(value: &str) -> Result<(IpAddr, Option<u16>), Strin
     }
 
     Err(format!(
-        "invalid DNS override '{value}', expected <IP_ADDRESS> or <IP_ADDRESS>:<PORT>"
+        "invalid DNS override '{value}', expected <IP_ADDRESS>, <IP_ADDRESS>:<PORT>, or [<IPv6>]:<PORT>"
     ))
 }
 
@@ -250,7 +250,7 @@ pub struct CliArgs {
     #[arg(
         long = "blokliDnsOverride",
         alias = "blokli-dns-override",
-        help = "Override the DNS resolution for the Blokli provider, in the format <IP_ADDRESS>[:<PORT>]",
+        help = "Override the DNS resolution for the Blokli provider, in the format <IP_ADDRESS>[:<PORT>] (use [IPv6]:PORT for IPv6 with port, e.g. [2001:db8::1]:8080)",
         env = "HOPRD_BLOKLI_DNS_OVERRIDE",
         value_name = "BLOKLI_DNS_OVERRIDE",
         value_parser = parse_blokli_dns_override,
@@ -525,5 +525,78 @@ mod tests {
         assert!(HoprdConfig::try_from(args).is_err());
 
         Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_accepts_bare_ipv4() -> anyhow::Result<()> {
+        let (ip, port) = parse_blokli_dns_override("127.0.0.1").map_err(anyhow::Error::msg)?;
+
+        assert_eq!(ip, "127.0.0.1".parse::<IpAddr>()?);
+        assert_eq!(port, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_accepts_ipv4_with_port() -> anyhow::Result<()> {
+        let (ip, port) = parse_blokli_dns_override("127.0.0.1:8080").map_err(anyhow::Error::msg)?;
+
+        assert_eq!(ip, "127.0.0.1".parse::<IpAddr>()?);
+        assert_eq!(port, Some(8080));
+
+        Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_accepts_bare_ipv6() -> anyhow::Result<()> {
+        let (ip, port) = parse_blokli_dns_override("2001:db8::1").map_err(anyhow::Error::msg)?;
+
+        assert_eq!(ip, "2001:db8::1".parse::<IpAddr>()?);
+        assert_eq!(port, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_accepts_bracketed_ipv6_with_port() -> anyhow::Result<()> {
+        let (ip, port) =
+            parse_blokli_dns_override("[2001:db8::1]:9000").map_err(anyhow::Error::msg)?;
+
+        assert_eq!(ip, "2001:db8::1".parse::<IpAddr>()?);
+        assert_eq!(port, Some(9000));
+
+        Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_treats_unbracketed_ipv6_with_trailing_segment_as_bare_address()
+    -> anyhow::Result<()> {
+        // `2001:db8::1:9000` is itself a valid IPv6 address, so it parses as a
+        // bare address without a port. An IPv6 address with a port must use
+        // brackets, e.g. `[2001:db8::1]:9000`.
+        let (ip, port) =
+            parse_blokli_dns_override("2001:db8::1:9000").map_err(anyhow::Error::msg)?;
+
+        assert_eq!(ip, "2001:db8::1:9000".parse::<IpAddr>()?);
+        assert_eq!(port, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn blokli_dns_override_rejects_invalid_inputs() {
+        for value in [
+            "not-an-ip",
+            "",
+            "example.com",
+            "127.0.0.1:99999",
+            // Bracketed IPv6 without a port matches neither accepted form.
+            "[::1]",
+        ] {
+            assert!(
+                parse_blokli_dns_override(value).is_err(),
+                "expected '{value}' to be rejected"
+            );
+        }
     }
 }
