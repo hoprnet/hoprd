@@ -27,7 +27,7 @@
       },
       "original": {
         "owner": "ipetkov",
-        "ref": "v0.23.0",
+        "ref": "v0.23.4",
         "repo": "crane",
         "type": "github"
       }
@@ -408,7 +408,7 @@
       },
       "original": {
         "owner": "hoprnet",
-        "ref": "v1.1.0",
+        "ref": "v1.2.1",
         "repo": "nix-lib",
         "type": "github"
       }
