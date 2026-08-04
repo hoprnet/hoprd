@@ -280,8 +280,8 @@ pub mod types {
     ///  "description": "Standardized error response for the API",
     ///  "examples": [
     ///    {
-    ///      "error": "Invalid value passed in parameter 'XYZ'",
-    ///      "status": "INVALID_INPUT"
+    ///      "status": "INVALID_INPUT",
+    ///      "error": "Invalid value passed in parameter 'XYZ'"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -621,8 +621,8 @@ pub mod types {
     ///  "description": "Parameters for enumerating channels.",
     ///  "examples": [
     ///    {
-    ///      "fullTopology": false,
-    ///      "includingClosed": true
+    ///      "includingClosed": true,
+    ///      "fullTopology": false
     ///    }
     ///  ],
     ///  "type": "object",
@@ -667,8 +667,8 @@ pub mod types {
     ///  "description": "Status of the channel after a close operation.",
     ///  "examples": [
     ///    {
-    ///      "channelStatus": "PendingToClose",
-    ///      "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
+    ///      "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118",
+    ///      "channelStatus": "PendingToClose"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -767,9 +767,9 @@ pub mod types {
     ///  "examples": [
     ///    {
     ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -1028,10 +1028,10 @@ pub mod types {
     ///  "description": "Channel information as seen by the node.",
     ///  "examples": [
     ///    {
-    ///      "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
+    ///      "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1089,14 +1089,14 @@ pub mod types {
     ///    {
     ///      "all": [
     ///        {
-    ///          "balance": "10 wxHOPR",
-    ///          "channelEpoch": 1,
     ///          "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///          "closureTime": 0,
-    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
     ///          "source": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6",
+    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    ///          "balance": "10 wxHOPR",
     ///          "status": "Open",
-    ///          "ticketIndex": 0
+    ///          "ticketIndex": 0,
+    ///          "channelEpoch": 1,
+    ///          "closureTime": 0
     ///        }
     ///      ],
     ///      "incoming": [],
@@ -1164,15 +1164,15 @@ and indexer state.*/
     ///      "announcedAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
     ///      ],
-    ///      "chainStatus": "Ready",
+    ///      "providerUrl": "https://staging.blokli.hoprnet.link",
+    ///      "hoprNetworkName": "rotsee",
     ///      "channelClosurePeriod": 15,
     ///      "connectivityStatus": "Green",
-    ///      "hoprNetworkName": "rotsee",
+    ///      "chainStatus": "Ready",
     ///      "hoprNodeSafe": "0x42bc901b1d040f984ed626eff550718498a6798a",
     ///      "listeningAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
-    ///      ],
-    ///      "providerUrl": "https://staging.blokli.hoprnet.link"
+    ///      ]
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1292,16 +1292,16 @@ and indexer state.*/
     ///      "observed": [
     ///        "/ip4/10.0.2.100/tcp/19093"
     ///      ],
-    ///      "outgoingChannel": {
-    ///        "balance": "10 wxHOPR",
-    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///        "status": "Open"
-    ///      },
     ///      "qos": {
-    ///        "averageLatency": 100,
-    ///        "lastUpdate": 1690000000000,
     ///        "probeRate": 0.476,
+    ///        "lastUpdate": 1690000000000,
+    ///        "averageLatency": 100,
     ///        "score": 0.7
+    ///      },
+    ///      "outgoingChannel": {
+    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
+    ///        "status": "Open",
+    ///        "balance": "10 wxHOPR"
     ///      }
     ///    }
     ///  ],
@@ -1371,6 +1371,8 @@ and indexer state.*/
     ///{
     ///  "examples": [
     ///    {
+    ///      "overall": "Ready",
+    ///      "nodeState": "Node is running",
     ///      "components": {
     ///        "chain": {
     ///          "status": "Ready"
@@ -1381,9 +1383,7 @@ and indexer state.*/
     ///        "transport": {
     ///          "status": "Ready"
     ///        }
-    ///      },
-    ///      "nodeState": "Node is running",
-    ///      "overall": "Ready"
+    ///      }
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1432,11 +1432,11 @@ and indexer state.*/
     ///  "description": "Received tickets statistics.",
     ///  "examples": [
     ///    {
+    ///      "winningCount": 0,
     ///      "neglectedValue": "0 wxHOPR",
     ///      "redeemedValue": "1000 wxHOPR",
     ///      "rejectedValue": "0 wxHOPR",
-    ///      "unredeemedValue": "2000 wxHOPR",
-    ///      "winningCount": 0
+    ///      "unredeemedValue": "2000 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1618,9 +1618,9 @@ and indexer state.*/
     ///  "description": "Channel information for a specific peer.",
     ///  "examples": [
     ///    {
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1667,9 +1667,9 @@ and indexer state.*/
     ///  "description": "QoS observation data for a peer.",
     ///  "examples": [
     ///    {
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -1970,25 +1970,25 @@ If omitted, tickets in all channels are redeemed.*/
     ///  "description": "Request body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "capabilities": [
-    ///        "Retransmission",
-    ///        "Segmentation"
-    ///      ],
     ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "listenHost": "127.0.0.1:10000",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
     ///      "target": {
     ///        "Plain": "localhost:8080"
-    ///      }
+    ///      },
+    ///      "listenHost": "127.0.0.1:10000",
+    ///      "capabilities": [
+    ///        "Retransmission",
+    ///        "Segmentation"
+    ///      ],
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "sessionPool": 0,
+    ///      "maxClientSessions": 2
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2039,7 +2039,7 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ]
     ///    },
     ///    "pixSsaQuota": {
-    ///      "description": "PIX SSA quota `(polys_per_ssa, shares_per_poly)`.\n\nWhen set, the Session will use the PIX protocol with the given quota\nparameters. When not set, PIX is not advertised to the Exit node.",
+    ///      "description": "PIX SSA quota `[polys_per_ssa, shares_per_poly]`.\n\nWhen set, the Session will use the PIX protocol with the given quota\nparameters. When not set, PIX is not advertised to the Exit node.\n\nThe wire form is a positional pair, so the two are transposable here; they stop\nbeing so at [`SsaDimensions`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).",
     ///      "examples": [
     ///        [
     ///          8,
@@ -2130,10 +2130,14 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
-        /**PIX SSA quota `(polys_per_ssa, shares_per_poly)`.
+        /**PIX SSA quota `[polys_per_ssa, shares_per_poly]`.
 
 When set, the Session will use the PIX protocol with the given quota
-parameters. When not set, PIX is not advertised to the Exit node.*/
+parameters. When not set, PIX is not advertised to the Exit node.
+
+The wire form is a positional pair, so the two are transposable here; they stop
+being so at [`SsaDimensions`], which this is mapped onto in
+[`into_protocol_session_config`](Self::into_protocol_session_config).*/
         #[serde(
             rename = "pixSsaQuota",
             default,
@@ -2180,24 +2184,24 @@ Currently, the maximum value is 5.*/
     ///  "description": "Response body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "activeClients": [],
+    ///      "target": "example.com:80",
     ///      "destination": "0x5112D584a1C72Fc250176B57aEba5fFbbB287D8F",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "hoprMtu": 1002,
-    ///      "ip": "127.0.0.1",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "port": 5542,
-    ///      "protocol": "tcp",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
+    ///      "protocol": "tcp",
+    ///      "ip": "127.0.0.1",
+    ///      "port": 5542,
+    ///      "hoprMtu": 1002,
     ///      "surbLen": 398,
-    ///      "target": "example.com:80"
+    ///      "activeClients": [],
+    ///      "maxClientSessions": 2,
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "responseBuffer": "2 MB",
+    ///      "sessionPool": 0
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2366,8 +2370,8 @@ This is useful for SURB balancing calculations.*/
     ///{
     ///  "examples": [
     ///    {
-    ///      "maxSurbUpstream": "2 Mbps",
-    ///      "responseBuffer": "2 MB"
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2 Mbps"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -3770,13 +3774,17 @@ Arguments:
     }
     /**Returns current complete statistics on tickets
 
-Returns current complete statistics on tickets.
+Returns current complete statistics on tickets. When a counterparty address is given, only the incoming channel from that counterparty is reported.
 
 Sends a `GET` request to `/api/v4/tickets/statistics`
 
+Arguments:
+- `address`: On-chain address of the counterparty whose incoming channel to report on.
+If omitted, statistics are aggregated across every channel.
 */
     pub async fn show_ticket_statistics<'a>(
         &'a self,
+        address: Option<&'a str>,
     ) -> Result<ResponseValue<types::NodeTicketStatisticsResponse>, Error<()>> {
         let url = format!("{}/api/v4/tickets/statistics", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
@@ -3793,6 +3801,7 @@ Sends a `GET` request to `/api/v4/tickets/statistics`
                 ::reqwest::header::ACCEPT,
                 ::reqwest::header::HeaderValue::from_static("application/json"),
             )
+            .query(&progenitor_client::QueryParam::new("address", &address))
             .headers(header_map)
             .build()?;
         let info = OperationInfo {
