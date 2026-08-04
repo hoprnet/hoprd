@@ -59,7 +59,7 @@ jobs:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
@@ -157,7 +157,7 @@ jobs:
   build-docker:
     name: Docker
     needs: build-binaries
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@7263182fc9a2bab22cc5a029929940914eb9748d # setup-gcp-v4
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
       contents: read
       pull-requests: write
@@ -177,8 +177,6 @@ jobs:
       build_file: ./hoprd/Cargo.toml
       docker_image_name: hoprd
       docker_image_format: skopeo
-      deployment_namespace: core-team
-      deployment_label_selector: app.kubernetes.io/component=node
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
