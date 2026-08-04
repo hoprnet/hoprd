@@ -93,6 +93,44 @@ balance() {
   printf '%s\n' "${value:-0}"
 }
 
+# A node's on-chain address, cached: it never changes, and the closing frame needs it after
+# the node has gone away.
+node_address() {
+  local cache="$STATE_DIR/addr_$1" value
+  if [ -r "$cache" ]; then
+    cat "$cache"
+    return
+  fi
+  value=$(curl -s --max-time 3 "http://127.0.0.1:$((API_PORT_BASE + $1))/api/v4/account/addresses" 2>/dev/null |
+    jq -r '.native // empty' 2>/dev/null)
+  [ -n "$value" ] && printf '%s\n' "$value" >"$cache"
+  printf '%s\n' "$value"
+}
+
+# One field of the relay's ticket statistics for the incoming channel from `$2`.
+#
+# Scoping by counterparty is what separates the two directions: the relay's forward leg and
+# return leg are two different incoming channels, earning independently, and the unscoped
+# aggregate adds them together. Auto-redeeming is off for this test, so nothing is ever moved
+# out of `unredeemedValue` — it is the whole of what the leg has earned.
+ticket_stat() { # node counterparty field
+  local cache="$STATE_DIR/tickets_$1_$2_$3" value
+  [ -z "$2" ] && {
+    echo 0
+    return
+  }
+  value=$(curl -s --max-time 3 \
+    "http://127.0.0.1:$((API_PORT_BASE + $1))/api/v4/tickets/statistics?address=$2" 2>/dev/null |
+    jq -r ".$3 // empty" 2>/dev/null |
+    awk 'NF { print $1; exit }')
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value" >"$cache"
+  elif [ -r "$cache" ]; then
+    value=$(cat "$cache")
+  fi
+  printf '%s\n' "${value:-0}"
+}
+
 # Read a field out of the test's own startup banner, which is where the run's parameters
 # (per-cycle deposit, funded cycles) are announced.
 from_log() {
@@ -181,6 +219,16 @@ render() {
   started=$(cat "$STATE_DIR/started")
   local elapsed=$(($(date +%s) - started))
 
+  # Relay earnings, per direction. The forward leg's tickets are issued by the Entry, the
+  # return leg's by the Exit, so each node's address names the channel that direction pays on.
+  local entry_addr exit_addr fwd_win fwd_val ret_win ret_val
+  entry_addr=$(node_address 0)
+  exit_addr=$(node_address 2)
+  fwd_win=$(ticket_stat 1 "$entry_addr" winningCount)
+  fwd_val=$(ticket_stat 1 "$entry_addr" unredeemedValue)
+  ret_win=$(ticket_stat 1 "$exit_addr" winningCount)
+  ret_val=$(ticket_stat 1 "$exit_addr" unredeemedValue)
+
   local e_sent x_recv x_sent e_recv r_fwd
   e_sent=$(metric 0 hopr_packets_count 'type="sent"')
   e_recv=$(metric 0 hopr_packets_count 'type="received"')
@@ -247,6 +295,17 @@ render() {
   printf '    %-22s %12s pkts\n' "Relay forwarded" "$(num "$r_fwd")"
   printf '\n'
 
+  # The relay is paid separately for each leg, by whoever issued the tickets on it — a second,
+  # independent incentive running alongside the Entry paying the Exit. Only a small fraction of
+  # packets carry a winning ticket, so these counts are far below the packet counts above.
+  printf '  %sRELAY EARNINGS%s  %seach leg is its own channel, paid for by whoever sends on it%s\n\n' \
+    "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
+    "from Entry (fwd leg)" "$(num "$fwd_win")" "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$fwd_val" "$C_RESET"
+  printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
+    "from Exit (return leg)" "$(num "$ret_win")" "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$ret_val" "$C_RESET"
+  printf '\n'
+
   if [ -n "${1:-}" ]; then
     printf '  %s%s%s\n' "$C_DIM" "$1" "$C_RESET"
   fi
@@ -301,7 +360,12 @@ fi
 # Everything cached from a previous run has to go: `scrape`/`balance` deliberately keep the
 # last good read when an endpoint refuses, which would otherwise show the *previous* run's
 # totals during the couple of minutes this one takes to bring the cluster up.
-rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* "$TEST_LOG"
+# `addr_*` and `tickets_*` are the sharp ones: node identities are regenerated every run, so a
+# surviving `addr_*` makes this run query the *previous* run's counterparties, get a 404, and
+# fall back to that run's cached earnings — confidently displaying numbers from a cluster that
+# no longer exists.
+rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
+  "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$TEST_LOG"
 reset_cluster
 date +%s >"$STATE_DIR/started"
 
