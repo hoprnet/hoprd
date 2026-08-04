@@ -260,6 +260,13 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
+    /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
+    ///
+    /// Flow control paces the entry (sending) side of the session. When omitted, the node's
+    /// configured default (`api.session_flow_control`) is used. `robust` is the tail-tolerance
+    /// profile for throttled / high-latency multi-hop paths.
+    #[serde(default)]
+    pub flow_control: Option<crate::config::SessionFlowControl>,
 }
 
 impl SessionClientRequest {
@@ -297,7 +304,11 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
-                flow_control,
+                // Per-request profile overrides the node default when present.
+                flow_control: self
+                    .flow_control
+                    .map(crate::config::SessionFlowControl::to_config)
+                    .unwrap_or(flow_control),
                 ..Default::default()
             },
         ))
@@ -346,6 +357,7 @@ impl SessionClientExplicitPathRequest {
         self,
         hopr: &H,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<
         (
             Address,
@@ -424,6 +436,9 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
+                    // The deprecated explicit-path endpoint has no per-request override, so it
+                    // always uses the node default profile.
+                    flow_control,
                     ..Default::default()
                 }
             },
@@ -614,7 +629,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_tcp_client_binding(
@@ -668,7 +687,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_udp_client_binding(

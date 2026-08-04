@@ -61,16 +61,24 @@ pub struct Api {
 
 /// Flow-control profile for node-initiated sessions. See [`Api::session_flow_control`].
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, smart_default::SmartDefault, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    smart_default::SmartDefault,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum SessionFlowControl {
     /// Flow control disabled — sends are hand-paced by the caller.
     Off,
-    /// The verified clean profile ([`FlowControlConfig::default`]).
+    /// The verified clean profile (`FlowControlConfig::default`).
     Clean,
     /// The tail-tolerance bundle (persist probe + raised frame-retransmission budget) for
-    /// throttled / high-latency multi-hop paths ([`FlowControlConfig::robust`]).
+    /// throttled / high-latency multi-hop paths (`FlowControlConfig::robust`).
     #[default]
     Robust,
 }
