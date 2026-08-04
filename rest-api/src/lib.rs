@@ -110,6 +110,8 @@ pub(crate) struct InternalState<H> {
     pub hopr: Arc<H>,
     pub open_listeners: Arc<ListenerJoinHandles>,
     pub default_listen_host: std::net::SocketAddr,
+    /// Flow-control profile applied to sessions this node initiates as a client.
+    pub session_flow_control: crate::config::SessionFlowControl,
 }
 
 impl<H> Clone for InternalState<H> {
@@ -121,6 +123,7 @@ impl<H> Clone for InternalState<H> {
             hopr: self.hopr.clone(),
             open_listeners: self.open_listeners.clone(),
             default_listen_host: self.default_listen_host,
+            session_flow_control: self.session_flow_control,
         }
     }
 }
@@ -347,6 +350,7 @@ where
         hopr: state.hopr.clone(),
         open_listeners,
         default_listen_host,
+        session_flow_control: cfg.session_flow_control,
     };
 
     Router::new()

@@ -2008,6 +2008,9 @@ If omitted, tickets in all channels are redeemed.*/
     ///      "description": "Address of the Exit node.",
     ///      "type": "string"
     ///    },
+    ///    "flowControl": {
+    ///      "$ref": "#/components/schemas/SessionFlowControl"
+    ///    },
     ///    "forwardPath": {
     ///      "$ref": "#/components/schemas/RoutingOptions"
     ///    },
@@ -2067,6 +2070,12 @@ Defaults to `Segmentation` and `Retransmission` for TCP and nothing for UDP.*/
         pub capabilities: ::std::option::Option<::std::vec::Vec<SessionCapability>>,
         ///Address of the Exit node.
         pub destination: ::std::string::String,
+        #[serde(
+            rename = "flowControl",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub flow_control: ::std::option::Option<SessionFlowControl>,
         #[serde(rename = "forwardPath")]
         pub forward_path: RoutingOptions,
         /**Listen host (`ip:port`) for the Session socket at the Entry node.
@@ -2390,6 +2399,88 @@ at least the size of 2 Session packet payloads.*/
             }
         }
     }
+    ///Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.
+    ///
+    /// <details><summary>JSON schema</summary>
+    ///
+    /// ```json
+    ///{
+    ///  "description": "Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.",
+    ///  "type": "string",
+    ///  "enum": [
+    ///    "off",
+    ///    "clean",
+    ///    "robust"
+    ///  ]
+    ///}
+    /// ```
+    /// </details>
+    #[derive(
+        ::serde::Deserialize,
+        ::serde::Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd
+    )]
+    pub enum SessionFlowControl {
+        #[serde(rename = "off")]
+        Off,
+        #[serde(rename = "clean")]
+        Clean,
+        #[serde(rename = "robust")]
+        Robust,
+    }
+    impl ::std::fmt::Display for SessionFlowControl {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Off => f.write_str("off"),
+                Self::Clean => f.write_str("clean"),
+                Self::Robust => f.write_str("robust"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for SessionFlowControl {
+        type Err = self::error::ConversionError;
+        fn from_str(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "off" => Ok(Self::Off),
+                "clean" => Ok(Self::Clean),
+                "robust" => Ok(Self::Robust),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     ///Session target specification.
     ///
     /// <details><summary>JSON schema</summary>
@@ -2613,7 +2704,7 @@ at least the size of 2 Session packet payloads.*/
 
 API enabling developers to interact with a hoprd node programatically through HTTP REST API.
 
-Version: 4.12.1*/
+Version: 4.13.0*/
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -2649,7 +2740,7 @@ impl Client {
 }
 impl ClientInfo<()> for Client {
     fn api_version() -> &'static str {
-        "4.12.1"
+        "4.13.0"
     }
     fn baseurl(&self) -> &str {
         self.baseurl.as_str()

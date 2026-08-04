@@ -10,6 +10,10 @@ api:
     address:
       IPv4: 0.0.0.0
     port: 3001
+  # Flow-control (AIMD send-window) profile for sessions this node initiates as a
+  # client via the session API: off | clean | robust. Only affects node-originated
+  # sessions — relays and exit nodes never run flow control. Default: robust.
+  session_flow_control: robust
 strategy:
   allow_recursive: false
   strategies:
@@ -30,6 +34,7 @@ strategy:
           allowlist: ~
           blocklist: []
         funding:
+          sizing_mode: deterministic
           initial_capacity: "1 GiB"
           topup_capacity: "512 MiB"
           lower_capacity_threshold: "512 MiB"
