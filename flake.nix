@@ -4,11 +4,12 @@
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
-    crane.url = "github:ipetkov/crane/v0.23.0";
-    nix-lib.url = "github:hoprnet/nix-lib/v1.1.0";
+    crane.url = "github:ipetkov/crane/v0.23.4";
+    nix-lib.url = "github:hoprnet/nix-lib/v1.2.1";
+    hoprnet.url = "github:hoprnet/hoprnet/a511b8a88b297f47a15986573bf6db3ef7b95937";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -39,6 +40,7 @@
       rust-overlay,
       crane,
       nix-lib,
+      hoprnet,
       foundry,
       pre-commit,
       ...
@@ -154,11 +156,21 @@
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd -p hoprd-api";
             cargoToml = ./hoprd/Cargo.toml;
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
             cargoToml = ./localcluster/Cargo.toml;
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
           };
 
           # Build args for the memory-profiling variant (Linux).
@@ -166,7 +178,7 @@
           memprofBuildArgs = projectBuildArgs // {
             CARGO_PROFILE = "memprof";
             cargoExtraArgs = "-F capture -F allocator-jemalloc-stats -F allocator-jemalloc-profiling";
-            extraNativeBuildInputs = [
+            extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [
               pkgs.autoconf
               pkgs.perl
             ];
@@ -248,7 +260,7 @@
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
@@ -270,7 +282,7 @@
                     runTests = true;
                     prependPackageName = false;
                     cargoTestExtraArgs = "--lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
@@ -292,7 +304,7 @@
                     runCoverage = true;
                     prependPackageName = false;
                     cargoLlvmCovExtraArgs = "--lcov --output-path $out --lib";
-                    extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+                    extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
@@ -360,12 +372,12 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -377,8 +389,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -386,12 +398,12 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -403,8 +415,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -412,7 +424,6 @@
               name = "hoprd";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
@@ -438,22 +449,28 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
                 "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
               ];
             };
             docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
               name = "hoprd";
+              # nix-lib's mkDockerImage defaults to a hardcoded x86_64-linux
+              # nixpkgs import for the image-building tooling (base.json,
+              # layers.json, etc). Building that tooling for x86_64-linux can
+              # fail on non-x86_64 Linux runners, so pass the ambient pkgs
+              # (native for the current runner) explicitly.
+              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -465,8 +482,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -474,11 +491,11 @@
               name = "hoprd-localcluster";
               pathsToLink = [
                 "/bin"
-                "/etc"
               ];
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];
@@ -552,8 +569,25 @@
                 language = "system";
                 pass_filenames = false;
               };
+              dependabot-validator = {
+                enable = true;
+                name = "Dependabot config validator";
+                entry = "${pkgs.check-jsonschema}/bin/check-jsonschema --builtin-schema vendor.dependabot";
+                files = "\\.github/dependabot\\.yml$";
+                language = "system";
+                pass_filenames = true;
+              };
             };
           };
+
+          # Build with `--cfg tokio_unstable` so the hoprnet crates (incl. the
+          # utilities/transport stack) get Tokio's improved cooperative yielding.
+          # nix-lib's shells set CARGO_BUILD_RUSTFLAGS (linker flag), which Cargo
+          # lets *replace* .cargo/config.toml — so append the cfg here to keep it
+          # in effect. `--check-cfg` keeps the workspace clean under `-D warnings`.
+          tokioUnstableHook = ''
+            export CARGO_BUILD_RUSTFLAGS="''${CARGO_BUILD_RUSTFLAGS:-} --cfg tokio_unstable --check-cfg cfg(tokio_unstable)"
+          '';
 
           devShell = nixLib.mkDevShell {
             rustToolchainFile = ./rust-toolchain.toml;
@@ -573,6 +607,7 @@
             ];
             shellHook = ''
               export GITHUB_TOKEN="''${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
+              ${tokioUnstableHook}
               ${pre-commit-check.shellHook}
             '';
           };
@@ -595,6 +630,7 @@
               gnupg
               perl
             ];
+            shellHook = tokioUnstableHook;
           };
 
           testShell = nixLib.mkDevShell {
@@ -606,6 +642,7 @@
               foundry-bin
               cargo-nextest
             ];
+            shellHook = tokioUnstableHook;
           };
 
           run-check = nixLib.mkCheckApp { inherit system; };

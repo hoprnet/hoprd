@@ -10,7 +10,7 @@ use hopr_lib::api::chain::ChainKeyOperations;
 use hopr_lib::api::node::HasChainApi;
 use hopr_lib::{
     HopRouting, HoprSessionClientConfig,
-    api::types::primitive::{errors::GeneralError, prelude::Address},
+    api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
         SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
@@ -260,6 +260,13 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
+    /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
+    ///
+    /// Flow control paces the entry (sending) side of the session. When omitted, the node's
+    /// configured default (`api.session_flow_control`) is used. `robust` is the tail-tolerance
+    /// profile for throttled / high-latency multi-hop paths.
+    #[serde(default)]
+    pub flow_control: Option<crate::config::SessionFlowControl>,
 }
 
 impl SessionClientRequest {
@@ -267,6 +274,7 @@ impl SessionClientRequest {
     pub(crate) async fn into_protocol_session_config(
         self,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
         Ok((
@@ -296,6 +304,11 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
+                // Per-request profile overrides the node default when present.
+                flow_control: self
+                    .flow_control
+                    .map(crate::config::SessionFlowControl::to_config)
+                    .unwrap_or(flow_control),
                 ..Default::default()
             },
         ))
@@ -344,6 +357,7 @@ impl SessionClientExplicitPathRequest {
         self,
         hopr: &H,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<
         (
             Address,
@@ -422,6 +436,9 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
+                    // The deprecated explicit-path endpoint has no per-request override, so it
+                    // always uses the node default profile.
+                    flow_control,
                     ..Default::default()
                 }
             },
@@ -612,7 +629,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_tcp_client_binding(
@@ -666,7 +687,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_udp_client_binding(
@@ -740,7 +765,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::TCP)
+                .into_protocol_session_config(
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -772,7 +800,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::UDP)
+                .into_protocol_session_config(
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -1002,14 +1033,14 @@ pub(crate) async fn adjust_session<H: Send + Sync + 'static>(
     Path(session_id): Path<String>,
     Json(args): Json<SessionConfig>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id = SessionId::from_str(&session_id)
+    let session_id = SessionId::from_hex(&session_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     if let Some(cfg) = Option::<SurbBalancerConfig>::from(args) {
         let configurator = state.open_listeners.find_configurator(&session_id);
 
         match configurator {
-            Some(configurator) => match configurator.update_surb_balancer_config(cfg).await {
+            Some(configurator) => match configurator.update_surb_balancer_config(cfg) {
                 Ok(_) => Ok::<_, (StatusCode, ApiErrorStatus)>(
                     (StatusCode::NO_CONTENT, "").into_response(),
                 ),
@@ -1052,7 +1083,7 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
     State(state): State<Arc<InternalState<H>>>,
     Path(session_id): Path<String>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
-    let session_id = SessionId::from_str(&session_id)
+    let session_id = SessionId::from_hex(&session_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, ApiErrorStatus::InvalidSessionId))?;
 
     // Find the configurator for this session across all listeners
@@ -1065,7 +1096,7 @@ pub(crate) async fn session_config<H: Send + Sync + 'static>(
     });
 
     match configurator {
-        Some(configurator) => match configurator.get_surb_balancer_config().await {
+        Some(configurator) => match configurator.get_surb_balancer_config() {
             Ok(Some(cfg)) => Ok::<_, (StatusCode, ApiErrorStatus)>(
                 (StatusCode::OK, Json(SessionConfig::from(cfg))).into_response(),
             ),
@@ -1196,7 +1227,9 @@ pub(crate) async fn close_client<H: Send + Sync + 'static>(
                 .map(|c| c.value().configurator.clone())
                 .collect();
 
-            futures::future::join_all(configurators.iter().map(|cfg| cfg.close())).await;
+            for cfg in &configurators {
+                cfg.close();
+            }
 
             entry.abort_handle.abort();
         }
@@ -1215,15 +1248,26 @@ mod tests {
 
     fn session_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
+            version: "test-version".to_string(),
             hoprd_cfg: serde_json::json!({}),
             auth: Arc::new(crate::config::Auth::None),
             hopr: Arc::new(NoopNode),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            session_flow_control: Default::default(),
         });
         Router::new()
             .route("/session/{protocol}", get(list_clients::<NoopNode>))
             .with_state(state)
+    }
+
+    #[test]
+    fn session_id_to_string_round_trips_via_from_hex() {
+        use hopr_lib::api::types::crypto_random::Randomizable;
+        let id = SessionId::random();
+        let hex = id.to_string();
+        let parsed = SessionId::from_hex(&hex).expect("from_hex must accept to_string output");
+        assert_eq!(id, parsed);
     }
 
     #[tokio::test]

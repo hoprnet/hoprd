@@ -54,12 +54,12 @@ jobs:
       pull-requests: write
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
@@ -77,7 +77,7 @@ jobs:
           fi
   checks:
     name: Check
-    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@d0cffaf9e9209c8eca00e8c74e82ac3f5f3cf7bb # workflow-checks-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
       runner_small: depot-ubuntu-24.04
@@ -86,7 +86,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   tests:
     name: Test
-    uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@798d791de5c5485c3043049781dfd0938539a36a # workflow-tests-v6
+    uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-tests-v6
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
       enable_unit_tests: true
@@ -138,7 +138,7 @@ jobs:
             build_file: ./localcluster/Cargo.toml
             binary: hoprd-localcluster
             required_label: ""
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # 0.9.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.10.1
     permissions:
       contents: read
       id-token: write
@@ -157,7 +157,7 @@ jobs:
   build-docker:
     name: Docker
     needs: build-binaries
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # 0.9.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
       contents: read
       pull-requests: write
@@ -177,8 +177,6 @@ jobs:
       build_file: ./hoprd/Cargo.toml
       docker_image_name: hoprd
       docker_image_format: skopeo
-      deployment_namespace: core-team
-      deployment_label_selector: app.kubernetes.io/component=node
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
@@ -189,7 +187,7 @@ jobs:
       contents: read
     steps:
       - name: Build docs
-        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
+        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
         with:
           source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}

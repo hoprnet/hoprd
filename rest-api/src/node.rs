@@ -45,8 +45,10 @@ pub(crate) struct NodeVersionResponse {
         ),
         tag = "Node"
     )]
-pub(super) async fn version() -> impl IntoResponse {
-    let version = hopr_lib::constants::APP_VERSION.to_string();
+pub(super) async fn version<H: Send + Sync + 'static>(
+    State(state): State<Arc<InternalState<H>>>,
+) -> impl IntoResponse {
+    let version = state.version.clone();
     (StatusCode::OK, Json(NodeVersionResponse { version })).into_response()
 }
 
@@ -315,6 +317,7 @@ mod tests {
 
     fn node_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
+            version: "test-version".to_string(),
             hoprd_cfg: serde_json::json!({
                 "network": "test-network",
                 "provider": "http://localhost:8545"
@@ -323,9 +326,13 @@ mod tests {
             hopr: Arc::new(NoopNode),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            session_flow_control: Default::default(),
         });
         Router::new()
-            .route(&format!("{BASE_PATH}/node/version"), get(version))
+            .route(
+                &format!("{BASE_PATH}/node/version"),
+                get(version::<NoopNode>),
+            )
             .route(
                 &format!("{BASE_PATH}/node/configuration"),
                 get(configuration::<NoopNode>),

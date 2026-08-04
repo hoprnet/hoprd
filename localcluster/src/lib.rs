@@ -3,5 +3,7 @@ pub mod cli;
 pub mod client_helper;
 pub mod control;
 pub mod identity;
+pub mod latency;
 pub mod lock;
+pub mod relay;
 pub mod summary;

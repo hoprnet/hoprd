@@ -14,7 +14,7 @@
 //!
 //! See `docs/localcluster/README.md` for full setup and usage instructions.
 
-use std::{fs, sync::Arc, time::Duration};
+use std::{fs, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -24,6 +24,7 @@ use hoprd_localcluster::{
     control::{ControlServer, SharedSummary},
     identity,
     lock::ClusterLock,
+    relay::{self, RelayConfig, RelayHandle},
     summary::{ClusterState, ClusterSummary, NodeState},
 };
 use tokio::sync::Mutex;
@@ -34,11 +35,15 @@ const DEFAULT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Default)]
 struct Cleanup {
     nodes: Vec<client_helper::NodeProcess>,
+    relays: Vec<RelayHandle>,
     chain: Option<blokli_helper::ChainHandle>,
 }
 
 impl Cleanup {
     fn shutdown(&mut self) {
+        for relay in self.relays.iter() {
+            relay.abort();
+        }
         for node in self.nodes.iter_mut() {
             let _ = node.child.kill();
         }
@@ -46,6 +51,23 @@ impl Cleanup {
             chain.stop();
         }
     }
+}
+
+/// Resolve a `host:port` (e.g. `localhost`, `127.0.0.1`) to a single socket address.
+///
+/// Prefers IPv4: hoprd binds its P2P host as IPv4 (it resolves domains like `localhost`
+/// to `127.0.0.1` and rejects IPv6 literals), so the relay must stay on the same address
+/// family — otherwise it would forward to `[::1]` while the node listens on `127.0.0.1`.
+async fn resolve_socket(host: &str, port: u16) -> Result<SocketAddr> {
+    let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+        .await
+        .with_context(|| format!("failed to resolve {host}:{port}"))?
+        .collect();
+    addrs.sort_by_key(SocketAddr::is_ipv6);
+    addrs
+        .into_iter()
+        .next()
+        .with_context(|| format!("no address resolved for {host}:{port}"))
 }
 
 #[tokio::main]
@@ -66,6 +88,14 @@ async fn main() -> Result<()> {
 
     let args = cli.run;
 
+    // Resolve the relay delay model once; `args.latency` keeps the source + relay base port.
+    let latency_model = args
+        .latency
+        .as_ref()
+        .map(|l| l.resolve())
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("invalid latency configuration: {e}"))?;
+
     let data_dir = args.data_dir.clone();
     fs::create_dir_all(&data_dir).context("failed to create data directory")?;
     let log_dir = data_dir.join("logs");
@@ -81,7 +111,10 @@ async fn main() -> Result<()> {
     let _lock = ClusterLock::acquire(&control_base)?;
 
     // Live status, updated through the lifecycle and served on the control socket.
-    let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(&args)));
+    let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(
+        &args,
+        latency_model.as_ref(),
+    )));
     let _control = ControlServer::start(control::socket_path(&control_base), summary.clone())?;
 
     let explicit_chain_url = args.chain_url.clone();
@@ -122,6 +155,7 @@ async fn main() -> Result<()> {
                 args.channel_management,
                 cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
             ),
+            latency: args.latency.clone(),
             ..Default::default()
         };
 
@@ -132,6 +166,45 @@ async fn main() -> Result<()> {
         info!("generating identities and configs via hoprd-gen-test library");
         let identities = identity::generate(&config).await?;
         summary.lock().await.set_extras(&identities.extras);
+
+        if let (Some(latency_cfg), Some(latency)) = (&latency_model, &args.latency) {
+            // Relays must be listening before nodes start dialing the announced relay ports.
+            let latency_cfg = Arc::new(latency_cfg.clone());
+            let port_base = latency.port_base;
+            info!("latency relays enabled (relay base port {port_base})");
+            // `auto`/`0.0.0.0` aren't resolvable hostnames; map to the same loopback the
+            // rest of localcluster advertises so lookup_host never sees the sentinel.
+            let relay_host = hoprd_localcluster::summary::advertised_host(&args.p2p_host);
+            for id in 0..args.size {
+                let listen_port = port_base.checked_add(id as u16).ok_or_else(|| {
+                    anyhow::anyhow!("relay listen port overflow: base + node id {id} exceeds u16")
+                })?;
+                let target_port = args.p2p_port_base.checked_add(id as u16).ok_or_else(|| {
+                    anyhow::anyhow!("relay target port overflow: base + node id {id} exceeds u16")
+                })?;
+                let listen = resolve_socket(relay_host, listen_port)
+                    .await
+                    .context("resolving relay listen address")?;
+                let target = resolve_socket(relay_host, target_port)
+                    .await
+                    .context("resolving relay target address")?;
+                let handle = relay::spawn_relay(RelayConfig {
+                    node_id: id,
+                    listen,
+                    target,
+                    p2p_port_base: args.p2p_port_base,
+                    latency: latency_cfg.clone(),
+                })
+                .await
+                .with_context(|| format!("failed to start latency relay for node {id}"))?;
+                info!(
+                    "node {id} latency relay {} -> {}",
+                    handle.listen_addr(),
+                    target
+                );
+                cleanup.relays.push(handle);
+            }
+        }
 
         info!("starting hoprd nodes");
         let start_cfg = client_helper::NodeStartConfig {

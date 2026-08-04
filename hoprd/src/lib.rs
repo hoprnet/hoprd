@@ -120,10 +120,6 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 stream_reconnect_timeout: std::time::Duration::from_secs(30),
                 subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
                 dns_override: cfg.blokli_dns_override.map(|(ip, port)| BlokliDnsOverride { ip, port }),
-                // Allow local clusters to skip the blokli version compatibility check:
-                // some dev images (e.g. bloklid-anvil) do index Safe events but don't
-                // yet advertise the IndexesSafeEvents feature flag in their API response.
-                auto_compatibility_check: std::env::var("HOPR_BLOKLI_NO_COMPAT_CHECK").is_err(),
                 ..Default::default()
             },
         ),
@@ -149,6 +145,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         *hopr_keys.packet_key.public(),
         path_cfg.edge_penalty,
         path_cfg.min_ack_rate,
+        path_cfg.max_plausible_loopback_rtt,
     ));
     let graph_for_ct = graph.clone();
     let safe_address = hopr_lib_cfg.safe_module.safe_address;
@@ -293,6 +290,7 @@ async fn init_rest_api(
         async move {
             if let Err(e) = serve_api(RestApiParameters {
                 listener: api_listener,
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 hoprd_cfg: node_cfg_value,
                 cfg: api_cfg,
                 hopr,
