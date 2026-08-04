@@ -75,7 +75,7 @@ opentelemetry-otlp = { version = "0.32.0", default-features = false }
 opentelemetry-prometheus-text-exporter = { version = "0.3.0" }
 opentelemetry_sdk = { version = "0.32.0" }
 percent-encoding = "2.3.2"
-prettyplease = "0.2.37"
+prettyplease = "0.3.0"
 proc-macro-regex = "~1.1.0"
 progenitor = "0.14.0"
 progenitor-client = "0.14.0"
@@ -93,7 +93,7 @@ serde_with = { version = "3.21.0", features = ["base64"] }
 signal-hook = "0.4.4"
 smart-default = "0.7.1"
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "2.0.117", features = ["full"] }
+syn = { version = "3.0.3", features = ["full"] }
 tempfile = "3.27.0"
 test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.18"
