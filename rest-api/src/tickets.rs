@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Json, State},
+    extract::{Json, Query, State},
     http::status::StatusCode,
     response::IntoResponse,
 };
@@ -9,7 +9,7 @@ use hopr_lib::api::{
     node::{
         HasChainApi, HasTicketManagement, IncentiveChannelOperations, IncentiveRedeemOperations,
     },
-    tickets::ChannelStats,
+    tickets::{ChannelStats, TicketManagement},
     types::{
         crypto::types::Hash,
         internal::prelude::ChannelStatus,
@@ -89,14 +89,34 @@ impl From<ChannelStats> for NodeTicketStatisticsResponse {
     }
 }
 
+#[serde_as]
+#[derive(Debug, Default, Clone, Deserialize, utoipa::IntoParams)]
+#[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
+/// Query parameters for scoping ticket statistics.
+pub(crate) struct TicketStatisticsQuery {
+    /// On-chain address of the counterparty whose incoming channel to report on.
+    /// If omitted, statistics are aggregated across every channel.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[param(value_type = Option<String>, example = "0x188c4462b75e46f0c7262d7f48d182447b93a93c")]
+    address: Option<Address>,
+}
+
 /// Returns current complete statistics on tickets.
+///
+/// The counterparty scope mirrors `POST /tickets/redeem`: an `address` names the incoming
+/// channel from that counterparty, which for a relay is what separates one direction of
+/// traffic from the other. Aggregated statistics hide that, because a relay's two directions
+/// are two different channels earning independently.
 #[utoipa::path(
         get,
         path = const_format::formatcp!("{BASE_PATH}/tickets/statistics"),
-        description = "Returns current complete statistics on tickets.",
+        description = "Returns current complete statistics on tickets. When a counterparty address is given, only the incoming channel from that counterparty is reported.",
+        params(TicketStatisticsQuery),
         responses(
             (status = 200, description = "Tickets statistics fetched successfully. Check schema for description of every field in the statistics.", body = NodeTicketStatisticsResponse),
             (status = 401, description = "Invalid authorization token.", body = ApiError),
+            (status = 404, description = "Channel with the given counterparty not found.", body = ApiError),
             (status = 422, description = "Unknown failure", body = ApiError)
         ),
         security(
@@ -113,9 +133,40 @@ pub(super) async fn show_ticket_statistics<
         + 'static,
 >(
     State(state): State<Arc<InternalState<H>>>,
+    Query(query): Query<TicketStatisticsQuery>,
 ) -> impl IntoResponse {
     let hopr = state.hopr.clone();
-    match hopr.ticket_statistics() {
+
+    // Both arms end in `ticket_stats`; `ticket_statistics()` is its `None` case. They are kept
+    // apart because the compound error type of the unscoped call does not match the ticket
+    // manager's own, so there is no single `Result` to match on.
+    let stats = match query.address {
+        Some(address) => {
+            // Resolve the incoming channel from the counterparty (counterparty → me), the same
+            // way `redeem_tickets` does.
+            let me = hopr.identity().node_address;
+            let channel_id = match hopr.channel(address, me) {
+                Ok(Some(ch)) if ch.status != ChannelStatus::Closed => *ch.get_id(),
+                Ok(_) => {
+                    return (StatusCode::NOT_FOUND, ApiErrorStatus::ChannelNotFound)
+                        .into_response();
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        ApiErrorStatus::UnknownFailure(e.to_string()),
+                    )
+                        .into_response();
+                }
+            };
+            hopr.ticket_management()
+                .ticket_stats(Some(&channel_id))
+                .map_err(|e| e.to_string())
+        }
+        None => hopr.ticket_statistics().map_err(|e| e.to_string()),
+    };
+
+    match stats {
         Ok(stats) => (
             StatusCode::OK,
             Json(NodeTicketStatisticsResponse::from(stats)),
@@ -123,7 +174,7 @@ pub(super) async fn show_ticket_statistics<
             .into_response(),
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
-            ApiErrorStatus::UnknownFailure(e.to_string()),
+            ApiErrorStatus::UnknownFailure(e),
         )
             .into_response(),
     }
@@ -363,6 +414,47 @@ mod tests {
         assert!(json["neglectedValue"].is_string());
         assert!(json["rejectedValue"].is_string());
 
+        Ok(())
+    }
+
+    #[test]
+    fn ticket_statistics_query_default_should_have_no_address() {
+        let query = TicketStatisticsQuery::default();
+        assert!(query.address.is_none());
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_scoped_to_a_counterparty_without_a_channel_should_404()
+    -> anyhow::Result<()> {
+        // The stub has no channels, so this exercises the whole scoped path — the address
+        // parses, the counterparty→me lookup runs, and finding nothing is reported as such
+        // rather than silently falling back to the aggregate.
+        let node = MockChainNode::random();
+
+        let resp = tickets_router(node)
+            .oneshot(
+                Request::get(
+                    "/tickets/statistics?address=0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+                )
+                .body(Body::empty())?,
+            )
+            .await?;
+
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_should_reject_a_malformed_counterparty() -> anyhow::Result<()> {
+        let node = MockChainNode::random();
+
+        let resp = tickets_router(node)
+            .oneshot(
+                Request::get("/tickets/statistics?address=not-an-address").body(Body::empty())?,
+            )
+            .await?;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         Ok(())
     }
 }
