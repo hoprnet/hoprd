@@ -9,6 +9,7 @@
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.4";
     nix-lib.url = "github:hoprnet/nix-lib/v1.2.1";
+    hoprnet.url = "github:hoprnet/hoprnet/a511b8a88b297f47a15986573bf6db3ef7b95937";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -39,6 +40,7 @@
       rust-overlay,
       crane,
       nix-lib,
+      hoprnet,
       foundry,
       pre-commit,
       ...
@@ -375,6 +377,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -400,6 +403,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -466,6 +470,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -490,6 +495,7 @@
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];

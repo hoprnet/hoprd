@@ -22,7 +22,11 @@ hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8
 hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { version = "0.22.0", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false, features = [
+  "redb",
+  "cli",
+  "serde",
+] }
 hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
 
