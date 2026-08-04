@@ -1,4 +1,4 @@
-# Build with `--cfg tokio_unstable` so the hoprnet crates (hopr-utils and the
+# Build with `--cfg tokio_unstable` so the hoprnet crates (hopr-utilities and the
 # transport stack) get Tokio's improved cooperative yielding on the async hot
 # paths. Cargo does NOT merge `[build]` and target-specific rustflags — the
 # matching target table wins outright — so the flag is repeated in the aarch64
