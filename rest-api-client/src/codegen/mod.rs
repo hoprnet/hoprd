@@ -1882,7 +1882,8 @@ If omitted, tickets in all channels are redeemed.*/
     ///    "Retransmission",
     ///    "RetransmissionAckOnly",
     ///    "NoDelay",
-    ///    "NoRateControl"
+    ///    "NoRateControl",
+    ///    "UsePIX"
     ///  ]
     ///}
     /// ```
@@ -1905,6 +1906,8 @@ If omitted, tickets in all channels are redeemed.*/
         RetransmissionAckOnly,
         NoDelay,
         NoRateControl,
+        #[serde(rename = "UsePIX")]
+        UsePix,
     }
     impl ::std::fmt::Display for SessionCapability {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1914,6 +1917,7 @@ If omitted, tickets in all channels are redeemed.*/
                 Self::RetransmissionAckOnly => f.write_str("RetransmissionAckOnly"),
                 Self::NoDelay => f.write_str("NoDelay"),
                 Self::NoRateControl => f.write_str("NoRateControl"),
+                Self::UsePix => f.write_str("UsePIX"),
             }
         }
     }
@@ -1928,6 +1932,7 @@ If omitted, tickets in all channels are redeemed.*/
                 "RetransmissionAckOnly" => Ok(Self::RetransmissionAckOnly),
                 "NoDelay" => Ok(Self::NoDelay),
                 "NoRateControl" => Ok(Self::NoRateControl),
+                "UsePIX" => Ok(Self::UsePix),
                 _ => Err("invalid value".into()),
             }
         }
@@ -2033,6 +2038,24 @@ If omitted, tickets in all channels are redeemed.*/
     ///        "null"
     ///      ]
     ///    },
+    ///    "pixSsaQuota": {
+    ///      "description": "PIX SSA quota `(polys_per_ssa, shares_per_poly)`.\n\nWhen set, the Session will use the PIX protocol with the given quota\nparameters. When not set, PIX is not advertised to the Exit node.",
+    ///      "examples": [
+    ///        [
+    ///          8,
+    ///          4
+    ///        ]
+    ///      ],
+    ///      "type": [
+    ///        "array",
+    ///        "null"
+    ///      ],
+    ///      "items": {
+    ///        "type": "integer",
+    ///        "format": "int32",
+    ///        "minimum": 0.0
+    ///      }
+    ///    },
     ///    "responseBuffer": {
     ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
     ///      "type": [
@@ -2107,6 +2130,16 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
+        /**PIX SSA quota `(polys_per_ssa, shares_per_poly)`.
+
+When set, the Session will use the PIX protocol with the given quota
+parameters. When not set, PIX is not advertised to the Exit node.*/
+        #[serde(
+            rename = "pixSsaQuota",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub pix_ssa_quota: ::std::option::Option<::std::vec::Vec<i32>>,
         /**The amount of response data the Session counterparty can deliver back to us,
 without us sending any SURBs to them.
 

@@ -1,6 +1,6 @@
 [package]
 name = "hoprd-localcluster"
-version = "0.2.2"
+version = "0.3.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,6 +24,7 @@ hopr-strategy = { workspace = true, features = [
   "runtime-tokio",
   "strategy-auto-redeeming",
   "strategy-channel-lifecycle",
+  "strategy-pix",
 ] }
 hopr-lib = { workspace = true }
 hopr-session-server-forwarder = { workspace = true }
@@ -49,4 +50,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
+humantime-serde = { workspace = true }
+scopeguard = "1.2.0"
 tempfile = { workspace = true }

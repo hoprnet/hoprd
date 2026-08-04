@@ -14,7 +14,7 @@ use hopr_lib::{
     errors::HoprLibError,
     exports::transport::{
         SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
-        SurbBalancerConfig,
+        SsaDimensions, SurbBalancerConfig,
     },
 };
 #[allow(deprecated)]
@@ -114,6 +114,8 @@ pub enum SessionCapability {
     NoDelay,
     /// Disable SURB-based egress rate control at the Exit.
     NoRateControl,
+    /// Use the Protocol for Incentivization of eXits (PIX).
+    UsePIX,
 }
 
 impl From<SessionCapability> for SessionCapabilities {
@@ -134,6 +136,9 @@ impl From<SessionCapability> for SessionCapabilities {
             }
             SessionCapability::NoRateControl => {
                 hopr_lib::exports::transport::SessionCapability::NoRateControl.into()
+            }
+            SessionCapability::UsePIX => {
+                hopr_lib::exports::transport::SessionCapability::UsePIX.into()
             }
         }
     }
@@ -260,6 +265,17 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
+    /// PIX SSA quota `[polys_per_ssa, shares_per_poly]`.
+    ///
+    /// When set, the Session will use the PIX protocol with the given quota
+    /// parameters. When not set, PIX is not advertised to the Exit node.
+    ///
+    /// The wire form is a positional pair, so the two are transposable here; they stop
+    /// being so at [`SsaDimensions`], which this is mapped onto in
+    /// [`into_protocol_session_config`](Self::into_protocol_session_config).
+    #[serde(default)]
+    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4]))]
+    pub pix_ssa_quota: Option<(u16, u16)>,
 }
 
 impl SessionClientRequest {
@@ -296,6 +312,9 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
+                pix_ssa_quota: self
+                    .pix_ssa_quota
+                    .map(|(polys, shares)| SsaDimensions::new(polys, shares)),
                 ..Default::default()
             },
         ))
@@ -336,6 +355,14 @@ pub(crate) struct SessionClientExplicitPathRequest {
     pub max_surb_upstream: Option<human_bandwidth::re::bandwidth::Bandwidth>,
     pub session_pool: Option<usize>,
     pub max_client_sessions: Option<usize>,
+    /// PIX SSA quota `(polys_per_ssa, shares_per_poly)`.
+    ///
+    /// When set, the Session will use the PIX protocol with the given quota
+    /// parameters. Note: values are `u32` here due to path-based
+    /// quota computation.
+    #[serde(default)]
+    #[schema(value_type = Option<Vec<u32>>, example = json!([8, 4]))]
+    pub pix_ssa_quota: Option<(u32, u32)>,
 }
 
 impl SessionClientExplicitPathRequest {
@@ -422,6 +449,7 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
+                    pix_ssa_quota: self.pix_ssa_quota,
                     ..Default::default()
                 }
             },
@@ -1250,5 +1278,33 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes)?;
         assert_eq!(body.as_array().unwrap().len(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn use_pix_capability_maps_correctly() {
+        let caps: SessionCapabilities = SessionCapability::UsePIX.into();
+        assert!(caps.contains(hopr_lib::exports::transport::SessionCapability::UsePIX));
+    }
+
+    #[test]
+    fn pix_ssa_quota_roundtrips_via_json() {
+        let req = SessionClientRequest {
+            destination: Address::default(),
+            forward_path: RoutingOptions::Hops(1),
+            return_path: RoutingOptions::Hops(1),
+            target: SessionTargetSpec::Plain("127.0.0.1:8080".to_string()),
+            listen_host: None,
+            capabilities: None,
+            response_buffer: None,
+            max_surb_upstream: None,
+            session_pool: None,
+            max_client_sessions: None,
+            pix_ssa_quota: Some((8, 4)),
+        };
+        let serialized = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(serialized["pixSsaQuota"], serde_json::json!([8, 4]));
+        let deserialized: SessionClientRequest =
+            serde_json::from_value(serialized).expect("deserialize");
+        assert_eq!(deserialized.pix_ssa_quota, Some((8, 4)));
     }
 }

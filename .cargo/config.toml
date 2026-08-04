@@ -5,3 +5,12 @@
 # extension; aarch64-unknown-linux-* cannot make that guarantee.
 [target.aarch64-apple-darwin]
 rustflags = ["--cfg=aes_armv8", "-Ctarget-feature=+aes,+neon"]
+
+[env]
+# rustc overflows its 8 MiB default stack while monomorphizing `hopr-transport` in the
+# dev/test profile. The secp256k1 `HoprPixSpec` represents a PIX group element as
+# `hybrid_array::Array<u8, U33>`, whose typenum index is a deeply nested `UInt<UInt<…>>`;
+# resolving that inside the transport's already-deep generic stack is what tips it over.
+# 16 MiB is the size rustc's own overflow diagnostic suggests. Release builds are
+# unaffected, so this only matters for `cargo test` / `cargo build`.
+RUST_MIN_STACK = "16777216"
