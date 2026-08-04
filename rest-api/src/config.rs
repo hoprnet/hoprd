@@ -59,7 +59,7 @@ pub struct Api {
     pub session_flow_control: SessionFlowControl,
 }
 
-/// Flow-control profile for node-initiated sessions. See [`Api::session_flow_control`].
+/// Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.
 #[derive(
     Debug,
     Clone,
