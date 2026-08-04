@@ -100,3 +100,51 @@ fn default_api_host() -> HostConfig {
     HostConfig::from_str(format!("{DEFAULT_API_HOST}:{DEFAULT_API_PORT}").as_str())
         .expect("default credentials should always work")
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Context;
+    use hopr_lib::exports::transport::FlowControlConfig;
+
+    use super::*;
+
+    #[test]
+    fn session_flow_control_deserializes_from_lowercase_strings() -> anyhow::Result<()> {
+        for (input, expected) in [
+            ("\"off\"", SessionFlowControl::Off),
+            ("\"clean\"", SessionFlowControl::Clean),
+            ("\"robust\"", SessionFlowControl::Robust),
+        ] {
+            let parsed: SessionFlowControl = serde_json::from_str(input)
+                .with_context(|| format!("should deserialize {input}"))?;
+            assert_eq!(parsed, expected, "{input} should map to {expected:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn session_flow_control_default_is_robust() {
+        assert_eq!(SessionFlowControl::default(), SessionFlowControl::Robust);
+    }
+
+    #[test]
+    fn api_omitting_session_flow_control_defaults_to_robust() -> anyhow::Result<()> {
+        let api: Api = serde_json::from_str("{}")
+            .context("empty object should deserialize into Api defaults")?;
+        assert_eq!(api.session_flow_control, SessionFlowControl::Robust);
+        Ok(())
+    }
+
+    #[test]
+    fn to_config_maps_each_profile() {
+        assert_eq!(SessionFlowControl::Off.to_config(), None);
+        assert_eq!(
+            SessionFlowControl::Clean.to_config(),
+            Some(FlowControlConfig::default())
+        );
+        assert_eq!(
+            SessionFlowControl::Robust.to_config(),
+            Some(FlowControlConfig::robust())
+        );
+    }
+}

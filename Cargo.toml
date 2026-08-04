@@ -177,4 +177,4 @@ lto = false
 codegen-units = 16
 
 [workspace.metadata.cargo-shear]
-ignored = ["oas3", "humantime-serde", "hopr-api"]
+ignored = ["hopr-api"]
