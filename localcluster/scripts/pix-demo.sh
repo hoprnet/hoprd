@@ -93,6 +93,52 @@ balance() {
   printf '%s\n' "${value:-0}"
 }
 
+# Packets per second for one direction, from successive readings of a cumulative counter.
+#
+#   pkt_rate <key> <current count>
+#
+# Two properties matter more than the arithmetic:
+#
+#   * The window is at least $RATE_WINDOW seconds, not one $REFRESH tick. At four figures a
+#     second a 2 s sample jitters by enough to be distracting on a projector, and the reading
+#     is meant to be looked at rather than watched.
+#   * The last figure is kept when the counter stops advancing, instead of dividing zero
+#     packets by a growing window and rendering "0 pkt/s". The closing frame is drawn after
+#     the nodes have gone, where `scrape` is serving a cached `/metrics` and every counter is
+#     frozen by definition — the same reason `scrape` and `balance` keep their last good read.
+RATE_WINDOW=6
+pkt_rate() { # key current_count
+  local sample="$STATE_DIR/rate_$1"
+  local shown="$STATE_DIR/rateval_$1"
+  local now
+  local count=$2
+  local prev_t=""
+  local prev_c=""
+  local elapsed
+  now=$(date +%s)
+  [ -r "$sample" ] && read -r prev_t prev_c <"$sample"
+  # Both fields have to be present and numeric before they are arithmetic operands: a
+  # truncated sample would otherwise reach `[ "$count" -gt "$prev_c" ]` with an empty operand,
+  # which is a `test` syntax error rather than a false, and would spray onto the frame.
+  case "${prev_t}:${prev_c}" in
+  *[!0-9:]* | :* | *: | '') prev_t="" ;;
+  esac
+  if [ -n "$prev_t" ]; then
+    elapsed=$((now - prev_t))
+    if [ "$elapsed" -ge "$RATE_WINDOW" ]; then
+      # Strictly greater, so a counter that has stopped (closing frame) or restarted from zero
+      # (stale sample from a previous run) leaves the last figure alone instead of rendering 0.
+      if [ "$count" -gt "$prev_c" ]; then
+        printf '%.0f\n' "$(echo "($count - $prev_c) / $elapsed" | bc -l)" >"$shown"
+      fi
+      printf '%s %s\n' "$now" "$count" >"$sample"
+    fi
+  else
+    printf '%s %s\n' "$now" "$count" >"$sample"
+  fi
+  if [ -r "$shown" ]; then cat "$shown"; else echo 0; fi
+}
+
 # A node's on-chain address, cached: it never changes, and the closing frame needs it after
 # the node has gone away.
 node_address() {
@@ -236,6 +282,15 @@ render() {
   x_recv=$(metric 2 hopr_packets_count 'type="received"')
   r_fwd=$(metric 1 hopr_packets_count 'type="forwarded"')
 
+  # Derived from the same counters as the totals above, so the rate and the running total can
+  # never tell different stories. These are node-wide HOPR packet counts, which include the
+  # SURB keep-alives the balancer sends and the acknowledgements every packet earns — so both
+  # figures sit above the Session's datagram rate. That is the honest HOPR packet rate, and
+  # the label says "pkt/s" rather than anything implying datagrams.
+  local fwd_rate ret_rate
+  fwd_rate=$(pkt_rate fwd "$e_sent")
+  ret_rate=$(pkt_rate ret "$x_sent")
+
   # Bars are scaled to the cycles the float pays for, which the test announces at startup.
   # Attaching to a cluster somebody else started leaves that unknown, so fall back to
   # scaling against whatever the Entry has managed so far.
@@ -293,6 +348,14 @@ render() {
   printf '    %-22s %12s pkts  %s->%s  %12s recv\n' "Entry -> Exit" "$(num "$e_sent")" "$C_DIM" "$C_RESET" "$(num "$x_recv")"
   printf '    %-22s %12s pkts  %s<-%s  %12s recv\n' "Exit  -> Entry" "$(num "$x_sent")" "$C_DIM" "$C_RESET" "$(num "$e_recv")"
   printf '    %-22s %12s pkts\n' "Relay forwarded" "$(num "$r_fwd")"
+  # The headline of the run, so it gets the same emphasis as the money. Kept on one line in
+  # the same value column as the totals above rather than a fourth column on each row: those
+  # rows already end at column 67 inside a 74-wide frame.
+  printf '    %-22s %s%12s pkt/s fwd%s  %s·%s  %s%s pkt/s return%s\n' \
+    "current rate" \
+    "$C_CYAN$C_BOLD" "$(num "$fwd_rate")" "$C_RESET" \
+    "$C_DIM" "$C_RESET" \
+    "$C_CYAN$C_BOLD" "$(num "$ret_rate")" "$C_RESET"
   printf '\n'
 
   # The relay is paid separately for each leg, by whoever issued the tickets on it — a second,
@@ -364,8 +427,14 @@ fi
 # surviving `addr_*` makes this run query the *previous* run's counterparties, get a 404, and
 # fall back to that run's cached earnings — confidently displaying numbers from a cluster that
 # no longer exists.
+#
+# `rate_*`/`rateval_*` are the same hazard in a third place: a stale sample would be paired
+# against this run's counter, and since the counters restart from zero it would yield a
+# negative delta — suppressed as "not advancing", leaving the previous run's rate frozen on
+# screen. Add new cache families here at the same time as the helper that writes them.
 rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
-  "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$TEST_LOG"
+  "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$STATE_DIR"/rate_* "$STATE_DIR"/rateval_* \
+  "$TEST_LOG"
 reset_cluster
 date +%s >"$STATE_DIR/started"
 
