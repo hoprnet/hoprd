@@ -20,7 +20,8 @@
 //!
 //! Both terms on the right are knobs: `HOPRD_PIX_SOAK_FLOAT` buys cycles and
 //! `HOPRD_PIX_SOAK_RATE` sets how fast each one is consumed. The default float is exactly
-//! [`DEFAULT_FUNDED_CYCLES`] cycles' worth, which lands the whole run inside ~6 minutes.
+//! [`DEFAULT_FUNDED_CYCLES`] cycles' worth, which lands the whole run inside ~6 minutes —
+//! about half of which is cluster bootstrap, so the traffic itself is the shorter half.
 //! To leave the cluster up for observation, fund it for longer:
 //!
 //! ```bash
@@ -31,26 +32,38 @@
 //! `--no-capture` matters: without it nextest buffers the progress reports until the run
 //! ends, which for a large float is hours away.
 //!
-//! # Why the SSA is wide rather than the rate low
+//! # Why the geometry is sized to the packet rate
 //!
 //! An SSA cycle is bounded by *packets*, not by seconds: recovery needs `polys × shares`
-//! shares, each riding one return-path SURB, so a cycle lasts `emissions / packet_rate`.
-//! Two consequences shape the geometry here:
+//! shares, each riding one return-path SURB, so a cycle lasts `emissions / share_rate`.
+//! Three things follow, and together they fix the geometry once a target rate is chosen:
 //!
 //!   * **A cycle must outlast a deposit.** The Exit serves data on credit and reconstructs
 //!     the key as soon as the shares are in, whether or not the money has arrived. If it
 //!     wins that race, `sweep_recovered` finds a zero balance, logs "already swept", drops
 //!     the entry, and the deposit is stranded at the stealth address for good. Raising the
-//!     rate alone would shorten cycles into that race, so the SSA is widened to match —
-//!     32 × 80 rather than 8 × 2, some 3840 packets and ~2.7 MB of billed quota per cycle,
-//!     which measures out at ~19 s.
-//!   * **The SURB buffer must stay below one SSA.** A share is baked into a SURB when the
-//!     SURB is minted, and the Exit spends its buffer roughly in order, so the buffer is a
-//!     pipeline delay between generating a share and delivering it. Sized at half an SSA
-//!     it is about half a cycle; sized at `session_udp`'s 10 MB it would be ten cycles and
-//!     nothing after the first would ever complete. The same reasoning fixes
-//!     [`CHUNK_SIZE`] large enough that SURBs cannot piggyback on data packets, leaving
-//!     the balancer as the only supply and so the only thing that sets the buffer.
+//!     rate alone would shorten cycles into that race, so the SSA is widened in step:
+//!     `emissions ≈ TARGET_CYCLE_SECS × share_rate`.
+//!   * **The return SURB budget is shared between shares and data.** A reply carries either
+//!     a share or echoed payload, never both, and each costs one SURB. So the buffer has to
+//!     be sized for the sum — see [`response_buffer`]. Sizing it from the SSA alone is
+//!     exactly what broke when the rate was first raised to 1000/s against an unscaled SSA:
+//!     the share stream took the whole budget, the echo starved to nothing, and the run got
+//!     *longer* rather than shorter. The Exit's own egress shaping
+//!     (`balancer_minimum_surb_buffer_duration`) is what enforces this.
+//!   * **A share is baked into its SURB at mint time**, and the Exit spends its buffer
+//!     roughly in order, so the buffer is a pipeline delay between generating a share and
+//!     delivering it. Because it drains at the *combined* rate, that delay is
+//!     `SURB_RUNWAY_SECS` seconds regardless of scale. Sized at `session_udp`'s 10 MB it
+//!     would be several cycles and nothing after the first would ever complete. The same
+//!     reasoning fixes [`CHUNK_SIZE`] large enough that SURBs cannot piggyback on data
+//!     packets, leaving the balancer as the only supply and so the only thing that sets the
+//!     buffer.
+//!
+//! The rate is not unbounded: the buffer must stay under `rb_capacity × 2/3` = 66 666 SURBs
+//! or the balancer's overshoot evicts shares, which caps this shape at roughly 3600
+//! datagrams/s. Beyond that needs the `NoRateControl` capability or a larger ring buffer,
+//! neither of which this test uses.
 //!
 //! # Live observation
 //!
@@ -112,12 +125,16 @@ const HOPS: u64 = 1;
 
 // ── SSA geometry ────────────────────────────────────────────────────────────────
 //
-// Wide rather than deep. `ssa_part_size = 64` is the production default; raising it
-// rather than `num_ssa_parts` buys quota without multiplying the number of independent
-// polynomials the Exit has to track. Validation allows `num_ssa_parts` 8..=16192 and
+// Sized to the packet rate, not chosen for its own sake — see the module docs. The
+// product with [`PIX_SHARES`] is the per-cycle quota and is separately bounded at
+// `4 × 8192 × 64` upstream (`validate_pix_dimension_product`); 128 × 108 = 13 824 uses
+// well under a percent of that. Validation allows `num_ssa_parts` 8..=16192 and
 // `ssa_part_size` 2..=4096.
-const PIX_POLYS: u16 = 32;
-const PIX_SHARES: u16 = 80;
+//
+// Split as polys rather than shares because `num_ssa_parts` is documented upstream as
+// scaling with CPU parallelism while `ssa_part_size` does not.
+const PIX_POLYS: u16 = 128;
+const PIX_SHARES: u16 = 108;
 /// Emitted beyond the threshold, per polynomial — the production ratio of `shares / 2`.
 ///
 /// The generator's budget is finite: `shares + additional` per polynomial and no more, so
@@ -126,15 +143,24 @@ const PIX_SHARES: u16 = 80;
 /// dozen packets; at tens of thousands, a few percent loss would exhaust that on nearly
 /// every polynomial. The surplus is delivered unbilled, which lengthens a cycle — here a
 /// benefit, since a cycle has to outlast a deposit.
-const PIX_ADDITIONAL_SHARES: usize = 40;
+///
+/// An absolute count upstream, not a ratio, so it has to move with [`PIX_SHARES`] to keep
+/// the 1.5× surplus factor: that factor is what sets how much data a cycle delivers beyond
+/// the quota it was charged for.
+const PIX_ADDITIONAL_SHARES: usize = 54;
 
 /// Datagrams per second in each direction.
 ///
-/// Set just above the ~239/s the return path was measured to sustain here, so the Exit
-/// always has something to echo without piling up datagrams it cannot answer. Nowhere
-/// near a link limit — `session_udp` does ~4300/s over the same loopback — but the return
-/// direction is the one that matters, because share delivery *is* the reply rate.
-const DEFAULT_PACKET_RATE: u64 = 250;
+/// The forward rate is a follower, not the dial: it is set to match what the return path
+/// sustains, because share delivery *is* the reply rate. Set it above that and the surplus
+/// datagrams are simply dropped — measured at 250 → 1000 against an unscaled SSA, the echo
+/// collapsed from 47 MB to 124 KB while the run got *longer*, because the Exit spent its
+/// whole SURB budget on shares and had none left to reply with.
+///
+/// What makes 1000/s work is [`response_buffer`] being sized for both streams and the SSA
+/// being wide enough that a cycle still outlasts a deposit. Nowhere near a link limit —
+/// `session_udp` does ~4300/s over the same loopback.
+const DEFAULT_PACKET_RATE: u64 = 1000;
 
 /// Payload per datagram, and the least obvious constant in this file.
 ///
@@ -158,7 +184,12 @@ const DEFAULT_PACKET_RATE: u64 = 250;
 ///
 /// Keeping supply under closed-loop control is what makes the run stable. The reply rate
 /// then tracks the balancer's target buffer — measured at roughly `target / 8` per second
-/// across two runs (521 SURBs → 60/s, 1920 → 239/s) — which [`response_buffer`] sizes.
+/// across two runs (521 SURBs → 60/s, 1920 → 239/s), which is what [`SURB_RUNWAY_SECS`]
+/// encodes and [`response_buffer`] inverts to get a buffer from a rate.
+///
+/// Note this also makes the payload a fixed 900 of the 1038 B a packet is *billed* for, so
+/// the datagram rate and the HOPR packet rate are one to one in the forward direction —
+/// which is what lets the demo quote a packet rate at all.
 const CHUNK_SIZE: usize = 900;
 
 // ── Run bounds ──────────────────────────────────────────────────────────────────
@@ -168,14 +199,20 @@ const CHUNK_SIZE: usize = 900;
 /// The float is set to *exactly* this many deposits, which makes the closing assertions
 /// exact: the Entry should spend all of it, and all but the last SSA or two should end up
 /// swept into the Exit's Safe.
-const DEFAULT_FUNDED_CYCLES: u64 = 10;
+///
+/// Five rather than ten because a cycle now moves four times the data: at ~32 s each, ten of
+/// them put the run 120 s past [`DEFAULT_RUN_BUDGET`]. Five still round-trips ~140 MB — three
+/// times what ten cycles moved at the old 250/s — so the soak is larger in the terms that
+/// matter while the run is shorter.
+const DEFAULT_FUNDED_CYCLES: u64 = 5;
 
 /// Ceiling when interpreting a Safe delta as a whole number of cycles; a bound on the
 /// division, not an expectation.
 const MAX_PLAUSIBLE_CYCLES: u64 = 100_000;
 /// Round-trip payload a run must move for "multi-megabyte" to mean anything. Far under
-/// what the default float implies (~26 MB), so it fails only on a real collapse in
-/// throughput rather than on ordinary variance.
+/// what the default float implies (~140 MB at the committed rate), so it fails only on a
+/// real collapse in throughput rather than on ordinary variance — which is exactly how the
+/// first 1000/s attempt was caught, at 124 KB.
 const MIN_TOTAL_BYTES: u64 = 4_000_000;
 /// Share of paid-for return packets that must be observed completing the round trip.
 /// The shortfall is packet loss downstream of the Exit, which still consumed the SURB.
@@ -188,8 +225,8 @@ const MIN_DELIVERED_PERCENT: u32 = 80;
 const MAX_SSAS_IN_FLIGHT: u64 = 2;
 
 /// Worst-case cycle duration used to derive the safety deadline. Deliberately far above
-/// the ~8 s a cycle should take: the deadline exists to stop a wedged run, and tripping it
-/// on a merely slow one buries the real numbers under a timeout.
+/// the [`TARGET_CYCLE_SECS`] a cycle is sized for: the deadline exists to stop a wedged run,
+/// and tripping it on a merely slow one buries the real numbers under a timeout.
 const MAX_SECS_PER_CYCLE: u64 = 60;
 /// Added to the safety deadline for the tail: the failing deposit's retry chain plus the
 /// kill-switch fuse.
@@ -209,15 +246,20 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // ── Money ───────────────────────────────────────────────────────────────────────
 
-/// A quota of ~1 MB makes this ~1.06 wxHOPR per SSA.
+/// At the committed ~14.35 MB quota this makes a deposit ~14.35 wxHOPR.
+///
+/// Held constant as the geometry scales, so the deposit tracks the data rather than staying
+/// put — which is the point being demonstrated. [`MAX_SSA_ALLOCATION`] has to stay above it.
 ///
 /// PIX pricing is its own model, unrelated to channel ticket pricing; it only has to sit
 /// above the relay price re-counted per byte, which this does by roughly an order of
 /// magnitude.
 const PRICE_PER_BYTE: &str = "0.000001 wxHOPR";
 /// Ceiling on one deposit. Below `price_per_byte × quota` the strategy refuses to deposit
-/// at all, which would end the run on the first cycle instead of on the last.
-const MAX_SSA_ALLOCATION: &str = "10 wxHOPR";
+/// at all, which would end the run on the first cycle instead of on the last. The quota
+/// grows with the packet rate, so this has to leave room above it — at the committed
+/// geometry a deposit is ~14.35 wxHOPR.
+const MAX_SSA_ALLOCATION: &str = "20 wxHOPR";
 const GAS_XDAI_PER_SWEEP: &str = "0.01 xdai";
 /// Per channel, out of each Safe's 1000 wxHOPR across two outgoing channels. Tens of
 /// megabytes issue a lot of tickets, and a channel draining before the deposit float does
@@ -269,10 +311,12 @@ fn pix_settings(node_deposit_float: HoprBalance) -> identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
         additional_shares: PIX_ADDITIONAL_SHARES,
-        // Our ~1 MB quota sits far below the production window's lower bound, so the
-        // window has to be opened up.
+        // Our quota sits far below the production window's lower bound, so the window has
+        // to be opened up. The upper bound is left well clear of the committed quota so a
+        // `HOPRD_PIX_SOAK_RATE` override does not have to move it too — the Exit rejects
+        // the Session outright if the offered quota falls outside this.
         quota_range_min: 0,
-        quota_range_max: 8 * 1024 * 1024,
+        quota_range_max: 64 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         enforce_on_nodes: vec![EXIT],
@@ -296,20 +340,87 @@ fn emissions_per_ssa() -> u64 {
     PIX_POLYS as u64 * (PIX_SHARES as u64 + PIX_ADDITIONAL_SHARES as u64)
 }
 
-/// SURB balancer target, at half an SSA's worth of replies.
+/// SURB balancer target: enough runway to keep both return streams fed, and no more.
 ///
 /// hoprd converts this to `target_surb_buffer_size = bytes / SESSION_MTU`
 /// (`rest-api::session`, `SessionConfig -> SurbBalancerConfig`), so it is expressed here
 /// as a SURB count scaled back up rather than as a byte figure that happens to work out.
 ///
-/// Half an SSA is the sizing rule from the module docs, and it is scale-free: the pipeline
-/// delay a buffer imposes is `buffer / drain_rate` while a cycle is
-/// `emissions / drain_rate`, so the delay is `buffer / emissions` of a cycle whatever the
-/// rate. One full SSA of buffer would mean a share arriving only as its own SSA ends.
+/// The Exit spends one return SURB per reply packet, and a reply carries *either* a share
+/// *or* echoed data — one budget, two streams. So the buffer has to cover both:
+/// `emissions_per_ssa()` shares plus a cycle's worth of echo at the forward rate. Sizing it
+/// from the SSA alone is what broke at 1000/s: the share stream took the whole budget and the
+/// echo starved to nothing. Sizing it *generously* costs cycle time instead — see
+/// [`SURB_RUNWAY_SECS`] for the measurements. It is a floor to be met, not a budget to spend.
+///
+/// The resulting pipeline delay is `buffer / (shares + echo)` = [`SURB_RUNWAY_SECS`] seconds
+/// whatever the scale, which has to stay well inside a cycle: at the committed geometry it is
+/// about a third of one.
+///
+/// Must stay under `rb_capacity × 2/3` = 66 666 SURBs (`surb_buffer_target_ceiling` in
+/// `hopr-transport`), because the balancer overshooting into a full ring buffer evicts the
+/// oldest SURBs, and an evicted SURB is a permanently lost share rather than a wasted SURB.
 fn response_buffer() -> String {
     const SESSION_MTU: u64 = 1020;
-    format!("{} B", emissions_per_ssa() / 2 * SESSION_MTU)
+    format!("{} B", surb_buffer_target() * SESSION_MTU)
 }
+
+/// Runway the Exit's SURB buffer is sized to hold, and so the buffer / rate conversion.
+///
+/// Matches `balancer_minimum_surb_buffer_duration` (default 5 s), which is what shapes the
+/// Exit's egress: it will not drain faster than its buffer represents that many seconds of
+/// replies. Sized above the default because the balancer's own loop costs the difference —
+/// measured at buffer/8 at 250 datagrams/s (521 SURBs → 60/s, 1920 → 239/s).
+///
+/// **This is a floor, not a throughput dial, and raising it costs cycle time.** Measured at
+/// 1000 datagrams/s with everything else fixed:
+///
+/// | runway | buffer | cycle | share rate |
+/// |---|---|---|---|
+/// | 8 | 18 368 SURBs | 32 s | 648/s |
+/// | 11 | 25 256 SURBs | 40 s | 518/s |
+///
+/// More buffer made cycles *longer*. A share is bound to its SURB when the SURB is minted and
+/// the Exit spends the buffer roughly in order, so buffer depth is latency between generating
+/// a share and delivering it — the share stream does not speed up to fill it. So the runway is
+/// set to the smallest value that keeps the echo stream fed: below it the echo starves outright
+/// (at 1920 SURBs against a 1000/s forward rate it collapsed to nothing), above it every cycle
+/// pays for depth it does not use.
+const SURB_RUNWAY_SECS: u64 = 8;
+
+/// Return-path rate the buffer is provisioned against: the share stream plus the echo.
+///
+/// The share rate is `emissions_per_ssa() / cycle`, and the cycle is what
+/// [`TARGET_CYCLE_SECS`] fixes, so it is derived rather than measured.
+///
+/// Adding the two is deliberate over-provisioning, not a claim that they are separate
+/// packets — measurement says they are not. Over a 1000/s run the Exit sent 179 974 packets
+/// against ~177 000 echo replies, so essentially every share travelled *on* a reply rather
+/// than in a packet of its own, which is what "the Exit unlocks one share per SURB it spends
+/// replying" means. Sizing against the sum therefore leaves roughly 2× headroom. That is the
+/// direction to err in — the buffer only has to be a floor — and it is the value measured to
+/// work; the tighter `SURB_RUNWAY_SECS * packet_rate()` has never been run.
+fn surb_buffer_target() -> u64 {
+    let share_rate = emissions_per_ssa() / TARGET_CYCLE_SECS;
+    SURB_RUNWAY_SECS * (share_rate + packet_rate())
+}
+
+/// Cycle length the geometry is *sized* for. The cycle actually achieved is about twice it.
+///
+/// Not a timeout — the cycle is bounded by packets, not seconds — but the figure the SSA width
+/// and the SURB buffer are both derived from, and the one number that has to stay comfortably
+/// above a deposit round trip (measured 2.2 s for the Exit to observe one, 5.0 s for the Entry
+/// to confirm). Below that the Exit reconstructs the key before the money lands,
+/// `sweep_recovered` finds a zero balance and logs "already swept", and the deposit is
+/// stranded for good.
+///
+/// Measured cycles come out at ~32 s against this 16 s, i.e. the share stream runs at about
+/// half the modelled rate. Two consequences, both benign and both deliberate rather than
+/// pending: the SURB buffer carries 2× the headroom it needs, which is the safe direction; and
+/// the Exit is billed for ~half the bytes it delivers, the same under-billing the test had
+/// before at 250/s. Closing that gap means finding the fixed point between buffer depth and
+/// share rate, which is a separate exercise from demonstrating the throughput.
+const TARGET_CYCLE_SECS: u64 = 16;
 
 /// A UDP echo server for the Exit to forward Session payloads to, making Exit → Entry
 /// volume mirror Entry → Exit volume.
@@ -529,10 +640,15 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         ssa_shares = PIX_SHARES,
         emissions_per_ssa = emissions_per_ssa(),
         response_buffer = %response_buffer(),
-        est_cycle_secs = emissions_per_ssa() as f64 / rate as f64,
+        surb_buffer_target = surb_buffer_target(),
+        // The cycle is `emissions / share_rate`, and the share rate is what
+        // `TARGET_CYCLE_SECS` fixes — so this is the geometry's own target, restated. It is
+        // logged so a run whose measured cadence drifts from it is obvious in the log.
+        est_cycle_secs = TARGET_CYCLE_SECS,
+        est_share_rate = emissions_per_ssa() / TARGET_CYCLE_SECS,
         "PIX geometry: {PIX_POLYS} polys x {PIX_SHARES} shares = {quota} B per SSA at \
-         {price_per_byte}/B = {per_cycle} per deposit; the run ends when {funded_cycles} \
-         deposits have drained the float"
+         {price_per_byte}/B = {per_cycle} per deposit; {rate} datagrams/s each way, the run \
+         ends when {funded_cycles} deposits have drained the float"
     );
 
     setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)).await?;
