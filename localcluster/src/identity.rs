@@ -150,6 +150,10 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             quota_range_max: pix.quota_range_max,
             max_ssa_delivery_time: pix.max_ssa_delivery_time,
             max_deposit_wait: pix.max_deposit_wait,
+            // `ssas_per_request` is left at its default of 1 (unbatched). Batching multiplies the
+            // kill-switch window and the number of cycles in flight, so a test that wants it should
+            // add it to `PixSettings` deliberately rather than inherit it here.
+            ..Default::default()
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -219,54 +223,71 @@ pub struct GenerationOutput {
 }
 
 lazy_static::lazy_static! {
+    /// Hardcoded cluster node keys, as `(packet_key, chain_key, bjj_key)`.
+    ///
+    /// The third secret is the BabyJubJub key that `HoprKeys` gained alongside the packet
+    /// and chain keys. Unlike those two, not every 32-byte value is a valid one — it has to
+    /// be below the curve's subgroup order, which rejects all but a few percent of them and
+    /// is why `BjjKeypair::random` samples in a loop. These were taken from that generator,
+    /// so `try_into` cannot fail here; a hand-edited value most likely would.
     static ref NODE_KEYS: [HoprKeys; MAX_NUM_NODES] = [
         (
             hex!("76a4edbc3f595d4d07671779a0055e30b2b8477ecfd5d23c37afd7b5aa83781d"),
-            hex!("71bf1f42ebbfcd89c3e197a3fd7cda79b92499e509b6fefa0fe44d02821d146a")
+            hex!("71bf1f42ebbfcd89c3e197a3fd7cda79b92499e509b6fefa0fe44d02821d146a"),
+            hex!("0262a85b847642471ae0386fa6e31c06f9f71d9d2db669ad1108652e6c7fa34f")
         ).try_into().unwrap(),
         (
             hex!("c90f09e849aa512be3dd007452977e32c7cfdc1e3de1a62bd92ba6592bcc9e90"),
-            hex!("c3659450e994f3ad086373440e4e7070629a1bfbd555387237ccb28d17acbfc8")
+            hex!("c3659450e994f3ad086373440e4e7070629a1bfbd555387237ccb28d17acbfc8"),
+            hex!("0055994a6379337859f55416e57d1c4d56a3e3f531b551c264f6a12a5af117be")
         ).try_into().unwrap(),
         (
             hex!("40d4749a620d1a4278d030a3153b5b94d6fcd4f9677f6ce8e37e6ebb1987ad53"),
-            hex!("4a14c5aeb53629a2dd45058a8d233f24dd90192189e8200a1e5f10069868f963")
+            hex!("4a14c5aeb53629a2dd45058a8d233f24dd90192189e8200a1e5f10069868f963"),
+            hex!("01e85a4a88335b4315e11aa8cd4f5ddd10fb720ebb13b6e8d640933b4c53ee80")
         ).try_into().unwrap(),
         (
             hex!("e539f1ac48270be4e84b6acfe35252df5e141a29b50ddb07b50670271bb574ee"),
-            hex!("8c1edcdebfe508031e4124168bb4a133180e8ee68207a7946fcdc4ad0068ef0d")
+            hex!("8c1edcdebfe508031e4124168bb4a133180e8ee68207a7946fcdc4ad0068ef0d"),
+            hex!("03611682dcf2b752444c13aae31e67b409ae06a887527603f3c4b5a2470913c7")
         ).try_into().unwrap(),
         (
             hex!("9ab557eb14d8b081c7e1750eb87407d8c421aa79bdeb420f38980829e7dbf936"),
-            hex!("6075c595103667537c33cdb954e3e5189921cab942e5fc0ba9ec27fe6d7787d1")
+            hex!("6075c595103667537c33cdb954e3e5189921cab942e5fc0ba9ec27fe6d7787d1"),
+            hex!("04db144f113ee40e7f9a9804546412d8aefcbc81773d81543aaa43e23aa3f9f4")
         ).try_into().unwrap()
     ];
 
-    /// Hardcoded keys for `--extra-identities`.
+    /// Hardcoded keys for `--extra-identities`, as `(packet_key, chain_key, bjj_key)`.
     ///
     /// Frozen at compile time so the EVM addresses, Safe addresses, and Module
     /// addresses remain identical across cluster runs (given the same Anvil
-    /// chain). Must not overlap with `NODE_KEYS`.
+    /// chain). Must not overlap with `NODE_KEYS`. See there on the `bjj_key`.
     static ref EXTRA_KEYS: [HoprKeys; MAX_EXTRA_IDENTITIES] = [
         (
             hex!("a8c2179d4f2e5b1a0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b"),
-            hex!("b7d3286ae0f3c4b5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9")
+            hex!("b7d3286ae0f3c4b5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9"),
+            hex!("00cd9a0dbdf6ac3bae4d7e8ea0179e5283e4456708a3bdc52a1ec23456790318")
         ).try_into().unwrap(),
         (
             hex!("c8e4397bf1a4d5c6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"),
-            hex!("d9f54a8c02b5e6d7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1")
+            hex!("d9f54a8c02b5e6d7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1"),
+            hex!("04d583bb4fbee75ff7b6f4186b39553c53279a9b099ad110ba291ce25ab2585c")
         ).try_into().unwrap(),
         (
             hex!("ea065b9d13c6f7e8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2"),
-            hex!("fb176cae24d7a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3")
+            hex!("fb176cae24d7a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3"),
+            hex!("00f81a8edfbd2d0a8e2d6b89bd06fd65a87d66fd69d2bb11415f8e4588a5b450")
         ).try_into().unwrap(),
         (
             hex!("0c287dbf35e8b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"),
-            hex!("1d398ec046f9cab1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5")
+            hex!("1d398ec046f9cab1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5"),
+            hex!("00bc9da16f48741f5e24ff0b3b9ebce44371e5d6e9806b5362504005908d2ce4")
         ).try_into().unwrap(),
         (
             hex!("2e4a9fd157a0dbc2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"),
-            hex!("3f5ba0e268b1ecd3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7")
+            hex!("3f5ba0e268b1ecd3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"),
+            hex!("0161688a36c52bde66d47fe24730b798aa68ed9d946c13ea31ea4d46a2656766")
         ).try_into().unwrap(),
     ];
 }
@@ -374,6 +395,9 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         num_ssa_parts: pix.num_ssa_parts,
         ssa_part_size: pix.ssa_part_size,
         additional_shares: pix.additional_shares,
+        // Entry-side batch cap, left at its default of 2. It only needs raising in step with an
+        // Exit's `ssas_per_request`, which `incoming_pix_config` also leaves at the default.
+        ..Default::default()
     });
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);

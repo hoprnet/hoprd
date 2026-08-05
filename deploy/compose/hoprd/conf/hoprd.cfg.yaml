@@ -36,6 +36,9 @@ strategy:
           min_safe_capacity_required: "512 MiB"
           stop_when_unfunded: true
           assumed_hops: 3
+          sizing_mode:
+            probabilistic:
+              success_probability: 0.999
         proactive_funding:
           enabled: true
           safety_margin: 1.5

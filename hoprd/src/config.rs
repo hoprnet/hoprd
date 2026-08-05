@@ -206,6 +206,20 @@ pub struct UserPixGlobalConfig {
     #[default(64)]
     #[serde(default = "default_pix_additional_shares")]
     pub additional_shares: usize,
+    /// Maximum number of SSA commitments this node, acting as an Entry, accepts in one request
+    /// from an Exit. Each accepted entry costs its own commitment, packet burst and on-chain
+    /// deposit, so this caps how much work one inbound packet can amplify into.
+    ///
+    /// Must be at least the `incoming_session_pix.ssas_per_request` of every Exit this node
+    /// uses: the batch size is not negotiated, so an Exit batching above this has every request
+    /// refused and loses the Session. Raise the two together.
+    ///
+    /// Clamped upstream to 1..=20.
+    ///
+    /// Default is 2.
+    #[default(default_pix_max_ssas_per_request())]
+    #[serde(default = "default_pix_max_ssas_per_request")]
+    pub max_ssas_per_request: usize,
 }
 
 fn default_pix_num_ssa_parts() -> usize {
@@ -216,6 +230,9 @@ fn default_pix_ssa_part_size() -> usize {
 }
 fn default_pix_additional_shares() -> usize {
     PixGlobalConfig::default().additional_shares
+}
+fn default_pix_max_ssas_per_request() -> usize {
+    PixGlobalConfig::default().max_ssas_per_request
 }
 
 /// User-facing incoming session PIX configuration (wraps upstream [`IncomingSessionPixConfig`] which has `serde(skip)`).
@@ -253,6 +270,21 @@ pub struct UserIncomingSessionPixConfig {
     #[default(Duration::from_secs(60))]
     #[serde(default = "default_pix_max_deposit_wait", with = "humantime_serde")]
     pub max_deposit_wait: Duration,
+    /// Number of SSAs this node, acting as an Exit, asks the Entry to commit to in one request.
+    ///
+    /// Batching amortizes the round trip over several deposit cycles, at the cost of holding that
+    /// many reconstructor cycles at once and serving that many SSA quotas unincentivized before
+    /// the first deposit lands. The kill switch scales with it: each cycle in a batch is given
+    /// `ssas_per_request × (max_deposit_wait + max_ssa_delivery_time)`.
+    ///
+    /// Must not exceed the peer Entry's `pix.max_ssas_per_request` — see that field.
+    ///
+    /// Clamped upstream to 1..=20.
+    ///
+    /// Default is 1, which reproduces the unbatched exchange exactly.
+    #[default(default_pix_ssas_per_request())]
+    #[serde(default = "default_pix_ssas_per_request")]
+    pub ssas_per_request: usize,
 }
 
 fn default_pix_quota_range_min() -> u64 {
@@ -268,6 +300,9 @@ fn default_pix_max_ssa_delivery_time() -> Duration {
 }
 fn default_pix_max_deposit_wait() -> Duration {
     IncomingSessionPixConfig::default().max_deposit_wait
+}
+fn default_pix_ssas_per_request() -> usize {
+    IncomingSessionPixConfig::default().ssas_per_request
 }
 
 /// Subset of various selected HOPR library network-related configuration options.
@@ -406,6 +441,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     num_ssa_parts: value.network.pix.num_ssa_parts,
                     ssa_part_size: value.network.pix.ssa_part_size,
                     additional_shares: value.network.pix.additional_shares,
+                    max_ssas_per_request: value.network.pix.max_ssas_per_request,
                 },
                 incoming_session_pix_config: IncomingSessionPixConfig {
                     enforce_pix: value.network.incoming_session_pix.enforce_pix,
@@ -413,6 +449,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         ..=value.network.incoming_session_pix.quota_range_max,
                     max_ssa_delivery_time: value.network.incoming_session_pix.max_ssa_delivery_time,
                     max_deposit_wait: value.network.incoming_session_pix.max_deposit_wait,
+                    ssas_per_request: value.network.incoming_session_pix.ssas_per_request,
                 },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
