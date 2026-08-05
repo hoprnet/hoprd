@@ -282,12 +282,33 @@ const CHANNEL_STAKE: &str = "400 wxHOPR";
 
 // ── Exit deadlines ──────────────────────────────────────────────────────────────
 
-/// Together these arm the PIX kill switch with a 45 s fuse — shorter than the 80 s
-/// default, because here the fuse is not a safety net but part of the expected path, and
-/// every run pays it once at the end. Still an order of magnitude above the couple of
-/// seconds a healthy deposit takes.
-const MAX_SSA_DELIVERY_TIME: Duration = Duration::from_secs(15);
-const MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(30);
+/// Together these arm the PIX kill switch with a 23 s fuse, against the 80 s product default.
+///
+/// **Sized for the bloklid-anvil container, not for a real chain**, and deliberately not shared
+/// with [`session_pix`](../session_pix.rs), which keeps the product defaults so that one of the
+/// two tests exercises the shipped configuration end to end. The product values live upstream in
+/// `IncomingSessionPixConfig` and are untouched by either.
+///
+/// Here the fuse is not a safety net but part of the expected path — every run pays it once, at
+/// the end, and at [`DEFAULT_PACKET_RATE`] it is the most expensive thing in the run after the
+/// traffic itself. Measured across ten cycles at the committed geometry:
+///
+/// | component | measured | budget |
+/// |---|---|---|
+/// | `SsaCommit` delivery | 0.025–0.035 s | 3 s |
+/// | on-chain settlement | 2.03–9.85 s (median 7.0) | 20 s |
+///
+/// Delivery is the one that was badly wrong: 15 s for a 30 ms operation. 3 s is still a hundred
+/// times over. The deposit wait keeps 2× the observed worst case rather than the 3× it had,
+/// because the 5× spread on *instant* mining is the thing the budget buys, not the median — and
+/// the error is asymmetric, since firing early kills a Session that would have paid and strands
+/// its deposit at a stealth address the Entry cannot spend from.
+///
+/// The cost of the fuse is bytes, not seconds, and bytes scale with the rate while the fuse does
+/// not: 45 s cost ~10 MB at the original 250 datagrams/s and 145 MB at 4000. So this has to be
+/// revisited whenever [`DEFAULT_PACKET_RATE`] moves, which is not otherwise obvious.
+const MAX_SSA_DELIVERY_TIME: Duration = Duration::from_secs(3);
+const MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(20);
 /// Also fixes the Exit's deposit poll cadence at a tenth of this.
 const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
 
