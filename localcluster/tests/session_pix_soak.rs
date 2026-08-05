@@ -151,16 +151,31 @@ const PIX_ADDITIONAL_SHARES: usize = 54;
 
 /// Datagrams per second in each direction.
 ///
-/// The forward rate is a follower, not the dial: it is set to match what the return path
-/// sustains, because share delivery *is* the reply rate. Set it above that and the surplus
-/// datagrams are simply dropped — measured at 250 → 1000 against an unscaled SSA, the echo
-/// collapsed from 47 MB to 124 KB while the run got *longer*, because the Exit spent its
-/// whole SURB budget on shares and had none left to reply with.
+/// The forward rate is not free: it is only sustainable while [`response_buffer`] scales with
+/// it, because share delivery and the echo spend the same return SURBs. Raised against an
+/// unscaled buffer it collapses — at 250 → 1000 the echo went from 47 MB to 124 KB and the run
+/// got *longer*, the Exit having spent its whole budget on shares with none left to reply with.
 ///
-/// What makes 1000/s work is [`response_buffer`] being sized for both streams and the SSA
-/// being wide enough that a cycle still outlasts a deposit. Nowhere near a link limit —
-/// `session_udp` does ~4300/s over the same loopback.
-const DEFAULT_PACKET_RATE: u64 = 1000;
+/// Measured ladder, three cycles per rung, everything else derived:
+///
+/// | requested | achieved | loss | buffer (% of ceiling) | cycle |
+/// |---|---|---|---|---|
+/// | 1000 | 1000 | 0% | 18 368 (28%) | 33 s |
+/// | 2000 | 1997 | 0% | 26 368 (40%) | 21 s |
+/// | 3000 | 2998 | 0% | 34 368 (52%) | 16 s |
+/// | **4000** | **3992** | **0%** | **42 368 (64%)** | **14 s** |
+/// | 5000 | 4990 | 0.3% | 50 368 (76%) | 14 s |
+/// | 6000 | 6010 | 0% | 58 368 (88%) | 11 s |
+/// | 6500 | 5660 | 6.3% | 62 368 (94%) | 12 s |
+///
+/// So the flow sustains **6000 datagrams/s each way** and saturates by 6500. 4000 is committed
+/// rather than 6000 on three grounds, all of which are about a demo run rather than a probe:
+/// the buffer keeps real overshoot headroom below the ring-buffer ceiling, where the penalty is
+/// silent permanent share loss; the cycle keeps 3-7× the deposit round trip instead of 2×; and
+/// there is 50% of margin to the knee, so a loaded machine degrades the number on screen rather
+/// than the `sent == echoed` invariant behind it. Nowhere near a link limit either way —
+/// `session_udp` does ~4300/s over the same loopback with no SURB machinery at all.
+const DEFAULT_PACKET_RATE: u64 = 4000;
 
 /// Payload per datagram, and the least obvious constant in this file.
 ///
@@ -200,11 +215,10 @@ const CHUNK_SIZE: usize = 900;
 /// exact: the Entry should spend all of it, and all but the last SSA or two should end up
 /// swept into the Exit's Safe.
 ///
-/// Five rather than ten because a cycle now moves four times the data: at ~32 s each, ten of
-/// them put the run 120 s past [`DEFAULT_RUN_BUDGET`]. Five still round-trips ~140 MB — three
-/// times what ten cycles moved at the old 250/s — so the soak is larger in the terms that
-/// matter while the run is shorter.
-const DEFAULT_FUNDED_CYCLES: u64 = 5;
+/// Ten fits again at [`DEFAULT_PACKET_RATE`] of 4000. A cycle is bounded by packets rather than
+/// seconds, so four times the rate is roughly a third of the cycle time (~13 s against ~33 s at
+/// 1000/s), and ten of them land inside [`DEFAULT_RUN_BUDGET`] where at 1000/s only five did.
+const DEFAULT_FUNDED_CYCLES: u64 = 10;
 
 /// Ceiling when interpreting a Safe delta as a whole number of cycles; a bound on the
 /// division, not an expectation.
@@ -414,12 +428,17 @@ fn surb_buffer_target() -> u64 {
 /// `sweep_recovered` finds a zero balance and logs "already swept", and the deposit is
 /// stranded for good.
 ///
-/// Measured cycles come out at ~32 s against this 16 s, i.e. the share stream runs at about
-/// half the modelled rate. Two consequences, both benign and both deliberate rather than
-/// pending: the SURB buffer carries 2× the headroom it needs, which is the safe direction; and
-/// the Exit is billed for ~half the bytes it delivers, the same under-billing the test had
-/// before at 250/s. Closing that gap means finding the fixed point between buffer depth and
-/// share rate, which is a separate exercise from demonstrating the throughput.
+/// It is a sizing figure, not a prediction, and how far the achieved cycle lands from it depends
+/// on the rate: ~33 s at 1000 datagrams/s, ~13 s at 4000. The share stream does not scale
+/// linearly with the reply rate — shares per reply fell from ~0.7 at 1000/s to ~0.3 at 5000 —
+/// so the modelled share rate of `emissions / this` is an over-estimate at low rates and an
+/// under-estimate at high ones. Both directions are safe: the buffer it sizes only has to be a
+/// floor, and the error is a factor of two either way against a ceiling four times clear.
+///
+/// The consequence worth knowing is that the Exit is billed for less than it delivers, by
+/// `shares_per_reply / (1 + additional/threshold)` — about half here, and the same under-billing
+/// the test had at 250/s. Closing it means either pricing against delivered bytes or finding the
+/// fixed point between buffer depth and share rate; neither is needed to demonstrate throughput.
 const TARGET_CYCLE_SECS: u64 = 16;
 
 /// A UDP echo server for the Exit to forward Session payloads to, making Exit → Entry
