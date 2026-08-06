@@ -8,8 +8,12 @@
 # filling up one quota-sized deposit at a time. The run ends by itself when the Entry can
 # no longer afford a deposit and the Exit's kill switch closes the Session.
 #
-#   ./localcluster/scripts/pix-demo.sh                  # ~7 minutes
-#   PIX_DEMO_FLOAT="150 wxHOPR" ./localcluster/scripts/pix-demo.sh    # ~55 cycles
+#   ./localcluster/scripts/pix-demo.sh                  # ~6 minutes
+#   PIX_DEMO_FLOAT="150 wxHOPR" ./localcluster/scripts/pix-demo.sh    # more cycles
+#   PIX_DEMO_RATE=6000 ./localcluster/scripts/pix-demo.sh             # faster
+#
+# The flow was measured to sustain 6000 datagrams/s each way and to saturate by 6500; the
+# committed default is 4000, for the margin reasons on `DEFAULT_PACKET_RATE` in the test.
 #
 # Everything on screen comes from the nodes' own Prometheus endpoints and the REST API —
 # nothing is computed by the test. To watch a cluster somebody else started, or to drive
@@ -93,48 +97,128 @@ balance() {
   printf '%s\n' "${value:-0}"
 }
 
-# Packets per second for one direction, from successive readings of a cumulative counter.
+# Sustained packets per second for one direction, from a cumulative counter.
 #
 #   pkt_rate <key> <current count>
 #
-# Two properties matter more than the arithmetic:
+# The running **maximum of the cumulative average** since traffic began, which is the one
+# formulation that needs no special case for the closing frame. Two simpler readings were tried
+# and both are wrong there:
 #
-#   * The window is at least $RATE_WINDOW seconds, not one $REFRESH tick. At four figures a
-#     second a 2 s sample jitters by enough to be distracting on a projector, and the reading
-#     is meant to be looked at rather than watched.
-#   * The last figure is kept when the counter stops advancing, instead of dividing zero
-#     packets by a growing window and rendering "0 pkt/s". The closing frame is drawn after
-#     the nodes have gone, where `scrape` is serving a cached `/metrics` and every counter is
-#     frozen by definition — the same reason `scrape` and `balance` keep their last good read.
-RATE_WINDOW=6
+#   * *Instantaneous over a short window* decays to a true but absurd "2 pkt/s". A run does not
+#     stop at its last packet — the kill switch closes the Session and the test then spends up to
+#     a minute polling for in-flight sweeps, all while this loop keeps rendering, and the counters
+#     advance by a trickle of acks over that span. Freezing at the end does not help: the decay
+#     happens *during* the run, before any end-of-run flag could be set.
+#   * *Peak over a short window* overstates by ~1.5×, because filling the Exit's SURB buffer at
+#     Session start mints tens of thousands of keep-alive packets in a burst.
+#
+# A cumulative average has neither failure. It climbs through the warm-up, converges on the
+# sustained rate (the start-up burst is a few seconds inside a window of minutes, so it barely
+# moves it), then decays once traffic stops — so its maximum is what the run actually held, and
+# it stays put from there on. Measured 8504 pkt/s sustained against a 12386 windowed peak.
+#
+# The anchor keeps sliding forward until the average clears [`TRAFFIC_FLOOR`], so it ends up at
+# the start of Session traffic rather than at the counter's first advance. Bootstrap is not
+# silent — probes and channel operations move the counter for ~190 s beforehand — and anchoring
+# on the first non-zero reading put ~24 s of that in the denominator, understating the result by
+# 15%. Nothing separates the two phases by kind, but three orders of magnitude separates them by
+# rate.
+TRAFFIC_FLOOR=200
 pkt_rate() { # key current_count
-  local sample="$STATE_DIR/rate_$1"
+  local anchor="$STATE_DIR/rate_$1"
   local shown="$STATE_DIR/rateval_$1"
   local now
   local count=$2
-  local prev_t=""
-  local prev_c=""
-  local elapsed
+  local t0=""
+  local c0=""
   now=$(date +%s)
-  [ -r "$sample" ] && read -r prev_t prev_c <"$sample"
-  # Both fields have to be present and numeric before they are arithmetic operands: a
-  # truncated sample would otherwise reach `[ "$count" -gt "$prev_c" ]` with an empty operand,
-  # which is a `test` syntax error rather than a false, and would spray onto the frame.
-  case "${prev_t}:${prev_c}" in
-  *[!0-9:]* | :* | *: | '') prev_t="" ;;
+  [ -r "$anchor" ] && read -r t0 c0 <"$anchor"
+  # Both fields have to be present and numeric before they are arithmetic operands: a truncated
+  # anchor would otherwise reach `test` with an empty operand, which is a syntax error rather
+  # than a false and would spray onto the frame.
+  case "${t0}:${c0}" in
+  *[!0-9:]* | :* | *: | '') t0="" ;;
   esac
-  if [ -n "$prev_t" ]; then
-    elapsed=$((now - prev_t))
-    if [ "$elapsed" -ge "$RATE_WINDOW" ]; then
-      # Strictly greater, so a counter that has stopped (closing frame) or restarted from zero
-      # (stale sample from a previous run) leaves the last figure alone instead of rendering 0.
-      if [ "$count" -gt "$prev_c" ]; then
-        printf '%.0f\n' "$(echo "($count - $prev_c) / $elapsed" | bc -l)" >"$shown"
-      fi
-      printf '%s %s\n' "$now" "$count" >"$sample"
+  # `-le` rather than `-lt` also re-anchors a stale anchor from a previous run, whose counters
+  # restart from zero and would otherwise give a negative average.
+  if [ -z "$t0" ] || [ "$count" -le "$c0" ]; then
+    [ "$count" -gt 0 ] && printf '%s %s\n' "$now" "$count" >"$anchor"
+  elif [ "$now" -gt "$t0" ]; then
+    local avg
+    avg=$(printf '%.0f' "$(echo "($count - $c0) / ($now - $t0)" | bc -l)")
+    if [ "$avg" -lt "$TRAFFIC_FLOOR" ]; then
+      # Still bootstrap. Slide the anchor forward so it lands at the moment traffic starts.
+      printf '%s %s\n' "$now" "$count" >"$anchor"
+    elif [ "$avg" -gt "$(cat "$shown" 2>/dev/null || echo 0)" ]; then
+      printf '%s\n' "$avg" >"$shown"
     fi
-  else
-    printf '%s %s\n' "$now" "$count" >"$sample"
+  fi
+  if [ -r "$shown" ]; then cat "$shown"; else echo 0; fi
+}
+
+# Shared by `cpu_pct`, which is still a windowed reading: CPU has no cumulative-average
+# equivalent that isolates the traffic phase, since a node burns ticks throughout bootstrap too.
+RATE_WINDOW=6
+
+# CPU ticks consumed by one node's hoprd process, or empty if it is not running.
+#
+# Nodes are identified by `--apiPort`, which `client_helper` puts on the command line and which
+# is the same port this script already scrapes — so the mapping to Entry/Relay/Exit is exact
+# rather than positional. The `[ ]` is the same self-match guard as `reset_cluster`'s `pkill`:
+# harmless here, since the pattern only lives in this file, but it keeps the line safe to
+# paste into a shell while debugging.
+#
+# `/proc/<pid>/stat` field 2 is the comm in parentheses and may contain spaces, so everything
+# up to the last `)` is dropped before splitting — after which utime and stime are fields 12
+# and 13 rather than 14 and 15.
+node_ticks() { # node-index
+  local pid
+  pid=$(pgrep -f "release/hoprd .*--apiPort[ ]$((API_PORT_BASE + $1))" | head -1)
+  [ -z "$pid" ] && return 0
+  awk '{ s = $0; sub(/^.*\) /, "", s); split(s, f, " "); print f[12] + f[13] }' \
+    "/proc/$pid/stat" 2>/dev/null
+}
+
+CLK_TCK=$(getconf CLK_TCK 2>/dev/null || echo 100)
+# Peak per-process CPU percentage over any $RATE_WINDOW window. 100% is one core.
+#
+# Deliberately *not* `ps -o %cpu`, which averages over the process's whole lifetime — on a run
+# that spends its first three minutes bootstrapping, that reads far below what the traffic
+# phase is actually costing.
+#
+# The freeze rule differs from `pkt_rate`: there, a counter that stops advancing means the
+# nodes are gone, so the last figure is kept. Here the two cases are distinguishable and want
+# different answers — a *missing process* keeps the last figure (the closing frame), while a
+# *running but idle* process should genuinely read 0, since a node falling idle mid-run is a
+# fault worth seeing rather than hiding.
+cpu_pct() { # node-index
+  local sample="$STATE_DIR/cpu_$1"
+  local shown="$STATE_DIR/cpuval_$1"
+  local now ticks prev_t prev_k elapsed
+  ticks=$(node_ticks "$1")
+  if [ -n "$ticks" ]; then
+    now=$(date +%s)
+    prev_t=""
+    prev_k=""
+    [ -r "$sample" ] && read -r prev_t prev_k <"$sample"
+    case "${prev_t}:${prev_k}" in
+    *[!0-9:]* | :* | *: | '') prev_t="" ;;
+    esac
+    if [ -n "$prev_t" ]; then
+      elapsed=$((now - prev_t))
+      # A high-water mark for the same reason as `pkt_rate`: by the closing frame the nodes are
+      # idle or already gone, and an instantaneous read renders 1% beside a run that was using
+      # several cores a moment earlier.
+      if [ "$elapsed" -ge "$RATE_WINDOW" ]; then
+        local this
+        this=$(printf '%.0f' "$(echo "($ticks - $prev_k) * 100 / $CLK_TCK / $elapsed" | bc -l)")
+        [ "$this" -gt "$(cat "$shown" 2>/dev/null || echo 0)" ] && printf '%s\n' "$this" >"$shown"
+        printf '%s %s\n' "$now" "$ticks" >"$sample"
+      fi
+    else
+      printf '%s %s\n' "$now" "$ticks" >"$sample"
+    fi
   fi
   if [ -r "$shown" ]; then cat "$shown"; else echo 0; fi
 }
@@ -291,6 +375,13 @@ render() {
   fwd_rate=$(pkt_rate fwd "$e_sent")
   ret_rate=$(pkt_rate ret "$x_sent")
 
+  # What that rate costs. Worth showing next to it: the three nodes are Sphinx-processing every
+  # packet in both directions on one machine, and the relay pays for both legs.
+  local cpu_e cpu_r cpu_x
+  cpu_e=$(cpu_pct 0)
+  cpu_r=$(cpu_pct 1)
+  cpu_x=$(cpu_pct 2)
+
   # Bars are scaled to the cycles the float pays for, which the test announces at startup.
   # Attaching to a cluster somebody else started leaves that unknown, so fall back to
   # scaling against whatever the Entry has managed so far.
@@ -352,10 +443,17 @@ render() {
   # the same value column as the totals above rather than a fourth column on each row: those
   # rows already end at column 67 inside a 74-wide frame.
   printf '    %-22s %s%12s pkt/s fwd%s  %s·%s  %s%s pkt/s return%s\n' \
-    "current rate" \
+    "sustained rate" \
     "$C_CYAN$C_BOLD" "$(num "$fwd_rate")" "$C_RESET" \
     "$C_DIM" "$C_RESET" \
     "$C_CYAN$C_BOLD" "$(num "$ret_rate")" "$C_RESET"
+  # 100% is one core, so these routinely exceed it — hoprd is multi-threaded and every packet
+  # costs a Sphinx unwrap per hop.
+  printf '    %-22s %sEntry %4s%%%s  %s·%s  %sRelay %4s%%%s  %s·%s  %sExit %4s%%%s\n' \
+    "peak node CPU" \
+    "$C_YELLOW" "$cpu_e" "$C_RESET" "$C_DIM" "$C_RESET" \
+    "$C_YELLOW" "$cpu_r" "$C_RESET" "$C_DIM" "$C_RESET" \
+    "$C_YELLOW" "$cpu_x" "$C_RESET"
   printf '\n'
 
   # The relay is paid separately for each leg, by whoever issued the tickets on it — a second,
@@ -413,6 +511,7 @@ reset_cluster() {
 : "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
 export HOPRD_BIN HOPRD_CHAIN_IMAGE
 [ -n "${PIX_DEMO_FLOAT:-}" ] && export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
+[ -n "${PIX_DEMO_RATE:-}" ] && export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 
 if [ ! -x "$HOPRD_BIN" ]; then
   echo "no hoprd binary at $HOPRD_BIN — build it first:"
@@ -434,6 +533,7 @@ fi
 # screen. Add new cache families here at the same time as the helper that writes them.
 rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
   "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$STATE_DIR"/rate_* "$STATE_DIR"/rateval_* \
+  "$STATE_DIR"/cpu_* "$STATE_DIR"/cpuval_* \
   "$TEST_LOG"
 reset_cluster
 date +%s >"$STATE_DIR/started"
