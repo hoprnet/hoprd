@@ -339,11 +339,15 @@ render() {
   # The run's fixed parameters, announced once in the test's startup banner. All empty when
   # attached with `--dashboard` to a cluster somebody else started, in which case the geometry
   # line is simply skipped rather than shown full of blanks.
-  local polys shares quota price_per_byte
+  local polys shares surplus emitted quota price_per_byte
   polys=$(from_log "ssa_polys")
   shares=$(from_log "ssa_shares")
+  surplus=$(from_log "ssa_surplus")
   quota=$(from_log "quota")
   price_per_byte=$(from_log "price_per_byte")
+  # The quota counts every share the generator emits, surplus included, so it is this sum —
+  # not the threshold — that the headline arithmetic has to multiply by to reach the quota.
+  [ -n "$shares" ] && [ -n "$surplus" ] && emitted=$((shares + surplus))
   [ -f "$STATE_DIR/started" ] || date +%s >"$STATE_DIR/started"
   local started
   started=$(cat "$STATE_DIR/started")
@@ -398,10 +402,12 @@ render() {
 
   # Why a deposit is the size it is, shown as the derivation rather than as a bare number: the
   # dimensions fix the quota, and the quota priced per byte fixes what the Entry has to pay.
-  if [ -n "$polys" ] && [ -n "$shares" ]; then
+  if [ -n "$polys" ] && [ -n "${emitted:-}" ]; then
     printf '  %sSSA GEOMETRY%s         %s%s polys × %s shares%s  %s→%s  %s%s B%s %squota per SSA%s\n' \
-      "$C_BOLD" "$C_RESET" "$C_BOLD" "$polys" "$shares" "$C_RESET" "$C_DIM" "$C_RESET" \
+      "$C_BOLD" "$C_RESET" "$C_BOLD" "$polys" "$emitted" "$C_RESET" "$C_DIM" "$C_RESET" \
       "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET" "$C_DIM" "$C_RESET"
+    printf '                       %s%s to reconstruct + %s surplus, all of them billed%s\n' \
+      "$C_DIM" "$shares" "$surplus" "$C_RESET"
     printf '                       %s%s wxHOPR/byte%s  %s→%s  %s%s wxHOPR%s %sper deposit%s\n\n' \
       "$C_BOLD" "${price_per_byte:-?}" "$C_RESET" "$C_DIM" "$C_RESET" \
       "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET" "$C_DIM" "$C_RESET"
