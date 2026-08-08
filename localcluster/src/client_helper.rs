@@ -40,12 +40,13 @@ pub struct OpenSessionRequest<'a> {
     /// SURB balancer: ceiling on artificial SURB generation, e.g. `"50 Mb/s"`.
     /// `None` leaves the protocol default.
     pub max_surb_upstream: Option<String>,
-    /// PIX quota as `(polys_per_ssa, shares_per_poly)`.
+    /// PIX parameters as `(polys_per_ssa, shares_per_poly, surplus_shares)`.
     ///
-    /// Must equal this node's own `network.pix` generator dimensions, and must be
-    /// accompanied by [`SessionCapability::UsePix`] — without the capability the Exit
-    /// is never told PIX is in play.
-    pub pix_ssa_quota: Option<(u16, u16)>,
+    /// Must equal this node's own `network.pix` generator dimensions — all three of them,
+    /// since the surplus is priced into the per-SSA quota — and must be accompanied by
+    /// [`SessionCapability::UsePix`]; without the capability the Exit is never told PIX
+    /// is in play.
+    pub pix_ssa_quota: Option<(u16, u8, u8)>,
 }
 
 /// `NonAnonymousPix` strategy configuration, handed to hoprd as environment variables.
@@ -344,8 +345,9 @@ impl HoprdApiClient {
             listen_host: None,
             max_client_sessions: None,
             max_surb_upstream,
-            pix_ssa_quota: pix_ssa_quota
-                .map(|(polys, shares)| vec![i32::from(polys), i32::from(shares)]),
+            pix_ssa_quota: pix_ssa_quota.map(|(polys, shares, surplus)| {
+                vec![i32::from(polys), i32::from(shares), i32::from(surplus)]
+            }),
             response_buffer,
             session_pool: None,
         };

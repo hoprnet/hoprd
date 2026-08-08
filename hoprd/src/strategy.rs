@@ -282,9 +282,15 @@ where
                     "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
                     "0.01 xdai".parse().expect("valid static amount"),
                 ),
+                // Retry budgets are left at the upstream defaults: this block exists to wire
+                // the handful of values hoprd exposes as environment variables, and every
+                // other field is better served by whatever upstream currently documents.
+                ..Default::default()
             },
             pix_recovery_db_path: None,
             pix_recovery_password_env: None,
+            // Likewise the deposit/withdrawal batching windows.
+            ..Default::default()
         };
         tracing::info!(
             price_per_byte = %pix_cfg.price_per_byte,

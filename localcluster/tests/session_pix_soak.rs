@@ -34,8 +34,10 @@
 //!
 //! # Why the geometry is sized to the packet rate
 //!
-//! An SSA cycle is bounded by *packets*, not by seconds: recovery needs `polys × shares`
-//! shares, each riding one return-path SURB, so a cycle lasts `emissions / share_rate`.
+//! An SSA cycle is bounded by *packets*, not by seconds: a cycle emits
+//! `polys × (shares + surplus)` shares, each riding one return-path SURB, so it lasts
+//! `emissions / share_rate`. That same product is the per-SSA quota, so a cycle's length and
+//! its price are the same number scaled — the Exit is paid per return packet it sends.
 //! Three things follow, and together they fix the geometry once a target rate is chosen:
 //!
 //!   * **A cycle must outlast a deposit.** The Exit serves data on credit and reconstructs
@@ -126,28 +128,36 @@ const HOPS: u64 = 1;
 // ── SSA geometry ────────────────────────────────────────────────────────────────
 //
 // Sized to the packet rate, not chosen for its own sake — see the module docs. The
-// product with [`PIX_SHARES`] is the per-cycle quota and is separately bounded at
-// `4 × 8192 × 64` upstream (`validate_pix_dimension_product`); 128 × 108 = 13 824 uses
-// well under a percent of that. Validation allows `num_ssa_parts` 8..=16192 and
-// `ssa_part_size` 2..=4096.
+// product with [`PIX_SHARES`] is separately bounded at `4 × 8192 × 64` upstream
+// (`validate_pix_dimension_product`); 128 × 108 = 13 824 uses well under a percent of
+// that. Validation allows `num_ssa_parts` 8..=16192 and `ssa_part_size` 2..=255.
+//
+// The `u8`s are the upstream bound rather than a local choice: the threshold and the
+// surplus are one byte each of the negotiated `PixParams` word, so a value above 255 is
+// unrepresentable on the wire and is now a compile error here rather than a rejected
+// Session.
 //
 // Split as polys rather than shares because `num_ssa_parts` is documented upstream as
 // scaling with CPU parallelism while `ssa_part_size` does not.
 const PIX_POLYS: u16 = 128;
-const PIX_SHARES: u16 = 108;
+const PIX_SHARES: u8 = 108;
 /// Emitted beyond the threshold, per polynomial — the production ratio of `shares / 2`.
 ///
 /// The generator's budget is finite: `shares + additional` per polynomial and no more, so
 /// a polynomial that loses more than `additional` of its shares can never reach threshold
 /// and the SSA stalls for good. `session_pix` can afford 2 because it only moves a few
 /// dozen packets; at tens of thousands, a few percent loss would exhaust that on nearly
-/// every polynomial. The surplus is delivered unbilled, which lengthens a cycle — here a
-/// benefit, since a cycle has to outlast a deposit.
+/// every polynomial.
+///
+/// It is delivered in every cycle whether or not anything is lost, and since it travels to
+/// the Exit as part of the negotiated `PixParams` it is also *priced*: the quota counts it
+/// and the deposit pays for it. So raising it lengthens a cycle — here a benefit, since a
+/// cycle has to outlast a deposit — and costs money in proportion, which is the way round
+/// it should be.
 ///
 /// An absolute count upstream, not a ratio, so it has to move with [`PIX_SHARES`] to keep
-/// the 1.5× surplus factor: that factor is what sets how much data a cycle delivers beyond
-/// the quota it was charged for.
-const PIX_ADDITIONAL_SHARES: usize = 54;
+/// the 1.5× surplus factor.
+const PIX_ADDITIONAL_SHARES: u8 = 54;
 
 /// Datagrams per second in each direction.
 ///
@@ -260,7 +270,7 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // ── Money ───────────────────────────────────────────────────────────────────────
 
-/// At the committed ~14.35 MB quota this makes a deposit ~14.35 wxHOPR.
+/// At the committed ~21.52 MB quota this makes a deposit ~21.52 wxHOPR.
 ///
 /// Held constant as the geometry scales, so the deposit tracks the data rather than staying
 /// put — which is the point being demonstrated. [`MAX_SSA_ALLOCATION`] has to stay above it.
@@ -272,8 +282,14 @@ const PRICE_PER_BYTE: &str = "0.000001 wxHOPR";
 /// Ceiling on one deposit. Below `price_per_byte × quota` the strategy refuses to deposit
 /// at all, which would end the run on the first cycle instead of on the last. The quota
 /// grows with the packet rate, so this has to leave room above it — at the committed
-/// geometry a deposit is ~14.35 wxHOPR.
-const MAX_SSA_ALLOCATION: &str = "20 wxHOPR";
+/// geometry a deposit is ~21.52 wxHOPR.
+///
+/// It moved 20 → 30 when the surplus was priced into the quota upstream: the dimensions did
+/// not change, but what they cost went up by the 1.5× surplus factor, and 20 had become a
+/// ceiling *below* the deposit. The symptom is unmistakable and immediate — every deposit
+/// refused, `deposits_failed` climbing from the first cycle, and the kill switch ending the
+/// run before any money moves.
+const MAX_SSA_ALLOCATION: &str = "30 wxHOPR";
 const GAS_XDAI_PER_SWEEP: &str = "0.01 xdai";
 /// Per channel, out of each Safe's 1000 wxHOPR across two outgoing channels. Tens of
 /// megabytes issue a lot of tickets, and a channel draining before the deposit float does
@@ -317,8 +333,12 @@ const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
 /// Mirrors [`identity::PixSettings::quota_per_ssa`], which cannot be used here because the
 /// settings need the float, the float is derived from the per-cycle deposit, and that is
 /// derived from the quota.
+///
+/// Every emitted share is charged for, surplus included, so this is exactly
+/// [`emissions_per_ssa`] priced at the full packet payload — the Exit is paid for each
+/// return packet it sends rather than for the subset that happened to be needed.
 fn quota_bytes() -> u64 {
-    PIX_POLYS as u64 * PIX_SHARES as u64 * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
+    emissions_per_ssa() * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
 }
 
 /// wxHOPR the Entry gets to spend on deposits, from `HOPRD_PIX_SOAK_FLOAT` or
@@ -345,7 +365,7 @@ fn pix_settings(node_deposit_float: HoprBalance) -> identity::PixSettings {
     identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
-        additional_shares: PIX_ADDITIONAL_SHARES,
+        additional_shares: PIX_ADDITIONAL_SHARES as usize,
         // Our quota sits far below the production window's lower bound, so the window has
         // to be opened up. The upper bound is left well clear of the committed quota so a
         // `HOPRD_PIX_SOAK_RATE` override does not have to move it too — the Exit rejects
@@ -678,6 +698,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         rate, quota, %price_per_byte, %per_cycle, %float, funded_cycles,
         ssa_polys = PIX_POLYS,
         ssa_shares = PIX_SHARES,
+        ssa_surplus = PIX_ADDITIONAL_SHARES,
         emissions_per_ssa = emissions_per_ssa(),
         response_buffer = %response_buffer(),
         surb_buffer_target = surb_buffer_target(),
@@ -686,9 +707,9 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         // logged so a run whose measured cadence drifts from it is obvious in the log.
         est_cycle_secs = TARGET_CYCLE_SECS,
         est_share_rate = emissions_per_ssa() / TARGET_CYCLE_SECS,
-        "PIX geometry: {PIX_POLYS} polys x {PIX_SHARES} shares = {quota} B per SSA at \
-         {price_per_byte}/B = {per_cycle} per deposit; {rate} datagrams/s each way, the run \
-         ends when {funded_cycles} deposits have drained the float"
+        "PIX geometry: {PIX_POLYS} polys x ({PIX_SHARES} + {PIX_ADDITIONAL_SHARES}) shares = \
+         {quota} B per SSA at {price_per_byte}/B = {per_cycle} per deposit; {rate} datagrams/s \
+         each way, the run ends when {funded_cycles} deposits have drained the float"
     );
 
     setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)).await?;
@@ -757,7 +778,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             response_buffer: Some(response_buffer()),
             max_surb_upstream: Some("50 Mb/s".to_string()),
             // Must match this node's own generator dimensions or the Session is refused.
-            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES)),
+            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES, PIX_ADDITIONAL_SHARES)),
         })
         .await
         .context("opening PIX session")?;
@@ -1024,13 +1045,19 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
 
     // Recovered funds correspond to data actually delivered back to the Entry.
     //
-    // Compared in packets rather than bytes: a quota is `polys × shares` packets priced at
-    // the full `HoprPacket::PAYLOAD_SIZE`, whereas each datagram here carries CHUNK_SIZE,
-    // so the two are not commensurable as byte counts. Nor is this an equality — a reply
-    // dropped after leaving the Exit has still consumed its SURB and unlocked its share,
-    // so paid-for volume legitimately exceeds observed volume by the loss rate. What it
-    // rules out is the Exit being paid for traffic it never sent.
-    let paid_packets = cycles * PIX_POLYS as u64 * PIX_SHARES as u64;
+    // Compared in packets rather than bytes: a quota is `polys × (shares + surplus)` packets
+    // priced at the full `HoprPacket::PAYLOAD_SIZE`, whereas each datagram here carries
+    // CHUNK_SIZE, so the two are not commensurable as byte counts. Nor is this an equality —
+    // a reply dropped after leaving the Exit has still consumed its SURB and unlocked its
+    // share, so paid-for volume legitimately exceeds observed volume by the loss rate. What
+    // it rules out is the Exit being paid for traffic it never sent.
+    //
+    // This binds far harder than it used to. While the surplus was unpriced, `paid_packets`
+    // was two thirds of what a cycle actually delivered and the ratio sat near 150% against
+    // a 80% floor — the assertion could not have failed short of total collapse. Now that
+    // every emitted share is charged for, paid volume and delivered volume are the same
+    // quantity and the margin here really is the loss rate.
+    let paid_packets = cycles * emissions_per_ssa();
     assert!(
         echoed_n * 100 >= paid_packets * u64::from(MIN_DELIVERED_PERCENT),
         "the Exit was paid for {paid_packets} return packets across {cycles} cycles but only \

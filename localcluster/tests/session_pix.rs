@@ -77,11 +77,14 @@ const HOPS: u64 = 1;
 /// PIX generator dimensions, both sitting on the protocol floor (`PixGlobalConfig`
 /// validates `num_ssa_parts >= 8` and `ssa_part_size >= 2`). This makes the per-SSA
 /// quota as small as the protocol allows, and therefore the test as short as possible.
+///
+/// The `u8`s are the upstream bound: the threshold and the surplus are one byte each of the
+/// negotiated `PixParams` word.
 const PIX_POLYS: u16 = 8;
-const PIX_SHARES: u16 = 2;
-/// Shares emitted beyond the threshold. This surplus is delivered unbilled, so it costs
-/// test time without costing wxHOPR; kept small for that reason.
-const PIX_ADDITIONAL_SHARES: usize = 2;
+const PIX_SHARES: u8 = 2;
+/// Shares emitted beyond the threshold. Priced into the quota like any other emitted share,
+/// so it costs both test time and wxHOPR; kept small for that reason.
+const PIX_ADDITIONAL_SHARES: u8 = 2;
 
 /// SSA cycles that must fully complete — deposit made, key recovered, funds swept.
 const TARGET_CYCLES: u64 = 4;
@@ -138,8 +141,9 @@ const RESPONSE_BUFFER: &str = "16 kB";
 const MAX_SURB_UPSTREAM: &str = "20 Mb/s";
 
 /// Charged per byte of the agreed quota. With the dimensions above the quota is
-/// ~16.6 kB, so one SSA deposit is ~1.66 wxHOPR — small against the 1000 wxHOPR each
-/// Safe is provisioned with, but large enough to be unambiguous in a balance delta.
+/// `8 × (2 + 2) × 1038` ≈ 33.2 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
+/// 1000 wxHOPR each Safe is provisioned with, but large enough to be unambiguous in a
+/// balance delta.
 const PRICE_PER_BYTE: &str = "0.0001 wxHOPR";
 /// Ceiling on a single deposit. Must exceed `PRICE_PER_BYTE × quota` or the strategy
 /// refuses to deposit at all and the Exit's kill switch closes the Session.
@@ -161,7 +165,7 @@ fn pix_settings() -> identity::PixSettings {
     identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
-        additional_shares: PIX_ADDITIONAL_SHARES,
+        additional_shares: PIX_ADDITIONAL_SHARES as usize,
         // The Exit rejects any quota outside this window. Ours is ~16.6 kB against a
         // production default window of ~130 MiB–519 MiB, so it has to be widened.
         quota_range_min: 0,
@@ -389,7 +393,7 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
             response_buffer: Some(RESPONSE_BUFFER.to_string()),
             max_surb_upstream: Some(MAX_SURB_UPSTREAM.to_string()),
             // Must match this node's own generator dimensions, or the Session is refused.
-            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES)),
+            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES, PIX_ADDITIONAL_SHARES)),
         })
         .await
         .context("opening PIX session")?;

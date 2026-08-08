@@ -2039,11 +2039,12 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ]
     ///    },
     ///    "pixSsaQuota": {
-    ///      "description": "PIX SSA quota `[polys_per_ssa, shares_per_poly]`.\n\nWhen set, the Session will use the PIX protocol with the given quota\nparameters. When not set, PIX is not advertised to the Exit node.\n\nThe wire form is a positional pair, so the two are transposable here; they stop\nbeing so at [`SsaDimensions`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).",
+    ///      "description": "PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.\n\nWhen set, the Session will use the PIX protocol with the given parameters. When\nnot set, PIX is not advertised to the Exit node.\n\nAll three have to match this node's own installed share generator, or the Session\nis refused at setup. The surplus is included because it is priced: the per-SSA\nquota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed\nwould size every deposit against a quota the node never agreed to.\n\nThe wire form is a positional triple, so the fields are transposable here; they\nstop being so at [`PixParams`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).",
     ///      "examples": [
     ///        [
     ///          8,
-    ///          4
+    ///          4,
+    ///          2
     ///        ]
     ///      ],
     ///      "type": [
@@ -2130,13 +2131,18 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
-        /**PIX SSA quota `[polys_per_ssa, shares_per_poly]`.
+        /**PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.
 
-When set, the Session will use the PIX protocol with the given quota
-parameters. When not set, PIX is not advertised to the Exit node.
+When set, the Session will use the PIX protocol with the given parameters. When
+not set, PIX is not advertised to the Exit node.
 
-The wire form is a positional pair, so the two are transposable here; they stop
-being so at [`SsaDimensions`], which this is mapped onto in
+All three have to match this node's own installed share generator, or the Session
+is refused at setup. The surplus is included because it is priced: the per-SSA
+quota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed
+would size every deposit against a quota the node never agreed to.
+
+The wire form is a positional triple, so the fields are transposable here; they
+stop being so at [`PixParams`], which this is mapped onto in
 [`into_protocol_session_config`](Self::into_protocol_session_config).*/
         #[serde(
             rename = "pixSsaQuota",

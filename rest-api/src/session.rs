@@ -13,8 +13,8 @@ use hopr_lib::{
     api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
-        SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
-        SsaDimensions, SurbBalancerConfig,
+        PixParams, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
+        SessionTarget, SurbBalancerConfig,
     },
 };
 #[allow(deprecated)]
@@ -265,17 +265,22 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
-    /// PIX SSA quota `[polys_per_ssa, shares_per_poly]`.
+    /// PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.
     ///
-    /// When set, the Session will use the PIX protocol with the given quota
-    /// parameters. When not set, PIX is not advertised to the Exit node.
+    /// When set, the Session will use the PIX protocol with the given parameters. When
+    /// not set, PIX is not advertised to the Exit node.
     ///
-    /// The wire form is a positional pair, so the two are transposable here; they stop
-    /// being so at [`SsaDimensions`], which this is mapped onto in
+    /// All three have to match this node's own installed share generator, or the Session
+    /// is refused at setup. The surplus is included because it is priced: the per-SSA
+    /// quota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed
+    /// would size every deposit against a quota the node never agreed to.
+    ///
+    /// The wire form is a positional triple, so the fields are transposable here; they
+    /// stop being so at [`PixParams`], which this is mapped onto in
     /// [`into_protocol_session_config`](Self::into_protocol_session_config).
     #[serde(default)]
-    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4]))]
-    pub pix_ssa_quota: Option<(u16, u16)>,
+    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
+    pub pix_ssa_quota: Option<(u16, u8, u8)>,
 }
 
 impl SessionClientRequest {
@@ -314,7 +319,9 @@ impl SessionClientRequest {
                 .into(),
                 pix_ssa_quota: self
                     .pix_ssa_quota
-                    .map(|(polys, shares)| SsaDimensions::new(polys, shares)),
+                    .map(|(polys, shares, surplus)| PixParams::try_new(polys, shares, surplus))
+                    .transpose()
+                    .map_err(|_| ApiErrorStatus::InvalidInput)?,
                 ..Default::default()
             },
         ))
@@ -355,14 +362,13 @@ pub(crate) struct SessionClientExplicitPathRequest {
     pub max_surb_upstream: Option<human_bandwidth::re::bandwidth::Bandwidth>,
     pub session_pool: Option<usize>,
     pub max_client_sessions: Option<usize>,
-    /// PIX SSA quota `(polys_per_ssa, shares_per_poly)`.
+    /// PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.
     ///
-    /// When set, the Session will use the PIX protocol with the given quota
-    /// parameters. Note: values are `u32` here due to path-based
-    /// quota computation.
+    /// Same meaning and same constraints as on
+    /// [`SessionClientRequest`](SessionClientRequest::pix_ssa_quota).
     #[serde(default)]
-    #[schema(value_type = Option<Vec<u32>>, example = json!([8, 4]))]
-    pub pix_ssa_quota: Option<(u32, u32)>,
+    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
+    pub pix_ssa_quota: Option<(u16, u8, u8)>,
 }
 
 impl SessionClientExplicitPathRequest {
@@ -449,7 +455,11 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
-                    pix_ssa_quota: self.pix_ssa_quota,
+                    pix_ssa_quota: self
+                        .pix_ssa_quota
+                        .map(|(polys, shares, surplus)| PixParams::try_new(polys, shares, surplus))
+                        .transpose()
+                        .map_err(|_| ApiErrorStatus::InvalidInput)?,
                     ..Default::default()
                 }
             },
@@ -1299,12 +1309,12 @@ mod tests {
             max_surb_upstream: None,
             session_pool: None,
             max_client_sessions: None,
-            pix_ssa_quota: Some((8, 4)),
+            pix_ssa_quota: Some((8, 4, 2)),
         };
         let serialized = serde_json::to_value(&req).expect("serialize");
-        assert_eq!(serialized["pixSsaQuota"], serde_json::json!([8, 4]));
+        assert_eq!(serialized["pixSsaQuota"], serde_json::json!([8, 4, 2]));
         let deserialized: SessionClientRequest =
             serde_json::from_value(serialized).expect("deserialize");
-        assert_eq!(deserialized.pix_ssa_quota, Some((8, 4)));
+        assert_eq!(deserialized.pix_ssa_quota, Some((8, 4, 2)));
     }
 }

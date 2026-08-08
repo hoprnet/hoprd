@@ -95,14 +95,16 @@ pub struct PixSettings {
     pub num_ssa_parts: usize,
     /// Shares required to reconstruct one SSA part (`ssa_part_size`). Minimum 2.
     pub ssa_part_size: usize,
-    /// Shares emitted beyond `ssa_part_size`; this surplus is delivered unbilled.
+    /// Shares emitted beyond `ssa_part_size`. Counted in the quota like any other emitted
+    /// share, so raising it raises the deposit in proportion.
     pub additional_shares: usize,
     /// Lower bound of the per-SSA data quota the Exit will accept, in bytes.
     pub quota_range_min: u64,
     /// Upper bound of the per-SSA data quota the Exit will accept, in bytes.
     ///
-    /// An Entry offering `num_ssa_parts × ssa_part_size × HoprPacket::PAYLOAD_SIZE`
-    /// outside this range is rejected with `UnacceptablePixParams`.
+    /// An Entry offering `num_ssa_parts × (ssa_part_size + additional_shares) ×
+    /// HoprPacket::PAYLOAD_SIZE` outside this range is rejected with
+    /// `UnacceptablePixParams`.
     pub quota_range_max: u64,
     /// Exit's deadline for the SSA commitment to arrive.
     pub max_ssa_delivery_time: std::time::Duration,
@@ -126,14 +128,19 @@ pub struct PixSettings {
 
 impl PixSettings {
     /// Per-SSA data quota in bytes implied by these dimensions, matching the Exit's own
-    /// `polys × shares × HoprPacket::PAYLOAD_SIZE` computation.
+    /// `polys × (shares + surplus) × HoprPacket::PAYLOAD_SIZE` computation.
+    ///
+    /// The surplus is in the product because it is delivered in every cycle whether or not
+    /// a share is lost — a polynomial leaves the generator's queue only once it has emitted
+    /// `shares + surplus` — so it is service the Exit always performs, and is charged for on
+    /// purchase rather than on claim.
     ///
     /// Useful to callers sizing [`quota_range_min`](Self::quota_range_min) /
     /// [`quota_range_max`](Self::quota_range_max), and to tests converting a number of
     /// SSA cycles into an expected deposit total.
     pub fn quota_per_ssa(&self) -> u64 {
         self.num_ssa_parts as u64
-            * self.ssa_part_size as u64
+            * (self.ssa_part_size + self.additional_shares) as u64
             * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
     }
 }
