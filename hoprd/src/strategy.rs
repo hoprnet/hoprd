@@ -20,9 +20,40 @@ use hopr_strategy::pix::{
 };
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
 use serde::{Deserialize, Serialize};
+
 use smart_default::SmartDefault;
 use strum::{Display as StrumDisplay, VariantNames};
 use validator::{Validate, ValidationError};
+
+/// The PIX deposit address must be an Ethereum address, asserted where the requirement lives.
+///
+/// Gated on the same feature as the pool itself, so the assertion exists exactly when the thing
+/// it constrains does. `strategy-pix` also enables `hopr-lib/pix-secp256k1`, which is what makes
+/// this hold — this is the backstop for the spec being flipped by something other than that line.
+///
+/// [`NonAnonymousDepositPool`] settles a deposit with a plain `HoprToken.transfer` signed by the
+/// node key. A Baby JubJub public key is a curve point, not an account, so no transfer can reach
+/// one — and which instantiation of `HoprPixSpec` is in play is decided by the *feature graph*,
+/// not by anything visible in this file.
+///
+/// That combination has already cost a day. hoprnet 27b4b255f9 enabled QUIC by default and, as
+/// collateral, dropped `default-features = false` from two workspace dependencies whose `default`
+/// set contains `bjj`. Cargo features being additive, every deposit address downstream silently
+/// became a curve point. Nothing failed to build. At runtime the only symptom was
+/// `pix event failed: input argument to the function is invalid` and a strategy that never
+/// deposited — indistinguishable, from the outside, from a Session that had simply stalled.
+///
+/// This turns that into a compile error naming the cause. It costs nothing at runtime: the
+/// function is never called, only type-checked.
+#[cfg(feature = "strategy-pix")]
+const _: () = {
+    #[allow(dead_code)]
+    fn pix_deposit_addresses_must_be_ethereum(
+        address: <hopr_lib::exports::transport::HoprPixSpec as hopr_lib::exports::transport::PixSpec>::DepositAddress,
+    ) -> hopr_lib::api::types::primitive::prelude::Address {
+        address
+    }
+};
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {

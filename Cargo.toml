@@ -15,19 +15,35 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-utils = { package = "hopr-utilities", version = "0.5.1" }
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
+hopr-utils = { package = "hopr-utilities", version = "0.6.0" }
+# `pix-secp256k1` is not optional for this workspace: hoprd's PIX strategy settles deposits with
+# a plain `HoprToken.transfer`, which can only reach an Ethereum address. It is stated positively
+# rather than left to `default-features = false`, because that opt-out only holds while every
+# crate in the graph agrees to it — `hopr-utils-session` pulling `hopr-lib` with defaults was
+# enough to undo it, silently. `hoprd::strategy` asserts the resulting type at compile time.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false, features = [
+  "pix-secp256k1",
+] }
 hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/pix", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=1.18.0" }
+#
+# The six below used to come off the hoprnet branch alongside `hopr-lib`. They were the
+# `impls/` workspace members, and hoprnet 10f6d80 extracted them to the `hopr-impls` repo
+# and now consumes them from crates.io itself — so pointing them at the branch resolves to
+# nothing. Versions and feature flags mirror hoprnet's own declarations exactly; they are
+# the same crates it links against, and a divergence here would show up as two copies of a
+# type that ought to be one.
+hopr-api = { version = "=1.19.0" }
+hopr-chain-connector = "0.22.1"
+hopr-ct-full-network = { version = "0.3.0", default-features = false }
+hopr-network-graph = { version = "0.3.1", default-features = false }
+hopr-session-server-forwarder = { version = "0.1.0", default-features = false }
+hopr-ticket-manager = "0.5.1"
+# `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
+# the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
+hopr-transport-p2p = { version = "0.9.4", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"

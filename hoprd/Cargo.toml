@@ -30,9 +30,21 @@ runtime-tokio = [
   "hopr-strategy/strategy-auto-redeeming",
   "hopr-strategy/strategy-closure-finalizer",
   "hopr-strategy/strategy-channel-lifecycle",
-  "hopr-strategy/strategy-pix",
+  "strategy-pix",
   "hopr-transport-p2p/runtime-tokio",
 ]
+# The PIX strategy and the curve that makes it settleable, deliberately inseparable.
+#
+# `NonAnonymousDepositPool` pays a deposit with a plain `HoprToken.transfer` signed by the node
+# key, so it can only ever reach an Ethereum address. `hopr-lib/pix-secp256k1` is what makes
+# `HoprPixSpec` produce those; without it the addresses are Baby JubJub curve points and every
+# deposit silently fails. Enabling either alone is a configuration that builds cleanly and then
+# does not work, so it is not offered: Cargo cannot express "these two must agree", but it can
+# express "these two are one feature".
+#
+# `src/strategy.rs` carries a compile-time assertion as the backstop, for the case where the
+# spec is flipped by something other than this line.
+strategy-pix = ["hopr-strategy/strategy-pix", "hopr-lib/pix-secp256k1"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",
