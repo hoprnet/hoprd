@@ -85,10 +85,38 @@
 //! megabytes through the packet pipeline; a debug build will not reach the packet rate the
 //! SSA sizing assumes, and cycles will stretch until the run hits its safety deadline.
 //!
+//! It must also name a **deposit pool**, which no default supplies:
+//!
 //! ```bash
-//! cargo build --release -p hoprd
+//! cargo build --release -p hoprd --features strategy-pix-secp256k1
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
+//!
+//! # Which deposit pool
+//!
+//! A PIX deposit address is whatever `HoprPixSpec` produces, and a deposit pool can only settle
+//! to the address type its own keypair produces. hoprd bundles the two into one feature so they
+//! cannot disagree:
+//!
+//! | hoprd feature | pool | deposit address | status |
+//! |---|---|---|---|
+//! | `strategy-pix-secp256k1` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
+//! | `strategy-pix-bjj` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
+//!
+//! They are mutually exclusive and `hopr-strategy` rejects both with a `compile_error!`, so
+//! *neither* is in hoprd's `default`: Cargo unifies features across a workspace build, and a
+//! default pairing would collide with the one this crate selects. A plain
+//! `cargo build --release -p hoprd` therefore produces a binary with no PIX at all — it logs
+//! that at startup if `HOPRD_ENABLE_PIX` is set, rather than silently doing nothing.
+//!
+//! Either way the binary is wrong for this test in a way that costs a full bootstrap to
+//! discover, which is why `pix-demo.sh` checks it before starting the cluster.
+//!
+//! Two separate builds are involved and nothing links them: this crate's own
+//! `strategy-pix-secp256k1` (in `localcluster/Cargo.toml`) selects the pool the *harness*
+//! compiles against, while `HOPRD_BIN` is a *prebuilt binary* carrying whichever pool it was
+//! built with. When `CurvyDepositPool` is implemented and this test moves to Baby JubJub, both
+//! have to change together.
 //!
 //! Each test must be run individually — see [`common`] for details.
 //!

@@ -25,6 +25,11 @@
 # release `hoprd` at HOPRD_BIN (default `target/release/hoprd`) and HOPRD_CHAIN_IMAGE — see
 # the test's module docs.
 #
+# The hoprd binary carries exactly one deposit pool, chosen at build time by a `strategy-pix-*`
+# feature; `PIX_POOL` (default `secp256k1`) says which one this run expects, and the binary is
+# checked against it before the cluster is started. `PIX_POOL=bjj` selects the Baby JubJub pool,
+# which is currently a stub that panics — it exists so the wiring can be exercised end to end.
+#
 # Safe to re-run: a stale chain container or leftover nodes from an interrupted attempt are
 # cleared on the way in, and Ctrl-C tears the cluster down on the way out.
 
@@ -519,10 +524,46 @@ export HOPRD_BIN HOPRD_CHAIN_IMAGE
 [ -n "${PIX_DEMO_FLOAT:-}" ] && export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 [ -n "${PIX_DEMO_RATE:-}" ] && export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 
+# The deposit pool is a *build-time* choice in the binary, and this script runs a prebuilt one.
+# A binary built with the other pairing starts and bootstraps normally, then either never
+# deposits (wrong curve) or panics (bjj, whose pool is a stub) — several minutes in, with the
+# audience watching. So check it before spending that time.
+#
+# `POOL` in `hoprd::strategy` is a `&str` compiled into the binary for exactly this, and for the
+# `pool=` field of the node's "enabling the PIX strategy" log line.
+: "${PIX_POOL:=secp256k1}"
+case "$PIX_POOL" in
+secp256k1) POOL_MARKER="non-anonymous-secp256k1" ;;
+bjj) POOL_MARKER="curvy-bjj" ;;
+*)
+  echo "PIX_POOL must be 'secp256k1' or 'bjj', got '$PIX_POOL'"
+  exit 1
+  ;;
+esac
+# Additive to the default feature set: neither pairing is default, so this is the only flag.
+BUILD_CMD="cargo build --release -p hoprd --features strategy-pix-$PIX_POOL"
+
 if [ ! -x "$HOPRD_BIN" ]; then
   echo "no hoprd binary at $HOPRD_BIN — build it first:"
-  echo "    cargo build --release -p hoprd"
+  echo "    $BUILD_CMD"
   exit 1
+fi
+
+if ! grep -qa "$POOL_MARKER" "$HOPRD_BIN"; then
+  echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
+  echo "Rebuild it:"
+  echo "    $BUILD_CMD"
+  echo
+  echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
+  echo " binary carries exactly one.)"
+  exit 1
+fi
+
+if [ "$PIX_POOL" = "bjj" ]; then
+  echo "PIX_POOL=bjj selects CurvyDepositPool, whose methods are unimplemented and panic."
+  echo "The cluster will bootstrap and then die on the first deposit. This is expected until"
+  echo "the Baby JubJub pool is implemented; use PIX_POOL=secp256k1 for a run that completes."
+  echo
 fi
 
 # Everything cached from a previous run has to go: `scrape`/`balance` deliberately keep the

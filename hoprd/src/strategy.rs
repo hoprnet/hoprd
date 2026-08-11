@@ -11,17 +11,14 @@ use hopr_lib::api::{
     },
     tickets::TicketManagement,
 };
-// `hopr_strategy::pix` lives behind `strategy-pix`, which `runtime-tokio` turns on — the
-// same gate as the block that uses these, so the import has to carry it too.
-#[cfg(feature = "runtime-tokio")]
+// `hopr_strategy::pix` needs one of the `strategy-pix-*` pairings, which is now an independent
+// choice from `runtime-tokio` — so the imports, the build block and the assertion all gate on
+// `pix` below rather than on the runtime.
+#[cfg(feature = "pix")]
 use hopr_strategy::pix::{
-    non_anonymous_pool::NonAnonymousDepositPoolConfig,
+    PoolConfig, PoolKeypair,
     strategy::{PixStrategy, PixStrategyConfig},
 };
-// Gated on `strategy-pix` rather than `runtime-tokio`, like the assertion that uses it:
-// the former is implied by the latter, not the other way round.
-#[cfg(feature = "strategy-pix")]
-use hopr_strategy::pix::PoolKeypair;
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
 use serde::{Deserialize, Serialize};
 
@@ -32,9 +29,9 @@ use validator::{Validate, ValidationError};
 /// The deposit address the PIX spec produces must be the one the selected pool can spend.
 ///
 /// Gated on the same feature as the pool itself, so the assertion exists exactly when the thing
-/// it constrains does. `strategy-pix` enables `hopr-lib/pix-secp256k1`, which is what currently
-/// makes this hold — this is the backstop for the spec being flipped by something other than
-/// that line.
+/// it constrains does. Each `strategy-pix-*` pairing bundles the pool with the spec feature that
+/// makes it settleable, which is what makes this hold — this is the backstop for the spec being
+/// flipped by something other than that pairing.
 ///
 /// Which instantiation of `HoprPixSpec` is in play is decided by the *feature graph*, not by
 /// anything visible in this file. Today's pool settles with a plain `HoprToken.transfer` signed
@@ -49,14 +46,24 @@ use validator::{Validate, ValidationError};
 /// deposited — indistinguishable, from the outside, from a Session that had simply stalled.
 ///
 /// Stated against [`PoolKeypair`] rather than against [`Address`] directly, the invariant is
-/// *which curve the pool is for* rather than *secp256k1*, so it keeps holding unedited when a
-/// Baby JubJub pool is wired in and both sides move together. What it rejects is the two sides
-/// moving apart, which is the failure that actually happened.
+/// *which curve the pool is for* rather than *secp256k1*, so it holds unedited under either
+/// pairing — both sides move together. What it rejects is the two sides moving apart, which is
+/// the failure that actually happened.
 ///
 /// It costs nothing at runtime: the function is never called, only type-checked.
 ///
 /// [`Address`]: hopr_lib::api::types::primitive::prelude::Address
-#[cfg(feature = "strategy-pix")]
+/// The deposit pool this binary was built with, for the startup log line.
+///
+/// Every other guarantee here is compile-time, and the localcluster launches a *prebuilt* binary
+/// from `HOPRD_BIN` — so a stale artifact built with the other pairing would run with none of
+/// those checks having seen it. This is the one thing that makes the choice visible at runtime.
+#[cfg(feature = "strategy-pix-secp256k1")]
+pub const POOL: &str = "non-anonymous-secp256k1";
+#[cfg(all(feature = "strategy-pix-bjj", not(feature = "strategy-pix-secp256k1")))]
+pub const POOL: &str = "curvy-bjj";
+
+#[cfg(feature = "pix")]
 const _: () = {
     type SpecDepositAddress =
         <hopr_lib::exports::transport::HoprPixSpec as hopr_lib::exports::transport::PixSpec>::DepositAddress;
@@ -103,7 +110,7 @@ fn empty_strategies() -> Vec<StrategyKind> {
 /// Used for the PIX knobs, which cannot be expressed in YAML (see
 /// [`build_strategies`]). A malformed value is a configuration mistake rather than a
 /// reason to refuse to start, so it is logged and the default is kept.
-#[cfg(feature = "runtime-tokio")]
+#[cfg(feature = "pix")]
 fn pix_env_or<T>(var: &str, default: T) -> T
 where
     T: std::str::FromStr,
@@ -120,7 +127,7 @@ where
 
 /// [`pix_env_or`] for [`Duration`], which has no `FromStr`; accepts humantime syntax
 /// such as `30s` or `2m`.
-#[cfg(feature = "runtime-tokio")]
+#[cfg(feature = "pix")]
 fn pix_env_duration_or(var: &str, default: Duration) -> Duration {
     match std::env::var(var) {
         Ok(raw) => humantime_serde::re::humantime::parse_duration(raw.trim()).unwrap_or_else(
@@ -303,11 +310,37 @@ where
     // PIX is not a YAML-configurable StrategyKind because its
     // HoprBalance fields don't round-trip through serde_saphyr. Instead it's
     // enabled via environment variable for test/development use.
-    #[cfg(feature = "runtime-tokio")]
+    #[cfg(feature = "pix")]
     if std::env::var("HOPRD_ENABLE_PIX")
         .ok()
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
     {
+        let mut pool_cfg = PoolConfig {
+            max_deposit_tracking_time: pix_env_duration_or(
+                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
+                Duration::from_secs(3600),
+            ),
+            // Retry budgets are left at the upstream defaults: this block exists to wire
+            // the handful of values hoprd exposes as environment variables, and every
+            // other field is better served by whatever upstream currently documents.
+            ..Default::default()
+        };
+        // Gas is meaningful only to the on-chain pool, which funds a recovered stealth address
+        // so it can pay for its own `withdraw_from_signer` sweep. Set here rather than in the
+        // literal above so the field's absence from the other pool's config is a compile-time
+        // fact — reading the variable and dropping it would be the silent-misconfiguration
+        // pattern this whole arrangement exists to avoid.
+        //
+        // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
+        // `fund_sweep_gas_impl` a no-op and leaves the address without gas.
+        #[cfg(feature = "strategy-pix-secp256k1")]
+        {
+            pool_cfg.gas_xdai_per_sweep = pix_env_or(
+                "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
+                "0.01 xdai".parse().expect("valid static amount"),
+            );
+        }
+
         let pix_cfg = PixStrategyConfig {
             price_per_byte: pix_env_or(
                 "HOPRD_PIX_PRICE_PER_BYTE",
@@ -317,38 +350,25 @@ where
                 "HOPRD_PIX_MAX_SSA_ALLOCATION",
                 "100 wxHOPR".parse().expect("valid static amount"),
             ),
-            pool: NonAnonymousDepositPoolConfig {
-                max_deposit_tracking_time: pix_env_duration_or(
-                    "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
-                    Duration::from_secs(3600),
-                ),
-                // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
-                // `fund_sweep_gas_impl` a no-op and leaves the recovered stealth address
-                // without gas to pay for its own `withdraw_from_signer` sweep.
-                gas_xdai_per_sweep: pix_env_or(
-                    "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
-                    "0.01 xdai".parse().expect("valid static amount"),
-                ),
-                // Retry budgets are left at the upstream defaults: this block exists to wire
-                // the handful of values hoprd exposes as environment variables, and every
-                // other field is better served by whatever upstream currently documents.
-                ..Default::default()
-            },
+            pool: pool_cfg,
             pix_recovery_db_path: None,
             pix_recovery_password_env: None,
             // Likewise the deposit/withdrawal batching windows.
             ..Default::default()
         };
+        // The pool is a build-time choice with no runtime trace, and the localcluster runs a
+        // prebuilt binary — so without this line there is nothing in a log to say which pool a
+        // running node actually has. `POOL` is the name the test harness asserts against.
         tracing::info!(
+            pool = POOL,
             price_per_byte = %pix_cfg.price_per_byte,
             max_ssa_allocation = %pix_cfg.max_ssa_allocation,
             max_deposit_tracking_time = ?pix_cfg.pool.max_deposit_tracking_time,
-            gas_xdai_per_sweep = %pix_cfg.pool.gas_xdai_per_sweep,
             "enabling the PIX strategy"
         );
-        // `build_non_anonymous` picks the default on-chain deposit pool; the generic
-        // `build_with_pool` exists for alternative (anonymous) pool implementations.
-        match PixStrategy::new(pix_cfg).build_non_anonymous(Arc::clone(&node)) {
+        // `build_default_pool` selects whichever pool the `strategy-pix-*` pairing chose; the
+        // generic `build_with_pool` exists for supplying another.
+        match PixStrategy::new(pix_cfg).build_default_pool(Arc::clone(&node)) {
             Ok(pix) => {
                 multi = Box::new(MultiStrategy::new(vec![multi, pix]));
                 #[cfg(all(feature = "telemetry", not(test)))]
@@ -358,6 +378,21 @@ where
                 tracing::error!(error = %e, "failed to build PixStrategy");
             }
         }
+    }
+
+    // Without a `strategy-pix-*` pairing there is no pool to build, so the block above is
+    // compiled out entirely and `HOPRD_ENABLE_PIX=1` would otherwise do nothing at all — no
+    // strategy, no log line, no error. Silence is the one outcome this must not have.
+    #[cfg(not(feature = "pix"))]
+    if std::env::var("HOPRD_ENABLE_PIX")
+        .ok()
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    {
+        tracing::error!(
+            "HOPRD_ENABLE_PIX is set but this binary was built without a PIX deposit pool, so \
+             the PIX strategy is not available. Rebuild with `--features strategy-pix-bjj` \
+             (production) or `--features strategy-pix-secp256k1` (tests and demo)."
+        );
     }
 
     multi

@@ -16,14 +16,11 @@ hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
 hopr-utils = { package = "hopr-utilities", version = "0.6.0" }
-# `pix-secp256k1` is not optional for this workspace: hoprd's PIX strategy settles deposits with
-# a plain `HoprToken.transfer`, which can only reach an Ethereum address. It is stated positively
-# rather than left to `default-features = false`, because that opt-out only holds while every
-# crate in the graph agrees to it — `hopr-utils-session` pulling `hopr-lib` with defaults was
-# enough to undo it, silently. `hoprd::strategy` asserts the resulting type at compile time.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false, features = [
-  "pix-secp256k1",
-] }
+# No PIX curve feature here on purpose. The curve is chosen by hoprd's `strategy-pix-*` pairing,
+# which bundles it with the matching deposit pool; pinning it at the workspace level would force
+# one curve on every build and make the other unreachable — which is exactly the state this
+# workspace was in before the split.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/pix", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
 
