@@ -111,25 +111,19 @@ pub struct GenerationOutput {
 /// Builds a frozen test identity's [`HoprKeys`] from its packet and chain secrets.
 ///
 /// Since hopr-types 2.2, `HoprKeys` also carries a Baby JubJub key whose secret must be a
-/// canonical BJJ scalar (only ~1/32 of 32-byte values qualify). These identities are frozen so
-/// the derived EVM, Safe and Module addresses stay stable across cluster runs — and those derive
-/// from the chain/packet keys, not the BJJ key. We therefore deterministically pick the first
-/// valid BJJ scalar seeded from the chain secret, keeping the identities reproducible while
-/// satisfying the three-key `HoprKeys`.
+/// canonical BJJ scalar. These identities are frozen so the derived EVM, Safe and Module
+/// addresses stay stable across cluster runs — and those derive from the chain/packet keys, not
+/// the BJJ key. Clearing the most-significant byte puts the derived BJJ secret below the scalar
+/// modulus; a zero secret is replaced with one because it would produce the identity point.
 fn frozen_hopr_keys(packet_key: [u8; 32], chain_key: [u8; 32]) -> HoprKeys {
     let mut bjj_key = chain_key;
-    loop {
-        if let Ok(keys) = HoprKeys::try_from((packet_key, chain_key, bjj_key)) {
-            return keys;
-        }
-        // Deterministic big-endian increment until a canonical BJJ scalar is found.
-        for byte in bjj_key.iter_mut().rev() {
-            *byte = byte.wrapping_add(1);
-            if *byte != 0 {
-                break;
-            }
-        }
+    bjj_key[0] = 0;
+    if bjj_key.iter().all(|byte| *byte == 0) {
+        bjj_key[31] = 1;
     }
+
+    HoprKeys::try_from((packet_key, chain_key, bjj_key))
+        .expect("canonicalized frozen BJJ key must be valid")
 }
 
 lazy_static::lazy_static! {
@@ -180,7 +174,11 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
 /// catch-up phase rather than the live phase (where announcement events are
 /// not monitored).
 pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOutput> {
-    info!("generate function {} node identities in {}", config.num_nodes, config.config_home.display());
+    info!(
+        "generate function {} node identities in {}",
+        config.num_nodes,
+        config.config_home.display()
+    );
     std::fs::create_dir_all(&config.config_home)?;
     let home_path = &config.config_home;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
@@ -206,7 +204,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     .await?;
     info!("Connecting to Blokli as deployer account...");
     anvil_connector.connect().await?;
-    info!("Connected to Blokli as deployer account {}", anvil_connector.me());
+    info!(
+        "Connected to Blokli as deployer account {}",
+        anvil_connector.me()
+    );
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
     info!("Initial token balance for each node: {initial_token_balance}");
@@ -251,7 +252,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     info!("Node strategy: {node_strategy:?}");
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
-    info!("Generating {effective_num_nodes} node identities in {}", home_path.display());
+    info!(
+        "Generating {effective_num_nodes} node identities in {}",
+        home_path.display()
+    );
     for id in 0..effective_num_nodes {
         info!("Generating in a loop, node {id} identity...");
         let kp = if config.random_identities {
@@ -498,59 +502,37 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         });
     }
 
-    let mut extras = Vec::with_capacity(config.num_extras);
-
-    for id in 0..config.num_extras.clamp(0, EXTRA_KEYS.len()) {
-        let kp = EXTRA_KEYS[id].clone();
-        let node_address = kp.chain_key.public().to_address();
-        eprintln!("Extra {id}: Address {node_address}");
-
-        let node_connector = std::sync::Arc::new(
-            create_trustful_safeless_hopr_blokli_connector(
-                &kp.chain_key,
-                BlockchainConnectorConfig {
-                    tx_timeout_multiplier: DEFAULT_TX_TIMEOUT_MULTIPLIER,
-                    ..Default::default()
-                },
-                blokli_client.clone(),
-            )
-            .await?,
+    let extras = if config.num_extras != 0 {
+        info!(
+            "Generating {} extra identities in {}",
+            config.num_extras,
+            home_path.display()
         );
 
-        eprint!("Extra {id}: Checking balances...");
+        let mut extras = Vec::with_capacity(config.num_extras);
 
-        let node_native_balance: XDaiBalance = node_connector.balance(node_address).await?;
-        if node_native_balance < initial_native_balance {
-            let top_up = initial_native_balance - node_native_balance;
-            if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
-                return Err(anyhow::anyhow!(
-                    "Account {} must have at least {top_up}.",
-                    anvil_connector.me()
-                ));
-            }
+        for id in 0..config.num_extras.clamp(0, EXTRA_KEYS.len()) {
+            let kp = EXTRA_KEYS[id].clone();
+            let node_address = kp.chain_key.public().to_address();
+            info!("Extra {id}: Address {node_address}");
 
-            anvil_connector
-                .withdraw(top_up, &node_address)
-                .await?
-                .await?;
-            eprint!("\x1b[2K\rExtra {id}: {top_up} transferred to {node_address}");
-        } else {
-            eprint!(
-                "\x1b[2K\rExtra {id}: {node_address} already has {node_native_balance} xDai tokens"
+            let node_connector = std::sync::Arc::new(
+                create_trustful_safeless_hopr_blokli_connector(
+                    &kp.chain_key,
+                    BlockchainConnectorConfig {
+                        tx_timeout_multiplier: DEFAULT_TX_TIMEOUT_MULTIPLIER,
+                        ..Default::default()
+                    },
+                    blokli_client.clone(),
+                )
+                .await?,
             );
-        }
 
-        eprint!("\x1b[2K\rExtra {id}: Checking Safe deployment...");
-        let safe = if let Some(safe) = node_connector
-            .safe_info(SafeSelector::Owner(node_address))
-            .await?
-        {
-            safe
-        } else {
-            eprint!("\x1b[2K\rExtra {id}: Topping up to {initial_token_balance}...");
-            let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
-            if node_token_balance < initial_token_balance {
-                let top_up = initial_token_balance - node_token_balance;
+            info!("Extra {id}: Checking balances...");
+
+            let node_native_balance: XDaiBalance = node_connector.balance(node_address).await?;
+            if node_native_balance < initial_native_balance {
+                let top_up = initial_native_balance - node_native_balance;
                 if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
                     return Err(anyhow::anyhow!(
                         "Account {} must have at least {top_up}.",
@@ -562,63 +544,111 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     .withdraw(top_up, &node_address)
                     .await?
                     .await?;
-                eprint!("\x1b[2K\rExtra {id}: {top_up} transferred to {node_address}");
+                info!("Extra {id}: {top_up} transferred to {node_address}");
             } else {
-                eprint!(
-                    "\x1b[2K\rExtra {id}: {node_address} already has {node_token_balance} wxHOPR tokens"
-                );
+                info!("Extra {id}: {node_address} already has {node_native_balance} xDai tokens");
             }
 
-            eprint!("\x1b[2K\rExtra {id}: Deploying Safe...");
-            let node_connector_clone = node_connector.clone();
-            let poll_handle = tokio::task::spawn(async move {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
-                loop {
-                    if let Some(s) = node_connector_clone
-                        .safe_info(SafeSelector::Owner(node_address))
+            info!("Extra {id}: Checking Safe deployment...");
+            let safe = if let Some(safe) = node_connector
+                .safe_info(SafeSelector::Owner(node_address))
+                .await?
+            {
+                safe
+            } else {
+                info!("Extra {id}: Topping up to {initial_token_balance}...");
+                let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
+                if node_token_balance < initial_token_balance {
+                    let top_up = initial_token_balance - node_token_balance;
+                    if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
+                        return Err(anyhow::anyhow!(
+                            "Account {} must have at least {top_up}.",
+                            anvil_connector.me()
+                        ));
+                    }
+
+                    anvil_connector
+                        .withdraw(top_up, &node_address)
                         .await?
-                    {
-                        return Ok::<_, anyhow::Error>(s);
-                    }
-                    if std::time::Instant::now() >= deadline {
-                        anyhow::bail!("Extra {id}: safe not indexed after 120s");
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        .await?;
+                    info!("Extra {id}: {top_up} transferred to {node_address}");
+                } else {
+                    info!(
+                        "Extra {id}: {node_address} already has {node_token_balance} wxHOPR tokens"
+                    );
                 }
+
+                info!("Extra {id}: Deploying Safe...");
+                let node_connector_clone = node_connector.clone();
+                let poll_handle = tokio::task::spawn(async move {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+                    loop {
+                        if let Some(s) = node_connector_clone
+                            .safe_info(SafeSelector::Owner(node_address))
+                            .await?
+                        {
+                            return Ok::<_, anyhow::Error>(s);
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            anyhow::bail!("Extra {id}: safe not indexed after 120s");
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                });
+                let deploy_result: anyhow::Result<()> = async {
+                    node_connector
+                        .deploy_safe(initial_token_balance)
+                        .await?
+                        .await?;
+                    Ok(())
+                }
+                .await;
+                if let Err(e) = deploy_result {
+                    poll_handle.abort();
+                    return Err(e);
+                }
+                poll_handle.await??
+            };
+
+            let id_file = home_path.join(format!("extra_id_{id}.id"));
+            let id_file_str = id_file
+                .to_str()
+                .ok_or(anyhow::anyhow!("Invalid path"))?
+                .to_owned();
+            kp.write_eth_keystore(&id_file_str, EXTRA_IDENTITY_PASSWORD)?;
+
+            info!("Extra {id}: Identity written to {id_file_str}");
+
+            extras.push(GeneratedIdentity {
+                id,
+                address: node_address.to_string(),
+                safe_address: safe.address.to_string(),
+                module_address: safe.module.to_string(),
+                id_file,
+                password: EXTRA_IDENTITY_PASSWORD.to_string(),
             });
-            let deploy_result: anyhow::Result<()> = async {
-                node_connector
-                    .deploy_safe(initial_token_balance)
-                    .await?
-                    .await?;
-                Ok(())
-            }
-            .await;
-            if let Err(e) = deploy_result {
-                poll_handle.abort();
-                return Err(e);
-            }
-            poll_handle.await??
-        };
+        }
 
-        let id_file = home_path.join(format!("extra_id_{id}.id"));
-        let id_file_str = id_file
-            .to_str()
-            .ok_or(anyhow::anyhow!("Invalid path"))?
-            .to_owned();
-        kp.write_eth_keystore(&id_file_str, EXTRA_IDENTITY_PASSWORD)?;
-
-        eprintln!("\x1b[2K\rExtra {id}: Identity written to {id_file_str}");
-
-        extras.push(GeneratedIdentity {
-            id,
-            address: node_address.to_string(),
-            safe_address: safe.address.to_string(),
-            module_address: safe.module.to_string(),
-            id_file,
-            password: EXTRA_IDENTITY_PASSWORD.to_string(),
-        });
-    }
+        extras
+    } else {
+        info!("No extra identities requested");
+        Vec::new()
+    };
 
     Ok(GenerationOutput { nodes, extras })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frozen_extra_keys_have_valid_bjj_scalars() {
+        assert_eq!(EXTRA_KEYS.len(), MAX_EXTRA_IDENTITIES);
+        assert!(
+            EXTRA_KEYS
+                .iter()
+                .all(|keys| keys.bjj_key.secret().as_ref()[0] == 0)
+        );
+    }
 }

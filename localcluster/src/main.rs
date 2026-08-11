@@ -167,6 +167,8 @@ async fn main() -> Result<()> {
         let identities = identity::generate(&config).await?;
         summary.lock().await.set_extras(&identities.extras);
 
+        info!("starting latency relays");
+
         if let (Some(latency_cfg), Some(latency)) = (&latency_model, &args.latency) {
             // Relays must be listening before nodes start dialing the announced relay ports.
             let latency_cfg = Arc::new(latency_cfg.clone());
