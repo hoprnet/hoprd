@@ -35,7 +35,7 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "luk
 # nothing. Versions and feature flags mirror hoprnet's own declarations exactly; they are
 # the same crates it links against, and a divergence here would show up as two copies of a
 # type that ought to be one.
-hopr-api = { version = "=1.19.0" }
+hopr-api = { version = "=1.20.0" }
 hopr-chain-connector = "0.22.1"
 hopr-ct-full-network = { version = "0.3.0", default-features = false }
 hopr-network-graph = { version = "0.3.1", default-features = false }
