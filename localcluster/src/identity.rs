@@ -29,6 +29,7 @@ use hoprd::{
     strategy::{MultiStrategyConfig, StrategyKind},
 };
 use hoprd_api::config::{Api, Auth};
+use tracing::info;
 
 pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
 pub const DEFAULT_PRIVATE_KEY: &str =
@@ -179,16 +180,19 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
 /// catch-up phase rather than the live phase (where announcement events are
 /// not monitored).
 pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOutput> {
+    info!("generate function {} node identities in {}", config.num_nodes, config.config_home.display());
     std::fs::create_dir_all(&config.config_home)?;
     let home_path = &config.config_home;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
 
     let blokli_client =
         BlokliClient::new(config.blokli_url.parse()?, BlokliClientConfig::default());
+    info!("Connecting to Blokli at {}", config.blokli_url);
     let status = blokli_client.query_health().await?;
     if !status.eq_ignore_ascii_case("ok") {
         return Err(anyhow::anyhow!("Blokli is not usable: {status}"));
     }
+    info!("Blokli is healthy at {}", config.blokli_url);
 
     // Create connector for the deployer account
     let mut anvil_connector = create_trustful_safeless_hopr_blokli_connector(
@@ -200,19 +204,29 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         blokli_client.clone(),
     )
     .await?;
+    info!("Connecting to Blokli as deployer account...");
     anvil_connector.connect().await?;
+    info!("Connected to Blokli as deployer account {}", anvil_connector.me());
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
+    info!("Initial token balance for each node: {initial_token_balance}");
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
+    info!("Initial native balance for each node: {initial_native_balance}");
     let p2p_host = &config.p2p_host;
-
-    let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
+    info!("P2P host for pre-announcement: {p2p_host}");
+    info!("config.num_nodes: {} skipping the clamp", config.num_nodes);
+    // let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
+    let effective_num_nodes = config.num_nodes;
+    info!("Effective number of nodes to generate: {effective_num_nodes}");
     let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
         redeem_on_winning: true,
         ..Default::default()
     })];
+    info!("Node strategy before: {strategies:?}");
     if config.enable_channel_strategy {
+        info!("Enabling channel lifecycle strategy for {effective_num_nodes} nodes");
         let mesh_target = effective_num_nodes.saturating_sub(1);
+        info!("ChannelLifecycleStrategy population thresholds set to {mesh_target}");
         strategies.push(StrategyKind::ChannelLifecycle(Box::new(
             ChannelLifecycleConfig {
                 population: PopulationConfig {
@@ -226,22 +240,27 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 ..Default::default()
             },
         )));
+        info!("Node strategy after: {strategies:?}");
     }
+    info!("Node strategy outside if: {strategies:?}");
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
         execution_interval: std::time::Duration::from_secs(60),
         strategies,
     };
+    info!("Node strategy: {node_strategy:?}");
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
-
+    info!("Generating {effective_num_nodes} node identities in {}", home_path.display());
     for id in 0..effective_num_nodes {
+        info!("Generating in a loop, node {id} identity...");
         let kp = if config.random_identities {
             HoprKeys::random()
         } else {
             NODE_KEYS[id].clone()
         };
         let node_address = kp.chain_key.public().to_address();
+        info!("Node {id}: Address {node_address}");
         eprintln!("Node {id}: Address {node_address}");
 
         let node_connector = std::sync::Arc::new(
@@ -256,6 +275,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             .await?,
         );
 
+        info!("Node {id}: Checking balances...");
         eprint!("Node {id}: Checking balances...");
 
         // Send 1 xDai to the new node address from Anvil 0 account
