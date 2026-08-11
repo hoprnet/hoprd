@@ -110,31 +110,6 @@ jobs:
             {
               "environment": "dev"
             }
-  cache_deps:
-    name: Cache deps
-    if: github.event.pull_request.merged == true
-    runs-on: depot-ubuntu-24.04-4
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - name: Cache dependencies
-        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
-        with:
-          source_branch: ${{ github.event.pull_request.merge_commit_sha }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: |
-            set -e
-            cat >> .cargo/config.toml << TOML
-            [source.hopr-cargo-registry-cache]
-            registry = "sparse+${PRIVATE_CARGO_REGISTRY_PROXY_URL}"
-
-            [source.crates-io]
-            replace-with = "hopr-cargo-registry-cache"
-            TOML
-            nix develop -c cargo fetch
-        env:
-          PRIVATE_CARGO_REGISTRY_PROXY_URL: ${{ secrets.PRIVATE_CARGO_REGISTRY_PROXY_URL }}
   docs:
     name: Docs
     if: github.event.pull_request.merged == true
@@ -150,10 +125,7 @@ jobs:
         with:
           source_branch: ${{ github.event.pull_request.merge_commit_sha }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: |
-            set -e
-            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items --no-default-features --features runtime-tokio,telemetry,transport-quic
-            nix build -L .#docs
+          command: nix build -L .#docs
       - name: Increase git buffer size
         run: git config --global http.postBuffer 524288000
       - name: Deploy
