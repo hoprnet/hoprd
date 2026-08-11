@@ -216,8 +216,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let p2p_host = &config.p2p_host;
     info!("P2P host for pre-announcement: {p2p_host}");
     info!("config.num_nodes: {} skipping the clamp", config.num_nodes);
-    // let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
-    let effective_num_nodes = config.num_nodes;
+    let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
     info!("Effective number of nodes to generate: {effective_num_nodes}");
     let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
         redeem_on_winning: true,
