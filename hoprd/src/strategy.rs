@@ -26,6 +26,20 @@ use smart_default::SmartDefault;
 use strum::{Display as StrumDisplay, VariantNames};
 use validator::{Validate, ValidationError};
 
+/// The deposit pool this binary was built with, for the startup log line.
+///
+/// Every other guarantee here is compile-time, and the localcluster launches a *prebuilt* binary
+/// from `HOPRD_BIN` — so a stale artifact built with the other pairing would run with none of
+/// those checks having seen it. This is the one thing that makes the choice visible at runtime,
+/// and `pix-demo.sh` greps the binary for it.
+#[cfg(feature = "strategy-pix-secp256k1")]
+pub const POOL: &str = "non-anonymous-secp256k1";
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+pub const POOL: &str = "curvy";
+
 /// The deposit address the PIX spec produces must be the one the selected pool can spend.
 ///
 /// Gated on the same feature as the pool itself, so the assertion exists exactly when the thing
@@ -53,16 +67,6 @@ use validator::{Validate, ValidationError};
 /// It costs nothing at runtime: the function is never called, only type-checked.
 ///
 /// [`Address`]: hopr_lib::api::types::primitive::prelude::Address
-/// The deposit pool this binary was built with, for the startup log line.
-///
-/// Every other guarantee here is compile-time, and the localcluster launches a *prebuilt* binary
-/// from `HOPRD_BIN` — so a stale artifact built with the other pairing would run with none of
-/// those checks having seen it. This is the one thing that makes the choice visible at runtime.
-#[cfg(feature = "strategy-pix-secp256k1")]
-pub const POOL: &str = "non-anonymous-secp256k1";
-#[cfg(all(feature = "strategy-pix-bjj", not(feature = "strategy-pix-secp256k1")))]
-pub const POOL: &str = "curvy-bjj";
-
 #[cfg(feature = "pix")]
 const _: () = {
     type SpecDepositAddress =
@@ -315,31 +319,48 @@ where
         .ok()
         .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
     {
-        let mut pool_cfg = PoolConfig {
+        // Built once per pool rather than once with a `cfg`-ed field, because the two configs
+        // share no fields by contract — the pools settle by different means, so neither one's
+        // knobs are evidence that the other needs them. Writing them separately is what stops a
+        // value meant for one from silently reaching the other; a shared literal would make the
+        // overlap load-bearing and quietly break when either config moves.
+        //
+        // `gas_xdai_per_sweep` is the clearest case: it funds a recovered stealth address so it
+        // can pay for its own `withdraw_from_signer` transaction, which is a fact about settling
+        // on-chain from an EOA. Reading `HOPRD_PIX_GAS_XDAI_PER_SWEEP` under the other pool and
+        // dropping it would be exactly the silent misconfiguration this arrangement exists to
+        // avoid, so that variable is only read here.
+        //
+        // Retry budgets are left at the upstream defaults: this block exists to wire the handful
+        // of values hoprd exposes as environment variables, and every other field is better
+        // served by whatever upstream currently documents.
+        #[cfg(feature = "strategy-pix-secp256k1")]
+        let pool_cfg = PoolConfig {
             max_deposit_tracking_time: pix_env_duration_or(
                 "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
                 Duration::from_secs(3600),
             ),
-            // Retry budgets are left at the upstream defaults: this block exists to wire
-            // the handful of values hoprd exposes as environment variables, and every
-            // other field is better served by whatever upstream currently documents.
-            ..Default::default()
-        };
-        // Gas is meaningful only to the on-chain pool, which funds a recovered stealth address
-        // so it can pay for its own `withdraw_from_signer` sweep. Set here rather than in the
-        // literal above so the field's absence from the other pool's config is a compile-time
-        // fact — reading the variable and dropping it would be the silent-misconfiguration
-        // pattern this whole arrangement exists to avoid.
-        //
-        // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
-        // `fund_sweep_gas_impl` a no-op and leaves the address without gas.
-        #[cfg(feature = "strategy-pix-secp256k1")]
-        {
-            pool_cfg.gas_xdai_per_sweep = pix_env_or(
+            // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
+            // `fund_sweep_gas_impl` a no-op and leaves the address without gas.
+            gas_xdai_per_sweep: pix_env_or(
                 "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
                 "0.01 xdai".parse().expect("valid static amount"),
-            );
-        }
+            ),
+            ..Default::default()
+        };
+        // The curvy pool's settlement design is not written, so it has nothing to configure
+        // beyond the deadline the `DepositPool` contract makes it own. New knobs belong here,
+        // read from their own variables — not borrowed from the block above.
+        #[cfg(all(
+            feature = "strategy-pix-curvy",
+            not(feature = "strategy-pix-secp256k1")
+        ))]
+        let pool_cfg = PoolConfig {
+            max_deposit_tracking_time: pix_env_duration_or(
+                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
+                Duration::from_secs(3600),
+            ),
+        };
 
         let pix_cfg = PixStrategyConfig {
             price_per_byte: pix_env_or(
@@ -390,7 +411,7 @@ where
     {
         tracing::error!(
             "HOPRD_ENABLE_PIX is set but this binary was built without a PIX deposit pool, so \
-             the PIX strategy is not available. Rebuild with `--features strategy-pix-bjj` \
+             the PIX strategy is not available. Rebuild with `--features strategy-pix-curvy` \
              (production) or `--features strategy-pix-secp256k1` (tests and demo)."
         );
     }

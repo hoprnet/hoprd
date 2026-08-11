@@ -51,7 +51,7 @@ runtime-tokio = [
 # Deliberately *not* implied by `runtime-tokio`. `strategy-pix` used to be, which meant every
 # hoprd build forced secp256k1 and a Baby JubJub build was not expressible at all.
 #
-#     production:      cargo build --release -p hoprd --features strategy-pix-bjj
+#     production:      cargo build --release -p hoprd --features strategy-pix-curvy
 #     tests and demo:  cargo build --release -p hoprd --features strategy-pix-secp256k1
 #
 # Baby JubJub deposit addresses — production. `hopr-lib`'s default is already `pix-bjj`, so this
@@ -60,7 +60,7 @@ runtime-tokio = [
 # NOTE: `CurvyDepositPool` is currently a stub whose methods panic. A build with this feature
 # starts and serves normally; it panics on the first PIX deposit, which only happens when
 # `HOPRD_ENABLE_PIX=1` is also set.
-strategy-pix-bjj = ["pix", "hopr-strategy/strategy-pix-bjj"]
+strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
 # Ethereum deposit addresses — what the localcluster tests and the PIX demo run against, and
 # currently the only pool that is implemented.
 #

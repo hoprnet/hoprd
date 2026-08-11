@@ -101,7 +101,7 @@
 //! | hoprd feature | pool | deposit address | status |
 //! |---|---|---|---|
 //! | `strategy-pix-secp256k1` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
-//! | `strategy-pix-bjj` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
+//! | `strategy-pix-curvy` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
 //!
 //! They are mutually exclusive and `hopr-strategy` rejects both with a `compile_error!`, so
 //! *neither* is in hoprd's `default`: Cargo unifies features across a workspace build, and a

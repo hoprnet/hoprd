@@ -27,7 +27,7 @@
 #
 # The hoprd binary carries exactly one deposit pool, chosen at build time by a `strategy-pix-*`
 # feature; `PIX_POOL` (default `secp256k1`) says which one this run expects, and the binary is
-# checked against it before the cluster is started. `PIX_POOL=bjj` selects the Baby JubJub pool,
+# checked against it before the cluster is started. `PIX_POOL=curvy` selects the Baby JubJub pool,
 # which is currently a stub that panics — it exists so the wiring can be exercised end to end.
 #
 # Safe to re-run: a stale chain container or leftover nodes from an interrupted attempt are
@@ -526,7 +526,7 @@ export HOPRD_BIN HOPRD_CHAIN_IMAGE
 
 # The deposit pool is a *build-time* choice in the binary, and this script runs a prebuilt one.
 # A binary built with the other pairing starts and bootstraps normally, then either never
-# deposits (wrong curve) or panics (bjj, whose pool is a stub) — several minutes in, with the
+# deposits (wrong curve) or panics (curvy, whose pool is a stub) — several minutes in, with the
 # audience watching. So check it before spending that time.
 #
 # `POOL` in `hoprd::strategy` is a `&str` compiled into the binary for exactly this, and for the
@@ -534,9 +534,9 @@ export HOPRD_BIN HOPRD_CHAIN_IMAGE
 : "${PIX_POOL:=secp256k1}"
 case "$PIX_POOL" in
 secp256k1) POOL_MARKER="non-anonymous-secp256k1" ;;
-bjj) POOL_MARKER="curvy-bjj" ;;
+curvy) POOL_MARKER="curvy" ;;
 *)
-  echo "PIX_POOL must be 'secp256k1' or 'bjj', got '$PIX_POOL'"
+  echo "PIX_POOL must be 'secp256k1' or 'curvy', got '$PIX_POOL'"
   exit 1
   ;;
 esac
@@ -559,8 +559,8 @@ if ! grep -qa "$POOL_MARKER" "$HOPRD_BIN"; then
   exit 1
 fi
 
-if [ "$PIX_POOL" = "bjj" ]; then
-  echo "PIX_POOL=bjj selects CurvyDepositPool, whose methods are unimplemented and panic."
+if [ "$PIX_POOL" = "curvy" ]; then
+  echo "PIX_POOL=curvy selects CurvyDepositPool, whose methods are unimplemented and panic."
   echo "The cluster will bootstrap and then die on the first deposit. This is expected until"
   echo "the Baby JubJub pool is implemented; use PIX_POOL=secp256k1 for a run that completes."
   echo
