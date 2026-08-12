@@ -5710,7 +5710,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd-localcluster"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -5722,7 +5722,6 @@ dependencies = [
  "hoprd",
  "hoprd-api",
  "hoprd-api-client",
- "lazy_static",
  "nix 0.31.3",
  "rand 0.10.2",
  "reqwest",

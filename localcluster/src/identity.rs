@@ -29,7 +29,7 @@ use hoprd::{
     strategy::{MultiStrategyConfig, StrategyKind},
 };
 use hoprd_api::config::{Api, Auth};
-use tracing::info;
+use tracing::{debug, info};
 
 pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
 pub const DEFAULT_PRIVATE_KEY: &str =
@@ -113,9 +113,10 @@ pub struct GenerationOutput {
 /// Since hopr-types 2.2, `HoprKeys` also carries a Baby JubJub key whose secret must be a
 /// canonical BJJ scalar. These identities are frozen so the derived EVM, Safe and Module
 /// addresses stay stable across cluster runs — and those derive from the chain/packet keys, not
-/// the BJJ key. Clearing the most-significant byte puts the derived BJJ secret below the scalar
-/// modulus; a zero secret is replaced with one because it would produce the identity point.
-fn frozen_hopr_keys(packet_key: [u8; 32], chain_key: [u8; 32]) -> HoprKeys {
+/// the BJJ key. The secret is interpreted big-endian, so clearing the most-significant byte puts
+/// the derived BJJ secret below the scalar modulus; a zero secret is replaced with one because it
+/// would produce the identity point.
+fn frozen_hopr_keys(packet_key: [u8; 32], chain_key: [u8; 32]) -> anyhow::Result<HoprKeys> {
     let mut bjj_key = chain_key;
     bjj_key[0] = 0;
     if bjj_key.iter().all(|byte| *byte == 0) {
@@ -123,31 +124,60 @@ fn frozen_hopr_keys(packet_key: [u8; 32], chain_key: [u8; 32]) -> HoprKeys {
     }
 
     HoprKeys::try_from((packet_key, chain_key, bjj_key))
-        .expect("canonicalized frozen BJJ key must be valid")
+        .context("canonicalized frozen BJJ secret is not a valid HoprKeys triplet")
 }
 
-lazy_static::lazy_static! {
-    static ref NODE_KEYS: [HoprKeys; MAX_NUM_NODES] = [
-        frozen_hopr_keys(hex!("76a4edbc3f595d4d07671779a0055e30b2b8477ecfd5d23c37afd7b5aa83781d"), hex!("71bf1f42ebbfcd89c3e197a3fd7cda79b92499e509b6fefa0fe44d02821d146a")),
-        frozen_hopr_keys(hex!("c90f09e849aa512be3dd007452977e32c7cfdc1e3de1a62bd92ba6592bcc9e90"), hex!("c3659450e994f3ad086373440e4e7070629a1bfbd555387237ccb28d17acbfc8")),
-        frozen_hopr_keys(hex!("40d4749a620d1a4278d030a3153b5b94d6fcd4f9677f6ce8e37e6ebb1987ad53"), hex!("4a14c5aeb53629a2dd45058a8d233f24dd90192189e8200a1e5f10069868f963")),
-        frozen_hopr_keys(hex!("e539f1ac48270be4e84b6acfe35252df5e141a29b50ddb07b50670271bb574ee"), hex!("8c1edcdebfe508031e4124168bb4a133180e8ee68207a7946fcdc4ad0068ef0d")),
-        frozen_hopr_keys(hex!("9ab557eb14d8b081c7e1750eb87407d8c421aa79bdeb420f38980829e7dbf936"), hex!("6075c595103667537c33cdb954e3e5189921cab942e5fc0ba9ec27fe6d7787d1"))
-    ];
+/// Packet and chain secrets of the frozen cluster node identities.
+const NODE_SECRETS: [([u8; 32], [u8; 32]); MAX_NUM_NODES] = [
+    (
+        hex!("76a4edbc3f595d4d07671779a0055e30b2b8477ecfd5d23c37afd7b5aa83781d"),
+        hex!("71bf1f42ebbfcd89c3e197a3fd7cda79b92499e509b6fefa0fe44d02821d146a"),
+    ),
+    (
+        hex!("c90f09e849aa512be3dd007452977e32c7cfdc1e3de1a62bd92ba6592bcc9e90"),
+        hex!("c3659450e994f3ad086373440e4e7070629a1bfbd555387237ccb28d17acbfc8"),
+    ),
+    (
+        hex!("40d4749a620d1a4278d030a3153b5b94d6fcd4f9677f6ce8e37e6ebb1987ad53"),
+        hex!("4a14c5aeb53629a2dd45058a8d233f24dd90192189e8200a1e5f10069868f963"),
+    ),
+    (
+        hex!("e539f1ac48270be4e84b6acfe35252df5e141a29b50ddb07b50670271bb574ee"),
+        hex!("8c1edcdebfe508031e4124168bb4a133180e8ee68207a7946fcdc4ad0068ef0d"),
+    ),
+    (
+        hex!("9ab557eb14d8b081c7e1750eb87407d8c421aa79bdeb420f38980829e7dbf936"),
+        hex!("6075c595103667537c33cdb954e3e5189921cab942e5fc0ba9ec27fe6d7787d1"),
+    ),
+];
 
-    /// Hardcoded keys for `--extra-identities`.
-    ///
-    /// Frozen at compile time so the EVM addresses, Safe addresses, and Module
-    /// addresses remain identical across cluster runs (given the same Anvil
-    /// chain). Must not overlap with `NODE_KEYS`.
-    static ref EXTRA_KEYS: [HoprKeys; MAX_EXTRA_IDENTITIES] = [
-        frozen_hopr_keys(hex!("a8c2179d4f2e5b1a0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b"), hex!("b7d3286ae0f3c4b5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9")),
-        frozen_hopr_keys(hex!("c8e4397bf1a4d5c6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"), hex!("d9f54a8c02b5e6d7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1")),
-        frozen_hopr_keys(hex!("ea065b9d13c6f7e8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2"), hex!("fb176cae24d7a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3")),
-        frozen_hopr_keys(hex!("0c287dbf35e8b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"), hex!("1d398ec046f9cab1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5")),
-        frozen_hopr_keys(hex!("2e4a9fd157a0dbc2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"), hex!("3f5ba0e268b1ecd3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7")),
-    ];
-}
+/// Packet and chain secrets of the frozen identities used for `--extra-identities`.
+///
+/// Frozen at compile time so the EVM addresses, Safe addresses, and Module
+/// addresses remain identical across cluster runs (given the same Anvil
+/// chain). Must not overlap with `NODE_SECRETS`.
+const EXTRA_SECRETS: [([u8; 32], [u8; 32]); MAX_EXTRA_IDENTITIES] = [
+    (
+        hex!("a8c2179d4f2e5b1a0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b"),
+        hex!("b7d3286ae0f3c4b5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9"),
+    ),
+    (
+        hex!("c8e4397bf1a4d5c6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"),
+        hex!("d9f54a8c02b5e6d7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1"),
+    ),
+    (
+        hex!("ea065b9d13c6f7e8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2"),
+        hex!("fb176cae24d7a8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3"),
+    ),
+    (
+        hex!("0c287dbf35e8b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"),
+        hex!("1d398ec046f9cab1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5"),
+    ),
+    (
+        hex!("2e4a9fd157a0dbc2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"),
+        hex!("3f5ba0e268b1ecd3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"),
+    ),
+];
 
 /// Build the multiaddr that hoprd will announce on chain for a given host/port.
 ///
@@ -174,10 +204,11 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
 /// catch-up phase rather than the live phase (where announcement events are
 /// not monitored).
 pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOutput> {
-    info!(
-        "generate function {} node identities in {}",
-        config.num_nodes,
-        config.config_home.display()
+    debug!(
+        num_nodes = %config.num_nodes,
+        num_extras = %config.num_extras,
+        home_dir = %config.config_home.display(),
+        "generating identities",
     );
     std::fs::create_dir_all(&config.config_home)?;
     let home_path = &config.config_home;
@@ -185,12 +216,12 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     let blokli_client =
         BlokliClient::new(config.blokli_url.parse()?, BlokliClientConfig::default());
-    info!("Connecting to Blokli at {}", config.blokli_url);
+    debug!(url = %config.blokli_url, "connecting to blokli");
     let status = blokli_client.query_health().await?;
     if !status.eq_ignore_ascii_case("ok") {
         return Err(anyhow::anyhow!("Blokli is not usable: {status}"));
     }
-    info!("Blokli is healthy at {}", config.blokli_url);
+    info!(url = %config.blokli_url, "blokli is healthy");
 
     // Create connector for the deployer account
     let mut anvil_connector = create_trustful_safeless_hopr_blokli_connector(
@@ -202,31 +233,35 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         blokli_client.clone(),
     )
     .await?;
-    info!("Connecting to Blokli as deployer account...");
     anvil_connector.connect().await?;
-    info!(
-        "Connected to Blokli as deployer account {}",
-        anvil_connector.me()
-    );
+    info!(deployer = %anvil_connector.me(), "connected to blokli as deployer account");
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
-    info!("Initial token balance for each node: {initial_token_balance}");
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
-    info!("Initial native balance for each node: {initial_native_balance}");
     let p2p_host = &config.p2p_host;
-    info!("P2P host for pre-announcement: {p2p_host}");
-    info!("config.num_nodes: {} skipping the clamp", config.num_nodes);
-    let effective_num_nodes = config.num_nodes.clamp(1, NODE_KEYS.len());
-    info!("Effective number of nodes to generate: {effective_num_nodes}");
+    debug!(
+        token_balance = %initial_token_balance,
+        native_balance = %initial_native_balance,
+        p2p_host = %p2p_host,
+        "per-identity funding target and pre-announcement host",
+    );
+    let effective_num_nodes = config.num_nodes.clamp(1, NODE_SECRETS.len());
+    debug!(
+        requested = %config.num_nodes,
+        effective = %effective_num_nodes,
+        "resolved node count",
+    );
     let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
         redeem_on_winning: true,
         ..Default::default()
     })];
-    info!("Node strategy before: {strategies:?}");
     if config.enable_channel_strategy {
-        info!("Enabling channel lifecycle strategy for {effective_num_nodes} nodes");
         let mesh_target = effective_num_nodes.saturating_sub(1);
-        info!("ChannelLifecycleStrategy population thresholds set to {mesh_target}");
+        debug!(
+            num_nodes = %effective_num_nodes,
+            mesh_target = %mesh_target,
+            "enabling channel lifecycle strategy",
+        );
         strategies.push(StrategyKind::ChannelLifecycle(Box::new(
             ChannelLifecycleConfig {
                 population: PopulationConfig {
@@ -240,30 +275,29 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 ..Default::default()
             },
         )));
-        info!("Node strategy after: {strategies:?}");
     }
-    info!("Node strategy outside if: {strategies:?}");
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
         execution_interval: std::time::Duration::from_secs(60),
         strategies,
     };
-    info!("Node strategy: {node_strategy:?}");
+    debug!(strategy = ?node_strategy, "node strategy");
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
     info!(
-        "Generating {effective_num_nodes} node identities in {}",
-        home_path.display()
+        count = %effective_num_nodes,
+        home_dir = %home_path.display(),
+        "generating node identities",
     );
-    for id in 0..effective_num_nodes {
-        info!("Generating in a loop, node {id} identity...");
+    for (id, (packet_key, chain_key)) in NODE_SECRETS.iter().take(effective_num_nodes).enumerate() {
         let kp = if config.random_identities {
             HoprKeys::random()
         } else {
-            NODE_KEYS[id].clone()
+            frozen_hopr_keys(*packet_key, *chain_key)
+                .with_context(|| format!("frozen keys of node {id}"))?
         };
         let node_address = kp.chain_key.public().to_address();
-        info!("Node {id}: Address {node_address}");
+        info!(node_id = %id, address = %node_address, "node identity");
         eprintln!("Node {id}: Address {node_address}");
 
         let node_connector = std::sync::Arc::new(
@@ -278,7 +312,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             .await?,
         );
 
-        info!("Node {id}: Checking balances...");
+        debug!(node_id = %id, "checking balances");
         eprint!("Node {id}: Checking balances...");
 
         // Send 1 xDai to the new node address from Anvil 0 account
@@ -501,19 +535,24 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         });
     }
 
-    let extras = if config.num_extras != 0 {
+    let effective_num_extras = config.num_extras.min(EXTRA_SECRETS.len());
+    let extras = if effective_num_extras != 0 {
         info!(
-            "Generating {} extra identities in {}",
-            config.num_extras,
-            home_path.display()
+            requested = %config.num_extras,
+            count = %effective_num_extras,
+            home_dir = %home_path.display(),
+            "generating extra identities",
         );
 
-        let mut extras = Vec::with_capacity(config.num_extras);
+        let mut extras = Vec::with_capacity(effective_num_extras);
 
-        for id in 0..config.num_extras.clamp(0, EXTRA_KEYS.len()) {
-            let kp = EXTRA_KEYS[id].clone();
+        for (id, (packet_key, chain_key)) in
+            EXTRA_SECRETS.iter().take(effective_num_extras).enumerate()
+        {
+            let kp = frozen_hopr_keys(*packet_key, *chain_key)
+                .with_context(|| format!("frozen keys of extra identity {id}"))?;
             let node_address = kp.chain_key.public().to_address();
-            info!("Extra {id}: Address {node_address}");
+            info!(extra_id = %id, address = %node_address, "extra identity");
 
             let node_connector = std::sync::Arc::new(
                 create_trustful_safeless_hopr_blokli_connector(
@@ -527,7 +566,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 .await?,
             );
 
-            info!("Extra {id}: Checking balances...");
+            debug!(extra_id = %id, "checking balances");
 
             let node_native_balance: XDaiBalance = node_connector.balance(node_address).await?;
             if node_native_balance < initial_native_balance {
@@ -543,19 +582,24 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     .withdraw(top_up, &node_address)
                     .await?
                     .await?;
-                info!("Extra {id}: {top_up} transferred to {node_address}");
+                info!(extra_id = %id, amount = %top_up, address = %node_address, "native tokens transferred");
             } else {
-                info!("Extra {id}: {node_address} already has {node_native_balance} xDai tokens");
+                debug!(
+                    extra_id = %id,
+                    address = %node_address,
+                    balance = %node_native_balance,
+                    "extra identity already funded with native tokens",
+                );
             }
 
-            info!("Extra {id}: Checking Safe deployment...");
+            debug!(extra_id = %id, "checking Safe deployment");
             let safe = if let Some(safe) = node_connector
                 .safe_info(SafeSelector::Owner(node_address))
                 .await?
             {
                 safe
             } else {
-                info!("Extra {id}: Topping up to {initial_token_balance}...");
+                debug!(extra_id = %id, target = %initial_token_balance, "topping up HOPR tokens");
                 let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
                 if node_token_balance < initial_token_balance {
                     let top_up = initial_token_balance - node_token_balance;
@@ -570,14 +614,17 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                         .withdraw(top_up, &node_address)
                         .await?
                         .await?;
-                    info!("Extra {id}: {top_up} transferred to {node_address}");
+                    info!(extra_id = %id, amount = %top_up, address = %node_address, "HOPR tokens transferred");
                 } else {
-                    info!(
-                        "Extra {id}: {node_address} already has {node_token_balance} wxHOPR tokens"
+                    debug!(
+                        extra_id = %id,
+                        address = %node_address,
+                        balance = %node_token_balance,
+                        "extra identity already funded with HOPR tokens",
                     );
                 }
 
-                info!("Extra {id}: Deploying Safe...");
+                info!(extra_id = %id, "deploying Safe");
                 let node_connector_clone = node_connector.clone();
                 let poll_handle = tokio::task::spawn(async move {
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
@@ -616,7 +663,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 .to_owned();
             kp.write_eth_keystore(&id_file_str, EXTRA_IDENTITY_PASSWORD)?;
 
-            info!("Extra {id}: Identity written to {id_file_str}");
+            info!(extra_id = %id, id_file = %id_file_str, "extra identity written");
 
             extras.push(GeneratedIdentity {
                 id,
@@ -630,7 +677,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
         extras
     } else {
-        info!("No extra identities requested");
+        debug!("no extra identities requested");
         Vec::new()
     };
 
@@ -641,13 +688,26 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 mod tests {
     use super::*;
 
+    /// The frozen secrets are static, so a `HoprKeys` construction failure would break every
+    /// non-random cluster run. Guard all of them here instead of at startup.
     #[test]
-    fn frozen_extra_keys_have_valid_bjj_scalars() {
-        assert_eq!(EXTRA_KEYS.len(), MAX_EXTRA_IDENTITIES);
-        assert!(
-            EXTRA_KEYS
-                .iter()
-                .all(|keys| keys.bjj_key.secret().as_ref()[0] == 0)
-        );
+    fn frozen_secrets_yield_canonical_bjj_keys() -> anyhow::Result<()> {
+        for (idx, (packet_key, chain_key)) in
+            NODE_SECRETS.iter().chain(EXTRA_SECRETS.iter()).enumerate()
+        {
+            let keys = frozen_hopr_keys(*packet_key, *chain_key)
+                .with_context(|| format!("frozen secret pair {idx}"))?;
+            let bjj_secret = keys.bjj_key.secret().as_ref().to_vec();
+
+            // Most-significant byte cleared, keeping the secret below the BJJ scalar modulus.
+            assert_eq!(bjj_secret[0], 0, "secret pair {idx} has a non-zero MSB");
+            // A zero scalar would map to the identity point.
+            assert!(
+                bjj_secret.iter().any(|byte| *byte != 0),
+                "secret pair {idx} derives a zero BJJ scalar"
+            );
+        }
+
+        Ok(())
     }
 }
