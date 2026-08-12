@@ -5710,7 +5710,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd-localcluster"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -5732,6 +5732,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "validator",
 ]
 
 [[package]]
