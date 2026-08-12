@@ -4,7 +4,9 @@ services:
   chain:
     container_name: hoprd-blokli-anvil
     platform: linux/amd64
-    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:0.10.5-pr.349@sha256:2e6747d9d6c97255474e243b5088d131f01bb67b5d8f17dbac6bb8aafdf1d7b6
+    # Pinned by digest; keep in sync with CHAIN_IMAGE in .github/workflows/pr.yaml.
+    # The previous 0.10.5-pr.349 pin was garbage-collected from the registry (404).
+    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
     ports:
       - "8080:8080"
     healthcheck:

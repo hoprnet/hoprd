@@ -692,6 +692,16 @@
                 touch $out
               '';
 
+          shellcheckLocalclusterSmoke =
+            pkgs.runCommand "shellcheck-localcluster-smoke"
+              {
+                nativeBuildInputs = [ pkgs.shellcheck ];
+              }
+              ''
+                shellcheck ${./scripts/localcluster-smoke.sh}
+                touch $out
+              '';
+
           # Cacheable equivalent of the complete lint app: formatting, Cargo
           # check, Clippy, and the Docker entrypoint shell check.
           quick = pkgs.linkFarm "quick" [
@@ -710,6 +720,10 @@
             {
               name = "shellcheck-docker-entrypoint";
               path = shellcheckDockerEntrypoint;
+            }
+            {
+              name = "shellcheck-localcluster-smoke";
+              path = shellcheckLocalclusterSmoke;
             }
           ];
         in
@@ -776,6 +790,7 @@
           checks = {
             inherit (hoprdPackages) check clippy;
             shellcheck-docker-entrypoint = shellcheckDockerEntrypoint;
+            shellcheck-localcluster-smoke = shellcheckLocalclusterSmoke;
           };
 
           apps = {
