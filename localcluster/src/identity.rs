@@ -196,6 +196,62 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
     s.parse().context("invalid pre-announce multiaddr")
 }
 
+/// Build the hoprd configuration for cluster node `id`.
+///
+/// This is the chain-free half of node provisioning: everything here is derived from
+/// `config` and the already-deployed `safe`, so it stays unit-testable without a chain.
+fn node_config(
+    id: usize,
+    config: &GenerationConfig,
+    safe: SafeModule,
+    node_strategy: &MultiStrategyConfig,
+    id_file: &str,
+) -> anyhow::Result<HoprdConfig> {
+    Ok(HoprdConfig {
+        hopr: UserHoprLibConfig {
+            // When relaying through the latency proxy, the relay port is pre-announced
+            // by `generate`; the node must not self-announce its real port (it would
+            // publish a second, undelayed address peers could dial).
+            announce: config.latency.is_none(),
+            network: UserHoprNetworkConfig {
+                announce_local_addresses: true,
+                prefer_local_addresses: true,
+                probe_recheck_threshold: std::time::Duration::from_secs(3),
+                probe_interval: std::time::Duration::from_secs(3),
+                ..Default::default()
+            },
+            safe_module: safe,
+            ..Default::default()
+        },
+        identity: Identity {
+            file: id_file.to_owned(),
+            password: config.identity_password.clone(),
+            private_key: None,
+        },
+        db: Db {
+            data: config
+                .config_home
+                .join(format!("db_{id}"))
+                .to_str()
+                .ok_or(anyhow::anyhow!("Invalid path"))?
+                .to_owned(),
+            initialize: true,
+            force_initialize: true,
+        },
+        api: Api {
+            enable: true,
+            auth: Auth::None,
+            ..Default::default()
+        },
+        blokli_url: config.blokli_url.clone(),
+        session_ip_forwarding: SessionIpForwardingConfig {
+            use_target_allow_list: false,
+            ..Default::default()
+        },
+        strategy: node_strategy.clone(),
+    })
+}
+
 /// Generate test node Safes, hoprd configuration files, and optional extra
 /// identities for external tooling.
 ///
@@ -469,51 +525,16 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             .ok_or(anyhow::anyhow!("Invalid path"))?
             .to_owned();
 
-        let node_cfg = HoprdConfig {
-            hopr: UserHoprLibConfig {
-                // When relaying through the latency proxy, the relay port is pre-announced
-                // here; the node must not self-announce its real port (it would publish a
-                // second, undelayed address peers could dial).
-                announce: config.latency.is_none(),
-                network: UserHoprNetworkConfig {
-                    announce_local_addresses: true,
-                    prefer_local_addresses: true,
-                    probe_recheck_threshold: std::time::Duration::from_secs(3),
-                    probe_interval: std::time::Duration::from_secs(3),
-                    ..Default::default()
-                },
-                safe_module: SafeModule {
-                    safe_address: safe.address,
-                    module_address: safe.module,
-                },
-                ..Default::default()
+        let node_cfg = node_config(
+            id,
+            config,
+            SafeModule {
+                safe_address: safe.address,
+                module_address: safe.module,
             },
-            identity: Identity {
-                file: id_file_str.clone(),
-                password: config.identity_password.clone(),
-                private_key: None,
-            },
-            db: Db {
-                data: home_path
-                    .join(format!("db_{id}"))
-                    .to_str()
-                    .ok_or(anyhow::anyhow!("Invalid path"))?
-                    .to_owned(),
-                initialize: true,
-                force_initialize: true,
-            },
-            api: Api {
-                enable: true,
-                auth: Auth::None,
-                ..Default::default()
-            },
-            blokli_url: config.blokli_url.clone(),
-            session_ip_forwarding: SessionIpForwardingConfig {
-                use_target_allow_list: false,
-                ..Default::default()
-            },
-            strategy: node_strategy.clone(),
-        };
+            &node_strategy,
+            &id_file_str,
+        )?;
 
         let cfg_file = home_path
             .join(format!("hoprd_cfg_{id}.yaml"))
@@ -705,6 +726,191 @@ mod tests {
             assert!(
                 bjj_secret.iter().any(|byte| *byte != 0),
                 "secret pair {idx} derives a zero BJJ scalar"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// The whole point of the frozen secrets is that every cluster run reuses the same
+    /// identities, so external tooling and pre-funded chain state stay valid. Pin both halves:
+    /// the chain key drives the EVM/Safe/Module addresses, the packet key is what peers dial
+    /// and what the pre-announce binds on chain.
+    #[test]
+    fn frozen_identities_have_stable_addresses() -> anyhow::Result<()> {
+        /// `(EVM address, announced offchain key)` per frozen identity.
+        const NODE_IDENTITIES: [(&str, &str); MAX_NUM_NODES] = [
+            (
+                "0xb6624e92ee15dd38e2922379267ceffe002d4c46",
+                "0x0f2cbb53ce007a69236dd74ad0b3e32438f52b0e79ab9cc54a16ca452bb4aed8",
+            ),
+            (
+                "0x0d9c021d5c4de58cddc8853afc3e61f9955991a1",
+                "0x80a13e9f1c10ac0b7b3cd3f6d02a7800ff21570e16ac3edfc0a119cd6fcc887e",
+            ),
+            (
+                "0xc8beebf9df3ece584896cf82a2f1fe9f39c3c176",
+                "0x6ed0cf4aa6432ef0fa9404d17811827aabc6349fe17166621088ec7b86daa39b",
+            ),
+            (
+                "0xc53bea21180d83a3e8f0d836c11c7f122eb5332b",
+                "0xa0df8c694b19e980e5e89b3babd7fe5a8e3f35bc25cdd49c53ed44797abfa4f5",
+            ),
+            (
+                "0x893809ff57c310561000ff17e2cd4862a020e959",
+                "0xd454f2b9ded9e6e5b20d8bc3aba7f4585748cdcf25ef849ea4f86ae7e8cf7184",
+            ),
+        ];
+        const EXTRA_IDENTITIES: [(&str, &str); MAX_EXTRA_IDENTITIES] = [
+            (
+                "0x0c3af15c8edf0f539bc95fa7cf016a2b0125bf97",
+                "0xb8bfb39b22b1a584d0bb7a8e74320385c126d479ea38026d8923fb14dedd9c52",
+            ),
+            (
+                "0x49ed3abf0684e8d90cb60b80fc7bbdd27c0ea0c2",
+                "0x888801cc336fcb2c2140cb855b0e3c3722c33ea5140a37f9eb0b33de276c55f0",
+            ),
+            (
+                "0x601453d8974e877e207257168e26343e34e6f2aa",
+                "0x1107e57d91c4c2f9d138c524fc5a20c9be8606e8b71ae345b84591dad551d631",
+            ),
+            (
+                "0xd4cfd2c81a74ff29e4ba4f03d76185947acbe701",
+                "0x492e4b24cef2e66b2a9b09a5aa062d9528be595eb473c79c211500def23e76a9",
+            ),
+            (
+                "0xf0525600531b54d7cf79cdff88d5dd7492c558a9",
+                "0x1fed8333c31972ebcf39c04eb048ddcf718ca3b58620cacd148b34e893df011d",
+            ),
+        ];
+
+        let mut seen = std::collections::HashSet::new();
+        for (label, secrets, expected) in [
+            ("node", NODE_SECRETS.as_slice(), NODE_IDENTITIES.as_slice()),
+            (
+                "extra",
+                EXTRA_SECRETS.as_slice(),
+                EXTRA_IDENTITIES.as_slice(),
+            ),
+        ] {
+            for (id, ((packet_key, chain_key), (expected_address, expected_offchain))) in
+                secrets.iter().zip(expected.iter()).enumerate()
+            {
+                let keys = frozen_hopr_keys(*packet_key, *chain_key)
+                    .with_context(|| format!("frozen keys of {label} {id}"))?;
+                let address = keys.chain_key.public().to_address().to_string();
+                let offchain = keys.packet_key.public().to_string();
+
+                assert_eq!(
+                    &address, expected_address,
+                    "{label} {id} changed its EVM address"
+                );
+                assert_eq!(
+                    &offchain, expected_offchain,
+                    "{label} {id} changed its announced offchain key"
+                );
+                assert!(
+                    seen.insert(address),
+                    "{label} {id} collides with another frozen identity's EVM address"
+                );
+                assert!(
+                    seen.insert(offchain),
+                    "{label} {id} collides with another frozen identity's offchain key"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// hoprd parses the generated file with `serde_saphyr::from_str::<HoprdConfig>` and then
+    /// validates it, so do exactly that here. Catches config schema drift after a hopr-lib
+    /// bump before it reaches a cluster run.
+    #[test]
+    fn generated_node_config_round_trips_and_validates() -> anyhow::Result<()> {
+        use validator::Validate;
+
+        let config = GenerationConfig {
+            config_home: PathBuf::from("/tmp/localcluster-test"),
+            ..Default::default()
+        };
+        let safe = SafeModule {
+            safe_address: "0x1111111111111111111111111111111111111111".parse()?,
+            module_address: "0x2222222222222222222222222222222222222222".parse()?,
+        };
+        let strategy = MultiStrategyConfig::default();
+
+        let built = node_config(
+            0,
+            &config,
+            safe.clone(),
+            &strategy,
+            "/tmp/localcluster-test/id_0.id",
+        )?;
+        let yaml = serde_saphyr::to_string(&built)?;
+        let parsed: HoprdConfig =
+            serde_saphyr::from_str(&yaml).context("hoprd could not parse the generated config")?;
+
+        assert_eq!(
+            parsed, built,
+            "generated config does not survive a YAML round trip"
+        );
+        parsed
+            .validate()
+            .context("generated config fails hoprd's own validation")?;
+
+        // The pre-announce contract: with latency off the node announces itself, with latency
+        // on it must not (localcluster pre-announced the relay port on its behalf).
+        assert!(built.hopr.announce);
+        let with_latency = GenerationConfig {
+            latency: Some(crate::cli::Latency {
+                kind: crate::cli::LatencyKind::Fixed(crate::latency::DelayDist::Fixed(
+                    std::time::Duration::from_millis(100),
+                )),
+                port_base: DEFAULT_LATENCY_PORT_BASE,
+            }),
+            ..config
+        };
+        let built = node_config(
+            0,
+            &with_latency,
+            safe,
+            &strategy,
+            "/tmp/localcluster-test/id_0.id",
+        )?;
+        assert!(!built.hopr.announce);
+
+        Ok(())
+    }
+
+    /// The generated keystores must be readable with the passwords `generate` reports, otherwise
+    /// hoprd cannot start and external tooling cannot use the extra identities.
+    #[test]
+    fn generated_keystores_decrypt_with_reported_passwords() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+
+        for (label, secrets, password) in [
+            ("node", NODE_SECRETS.as_slice(), DEFAULT_IDENTITY_PASSWORD),
+            ("extra", EXTRA_SECRETS.as_slice(), EXTRA_IDENTITY_PASSWORD),
+        ] {
+            let (packet_key, chain_key) = secrets[0];
+            let keys = frozen_hopr_keys(packet_key, chain_key)?;
+            let path = dir
+                .path()
+                .join(format!("{label}_id_0.id"))
+                .to_str()
+                .ok_or(anyhow::anyhow!("Invalid path"))?
+                .to_owned();
+
+            keys.write_eth_keystore(&path, password)
+                .with_context(|| format!("writing {label} keystore"))?;
+            let (restored, _needs_migration) = HoprKeys::read_eth_keystore(&path, password)
+                .with_context(|| format!("reading {label} keystore back"))?;
+
+            assert_eq!(
+                restored.chain_key.public().to_address(),
+                keys.chain_key.public().to_address(),
+                "{label} keystore round trip changed the chain key"
             );
         }
 
