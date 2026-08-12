@@ -103,6 +103,8 @@ fn default_api_host() -> HostConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use anyhow::Context;
     use hopr_lib::exports::transport::FlowControlConfig;
 
@@ -146,5 +148,16 @@ mod tests {
             SessionFlowControl::Robust.to_config(),
             Some(FlowControlConfig::robust())
         );
+    }
+
+    /// The bound comes from `FlowControlConfig::robust` upstream; this pins the value hoprd
+    /// actually ships with, so a change there does not silently alter node behaviour.
+    #[test]
+    fn robust_profile_should_bound_frame_age_at_two_seconds() -> anyhow::Result<()> {
+        let config = SessionFlowControl::Robust
+            .to_config()
+            .context("robust profile should carry a flow-control config")?;
+        assert_eq!(config.max_frame_age, Some(Duration::from_secs(2)));
+        Ok(())
     }
 }
