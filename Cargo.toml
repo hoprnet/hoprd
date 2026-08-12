@@ -17,7 +17,7 @@ hoprd-api-client = { path = "rest-api-client" }
 
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "10f6d80c3cc71dee1c5f98c3074c4021ef7fa54d", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
-hopr-strategy = { version = "0.22.0", default-features = false }
+hopr-strategy = { version = "0.25.0", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "10f6d80c3cc71dee1c5f98c3074c4021ef7fa54d", default-features = false }
 
 # crates.io HOPR deps
