@@ -124,6 +124,7 @@
             inherit fs;
             extraFiles = [
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
+              ./deploy/nfpm/hoprd-sample.cfg.yaml
             ];
           };
           testSrc = nixLib.mkTestSrc {
@@ -131,6 +132,7 @@
             inherit fs;
             extraFiles = [
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
+              ./deploy/nfpm/hoprd-sample.cfg.yaml
               (fs.fileFilter (file: file.hasExt "snap") ./.)
             ];
           };

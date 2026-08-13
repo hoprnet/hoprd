@@ -22,7 +22,9 @@ use hopr_lib::{
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
 use hopr_strategy::{
     auto_redeeming::AutoRedeemingStrategyConfig,
-    channel_lifecycle::{ChannelLifecycleConfig, PopulationConfig},
+    channel_lifecycle::{
+        CapacitySizingMode, ChannelLifecycleConfig, FundingConfig, PopulationConfig,
+    },
 };
 use hoprd::{
     config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
@@ -323,6 +325,12 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 population: PopulationConfig {
                     min_open_channels: mesh_target,
                     target_open_channels: mesh_target,
+                    ..Default::default()
+                },
+                funding: FundingConfig {
+                    sizing_mode: CapacitySizingMode::Probabilistic {
+                        success_probability: 0.99,
+                    },
                     ..Default::default()
                 },
                 // probe_recheck_threshold=3s → first probe within 3s → EMA converges
