@@ -3,7 +3,7 @@ resolver = "2"
 members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 
 [workspace.package]
-rust-version = "1.91"
+rust-version = "1.97"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
 license = "GPL-3.0-only"
