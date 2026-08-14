@@ -401,7 +401,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     let pix_global_config = config.pix.as_ref().map(|pix| UserPixGlobalConfig {
         num_ssa_parts: pix.num_ssa_parts,
         ssa_part_size: pix.ssa_part_size,
-        additional_shares: pix.additional_shares,
+        // `Some` rather than left to the derivation: the harness computes the expected per-SSA
+        // quota from this exact number (see `PixSettings::ssa_quota`), so the surplus it asserts
+        // against and the surplus the node emits have to be the same one.
+        additional_shares: Some(pix.additional_shares),
         // Entry-side batch cap, left at its default of 2. It only needs raising in step with an
         // Exit's `ssas_per_request`, which `incoming_pix_config` also leaves at the default.
         ..Default::default()

@@ -13,7 +13,7 @@ use hopr_lib::{
     api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
-        PixParams, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
+        HoprPixSpec, PixParams, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
         SessionTarget, SurbBalancerConfig,
     },
 };
@@ -278,6 +278,13 @@ pub(crate) struct SessionClientRequest {
     /// The wire form is a positional triple, so the fields are transposable here; they
     /// stop being so at [`PixParams`], which this is mapped onto in
     /// [`into_protocol_session_config`](Self::into_protocol_session_config).
+    ///
+    /// [`PixParams`] is a quadruple — the fourth element is the curve suite, and it is
+    /// deliberately not here. The suite is a property of this build, fixed by the
+    /// `pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API
+    /// caller may pick: shares are produced under one curve and announcing another would
+    /// describe a generator this node does not have. It is supplied by
+    /// `PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.
     #[serde(default)]
     #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
     pub pix_ssa_quota: Option<(u16, u8, u8)>,
@@ -319,7 +326,7 @@ impl SessionClientRequest {
                 .into(),
                 pix_ssa_quota: self
                     .pix_ssa_quota
-                    .map(|(polys, shares, surplus)| PixParams::try_new(polys, shares, surplus))
+                    .map(|(polys, shares, surplus)| PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus))
                     .transpose()
                     .map_err(|_| ApiErrorStatus::InvalidInput)?,
                 ..Default::default()
@@ -457,7 +464,9 @@ impl SessionClientExplicitPathRequest {
                     .into(),
                     pix_ssa_quota: self
                         .pix_ssa_quota
-                        .map(|(polys, shares, surplus)| PixParams::try_new(polys, shares, surplus))
+                        .map(|(polys, shares, surplus)| {
+                            PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus)
+                        })
                         .transpose()
                         .map_err(|_| ApiErrorStatus::InvalidInput)?,
                     ..Default::default()

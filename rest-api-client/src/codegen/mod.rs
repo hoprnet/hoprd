@@ -2039,7 +2039,7 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ]
     ///    },
     ///    "pixSsaQuota": {
-    ///      "description": "PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.\n\nWhen set, the Session will use the PIX protocol with the given parameters. When\nnot set, PIX is not advertised to the Exit node.\n\nAll three have to match this node's own installed share generator, or the Session\nis refused at setup. The surplus is included because it is priced: the per-SSA\nquota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed\nwould size every deposit against a quota the node never agreed to.\n\nThe wire form is a positional triple, so the fields are transposable here; they\nstop being so at [`PixParams`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).",
+    ///      "description": "PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.\n\nWhen set, the Session will use the PIX protocol with the given parameters. When\nnot set, PIX is not advertised to the Exit node.\n\nAll three have to match this node's own installed share generator, or the Session\nis refused at setup. The surplus is included because it is priced: the per-SSA\nquota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed\nwould size every deposit against a quota the node never agreed to.\n\nThe wire form is a positional triple, so the fields are transposable here; they\nstop being so at [`PixParams`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).\n\n[`PixParams`] is a quadruple — the fourth element is the curve suite, and it is\ndeliberately not here. The suite is a property of this build, fixed by the\n`pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API\ncaller may pick: shares are produced under one curve and announcing another would\ndescribe a generator this node does not have. It is supplied by\n`PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.",
     ///      "examples": [
     ///        [
     ///          8,
@@ -2143,7 +2143,14 @@ would size every deposit against a quota the node never agreed to.
 
 The wire form is a positional triple, so the fields are transposable here; they
 stop being so at [`PixParams`], which this is mapped onto in
-[`into_protocol_session_config`](Self::into_protocol_session_config).*/
+[`into_protocol_session_config`](Self::into_protocol_session_config).
+
+[`PixParams`] is a quadruple — the fourth element is the curve suite, and it is
+deliberately not here. The suite is a property of this build, fixed by the
+`pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API
+caller may pick: shares are produced under one curve and announcing another would
+describe a generator this node does not have. It is supplied by
+`PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.*/
         #[serde(
             rename = "pixSsaQuota",
             default,

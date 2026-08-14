@@ -200,12 +200,21 @@ pub struct UserPixGlobalConfig {
     #[default(128)]
     #[serde(default = "default_pix_ssa_part_size")]
     pub ssa_part_size: usize,
-    /// Number of additional shares sent beyond `ssa_part_size`.
+    /// Number of additional shares sent beyond `ssa_part_size`, to absorb packet loss.
     ///
-    /// Default is 64.
-    #[default(64)]
+    /// **Leave unset unless you have measured your return-path loss.** Unset derives the
+    /// surplus from `ssa_part_size`, sized to absorb 20 % of a polynomial's shares going
+    /// missing. An absolute count means a different loss tolerance at every `ssa_part_size`,
+    /// which is why upstream stopped defaulting it to one — so this passes `None` through
+    /// rather than resolving it here, where `ssa_part_size` might not be the one in effect.
+    ///
+    /// The surplus is billed: it travels in the negotiated `PixParams`, so the per-SSA quota
+    /// counts it and the deposit pays for it whether or not any share is lost. Raising it buys
+    /// loss tolerance and costs money.
+    ///
+    /// Default is unset.
     #[serde(default = "default_pix_additional_shares")]
-    pub additional_shares: usize,
+    pub additional_shares: Option<usize>,
     /// Maximum number of SSA commitments this node, acting as an Entry, accepts in one request
     /// from an Exit. Each accepted entry costs its own commitment, packet burst and on-chain
     /// deposit, so this caps how much work one inbound packet can amplify into.
@@ -228,7 +237,7 @@ fn default_pix_num_ssa_parts() -> usize {
 fn default_pix_ssa_part_size() -> usize {
     PixGlobalConfig::default().ssa_part_size
 }
-fn default_pix_additional_shares() -> usize {
+fn default_pix_additional_shares() -> Option<usize> {
     PixGlobalConfig::default().additional_shares
 }
 fn default_pix_max_ssas_per_request() -> usize {
@@ -442,6 +451,11 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     ssa_part_size: value.network.pix.ssa_part_size,
                     additional_shares: value.network.pix.additional_shares,
                     max_ssas_per_request: value.network.pix.max_ssas_per_request,
+                    // Exit-side reconstructor capacity is not yet exposed in `UserPixGlobalConfig`,
+                    // so operators get upstream's defaults. Listed rather than swept up by
+                    // `..Default::default()` on purpose: the exhaustive literal is what turns a new
+                    // upstream field into a compile error here instead of a silent default.
+                    reconstructor: Default::default(),
                 },
                 incoming_session_pix_config: IncomingSessionPixConfig {
                     enforce_pix: value.network.incoming_session_pix.enforce_pix,
