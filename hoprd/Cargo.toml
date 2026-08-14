@@ -74,6 +74,7 @@ allocator-jemalloc-stats = [
 session-server = ["hopr-lib/session-server"]
 
 [dependencies]
+bytesize = { workspace = true }
 anyhow = { workspace = true }
 async-signal = { workspace = true }
 clap = { workspace = true }
