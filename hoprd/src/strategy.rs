@@ -309,6 +309,9 @@ where
         .iter()
         .for_each(|s| METRIC_ENABLED_STRATEGIES.set(&[*s], 0_f64));
 
+    // `mut` only when a PIX pool is selected — the block below is the sole mutator, and it is
+    // gated on `pix`. A no-pool build genuinely never writes to this, so the lint is right there.
+    #[cfg_attr(not(feature = "pix"), allow(unused_mut))]
     let mut multi = build_strategies_inner(cfg, Arc::clone(&node));
 
     // PIX is not a YAML-configurable StrategyKind because its
