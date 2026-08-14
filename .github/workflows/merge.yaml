@@ -101,6 +101,7 @@ jobs:
           owner: gnosis
           repositories: gnosis_vpn-infrastructure
       - name: Deploy to Gnosis Piz-Palu Dev
+        if: github.event.pull_request.base.ref == 'main'
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.bot-token.outputs.token }}
@@ -111,6 +112,7 @@ jobs:
               "environment": "piz-palu-dev"
             }
       - name: Deploy to Gnosis Jura Dev
+        if: github.event.pull_request.base.ref == vars.MAINTENANCE_RELEASE_BRANCH
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.bot-token.outputs.token }}
