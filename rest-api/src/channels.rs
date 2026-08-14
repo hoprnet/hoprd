@@ -28,7 +28,7 @@ use crate::{ApiError, ApiErrorStatus, BASE_PATH, InternalState, checksum_address
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
     "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
     "status": "Open",
     "balance": "10 wxHOPR"
 }))]
@@ -452,8 +452,7 @@ pub(super) async fn show_channel<
 #[serde_as]
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[schema(example = json!({
-        "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118",
-        "channelStatus": "PendingToClose"
+        "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
     }))]
 #[serde(rename_all = "camelCase")]
 /// Status of the channel after a close operation.
