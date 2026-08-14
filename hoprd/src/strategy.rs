@@ -145,26 +145,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                     ..Default::default()
                 }),
                 StrategyKind::ChannelLifecycle(Box::new(ChannelLifecycleConfig {
-                    // Probabilistic sizing comes from upstream; the capacities are ours. The 1 GiB
-                    // default exhausted mid-session: the exit began rejecting consecutive tickets
-                    // with "ticket value is greater than remaining unrealized balance", which
-                    // presents as a throughput collapse and reads exactly like a return-path
-                    // failure.
-                    //
-                    // Probabilistic rather than deterministic because payouts are lumpy -- winning
-                    // tickets are Binomial(N, win_prob) -- so a channel sized to the mean drain
-                    // rests near one ticket face value and starves on variance alone. 0.99 adds
-                    // k*sigma above the mean, k = 2.33.
                     funding: FundingConfig {
-                        initial_capacity: bytesize::ByteSize::gib(10),
-                        topup_capacity: bytesize::ByteSize::gib(10),
-                        lower_capacity_threshold: bytesize::ByteSize::gib(1),
-                        // Stated with the other three. Upstream's defaults move as a set, so
-                        // leaving this at the 1 GiB default while the rest go to 10 GiB makes
-                        // the `stop_when_unfunded` pre-gate reason about a channel cost that no
-                        // longer exists -- a wasted funding pass rather than a failed open, but
-                        // an incoherent set either way.
-                        min_safe_capacity_required: bytesize::ByteSize::gib(10),
                         sizing_mode: CapacitySizingMode::Probabilistic {
                             success_probability: 0.99,
                         },

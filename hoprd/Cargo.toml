@@ -75,7 +75,6 @@ session-server = ["hopr-lib/session-server"]
 
 [dependencies]
 anyhow = { workspace = true }
-bytesize = { workspace = true }
 async-signal = { workspace = true }
 clap = { workspace = true }
 lazy_static = { workspace = true }

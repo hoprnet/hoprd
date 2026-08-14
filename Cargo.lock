@@ -5691,7 +5691,6 @@ version = "4.1.0"
 dependencies = [
  "anyhow",
  "async-signal",
- "bytesize",
  "clap",
  "console-subscriber",
  "flagset",
