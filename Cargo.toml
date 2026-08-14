@@ -15,16 +15,16 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "d80ebbf62643b09e2e2f7d74f50f1dbf5af300e6", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "649b9dca4fb3bdde71bc6e828d90bc8651225586", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { version = "0.26.0", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "10f6d80c3cc71dee1c5f98c3074c4021ef7fa54d", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "649b9dca4fb3bdde71bc6e828d90bc8651225586", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "1.21" }
+hopr-api = { version = "1.22" }
 hopr-chain-connector = { version = "0.22.1" }
 hopr-ct-full-network = { version = "0.3.0", default-features = false }
-hopr-network-graph = { version = "0.3.1", default-features = false }
+hopr-network-graph = { version = "0.3.4", default-features = false }
 hopr-session-server-forwarder = { version = "0.1.0", default-features = false }
 hopr-ticket-manager = { version = "0.5.1", default-features = false, features = [
   "redb",
@@ -183,7 +183,3 @@ codegen-units = 16
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
 
-[patch.crates-io]
-hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "4a53ed13634a5080a63760b9ca84bd9fe7710114" }
-hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", rev = "e17451a8db2fd72cecde273ac8ef87de96c8bac0" }
-hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", rev = "d9dc437108b59776b8b9673664c88d9b177d7769" }
