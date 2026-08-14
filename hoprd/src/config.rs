@@ -6,7 +6,10 @@ use hopr_lib::{
         HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
         SafeModule, SessionGlobalConfig, TransportConfig,
     },
-    exports::transport::{HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig},
+    exports::transport::{
+        HoprProtocolConfig, TagAllocatorConfig,
+        config::{HoprCodecConfig, SurbPopOrder, SurbStoreConfig},
+    },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
 use hoprd_api::config::{Api, Auth};
@@ -291,6 +294,12 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
                         ..Default::default()
                     },
+                    // Reply with the freshest SURBs first, so a return-path change takes effect
+                    // immediately instead of only after a stale backlog has been drained.
+                    surb_store: SurbStoreConfig {
+                        pop_order: SurbPopOrder::Lifo,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 // Simulated transit-latency shim (testing only); production leaves it disabled.
@@ -311,6 +320,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
+                surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },

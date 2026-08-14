@@ -1246,6 +1246,60 @@ mod tests {
     use super::*;
     use crate::testing::NoopNode;
 
+    /// Flow-control precedence, exercised through the production function rather than a
+    /// re-statement of it: a test that re-implements
+    /// `self.flow_control.map(to_config).unwrap_or(node_default)` cannot catch that expression
+    /// changing, which is the only thing worth pinning here.
+    ///
+    /// The `off` case is the subtle one. It nests to `Some(None)`, so an explicit per-request
+    /// `off` must disable flow control even though the node default enables it; a flatten in the
+    /// wrong place would silently re-enable it.
+    #[tokio::test]
+    async fn per_request_flow_control_should_override_the_node_default() -> anyhow::Result<()> {
+        use crate::config::SessionFlowControl;
+
+        let node_default = SessionFlowControl::Robust.to_config();
+
+        let request = |per_request: Option<SessionFlowControl>| SessionClientRequest {
+            destination: Address::from([1u8; 20]),
+            forward_path: RoutingOptions::Hops(1),
+            return_path: RoutingOptions::Hops(1),
+            target: SessionTargetSpec::Plain("127.0.0.1:8080".into()),
+            listen_host: None,
+            capabilities: None,
+            response_buffer: None,
+            max_surb_upstream: None,
+            session_pool: None,
+            max_client_sessions: None,
+            flow_control: per_request,
+        };
+
+        let resolve = async |per_request| -> anyhow::Result<_> {
+            let (_, _, cfg) = request(per_request)
+                .into_protocol_session_config(IpProtocol::UDP, node_default)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            Ok(cfg.flow_control)
+        };
+
+        assert_eq!(
+            node_default,
+            resolve(None).await?,
+            "no per-request profile falls back to the node default"
+        );
+        assert_eq!(
+            SessionFlowControl::Clean.to_config(),
+            resolve(Some(SessionFlowControl::Clean)).await?,
+            "an explicit profile wins over the node default"
+        );
+        assert_eq!(
+            None,
+            resolve(Some(SessionFlowControl::Off)).await?,
+            "an explicit `off` disables flow control despite a node default that enables it"
+        );
+        Ok(())
+    }
+
     fn session_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
             version: "test-version".to_string(),
