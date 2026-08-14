@@ -132,7 +132,10 @@ pub struct MultiStrategyConfig {
 pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
-        use hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig;
+        use hopr_strategy::{
+            auto_redeeming::AutoRedeemingStrategyConfig,
+            channel_lifecycle::{CapacitySizingMode, ChannelLifecycleConfig, FundingConfig},
+        };
         return MultiStrategyConfig {
             allow_recursive: false,
             execution_interval: Duration::from_secs(60),
@@ -141,7 +144,15 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                     redeem_on_winning: true,
                     ..Default::default()
                 }),
-                StrategyKind::ChannelLifecycle(Box::default()),
+                StrategyKind::ChannelLifecycle(Box::new(ChannelLifecycleConfig {
+                    funding: FundingConfig {
+                        sizing_mode: CapacitySizingMode::Probabilistic {
+                            success_probability: 0.99,
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })),
             ],
         };
     }
@@ -158,7 +169,10 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// External strategies can be composed by building this result first, then wrapping
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
 /// call site.
-pub fn build_strategies<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn Strategy + Send>
+pub fn build_strategies<N>(
+    cfg: &MultiStrategyConfig,
+    node: Arc<N>,
+) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
         + HasChainApi<
@@ -191,7 +205,10 @@ where
     build_strategies_inner(cfg, node)
 }
 
-fn build_strategies_inner<N>(cfg: &MultiStrategyConfig, node: Arc<N>) -> Box<dyn Strategy + Send>
+fn build_strategies_inner<N>(
+    cfg: &MultiStrategyConfig,
+    node: Arc<N>,
+) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
         + HasChainApi<
@@ -223,7 +240,7 @@ where
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
+                .build(Arc::clone(&node))?,
             ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::AutoFunding(sub_cfg) => strategies.push(
@@ -231,7 +248,7 @@ where
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
+                .build(Arc::clone(&node))?,
             ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ClosureFinalizer(sub_cfg) => strategies.push(
@@ -239,7 +256,7 @@ where
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
+                .build(Arc::clone(&node))?,
             ),
             // ChannelLifecycle owns its own tick cadence via
             // ChannelLifecycleConfig::tick_interval and runs as an independent
@@ -249,13 +266,13 @@ where
                 hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(
                     (**sub_cfg).clone(),
                 )
-                .build(Arc::clone(&node)),
+                .build(Arc::clone(&node))?,
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {
                     let mut sub = sub_cfg.clone();
                     sub.allow_recursive = false;
-                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node)));
+                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node))?);
                 } else {
                     tracing::error!("recursive multi-strategy not allowed and skipped");
                     continue; // skip the telemetry update: nothing was actually built
@@ -270,5 +287,71 @@ where
         }
     }
 
-    Box::new(MultiStrategy::new(strategies))
+    Ok(Box::new(MultiStrategy::new(strategies)))
+}
+
+#[cfg(all(test, feature = "runtime-tokio"))]
+mod tests {
+    use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
+
+    use super::*;
+
+    /// A single HOPR packet's usable payload, in bytes, at the pinned hopr-lib rev
+    /// (`10f6d80c…`): `HoprPacket::PAYLOAD_SIZE`. Hardcoded rather than pulled from
+    /// `hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE` (a `#[doc(hidden)]`
+    /// re-export) to keep this test's dependency surface minimal.
+    struct TestTransport;
+
+    impl PacketTransport for TestTransport {
+        fn packet_payload_size() -> usize {
+            1038
+        }
+    }
+
+    fn wei(w: u128) -> HoprBalance {
+        HoprBalance::from(U256::from(w))
+    }
+
+    /// Pins the wxHOPR amounts the shipped `probabilistic{0.99}` sizing mode resolves
+    /// to on rotsee and jura, given each network's live on-chain ticket price and
+    /// winning probability (read via `cast call` against the ticket-price and
+    /// winning-probability oracles on Gnosis at the time this was written). Fails if
+    /// the shipped capacities or sizing mode drift from the figures reviewed in the PR.
+    #[test]
+    fn shipped_channel_lifecycle_funding_resolves_to_reviewed_stakes() -> anyhow::Result<()> {
+        let cfg = serde_saphyr::from_str::<crate::config::HoprdConfig>(include_str!(
+            "../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"
+        ))?;
+        let funding = cfg
+            .strategy
+            .strategies
+            .iter()
+            .find_map(|s| match s {
+                StrategyKind::ChannelLifecycle(c) => Some(c.funding.clone()),
+                _ => None,
+            })
+            .expect("shipped config must declare a ChannelLifecycle strategy");
+
+        // rotsee: ticket price 100 wei, win_prob 1.25e-4 (1/8 000)
+        let rotsee = funding.resolve::<TestTransport>(wei(100), 1.25e-4);
+        assert_eq!(rotsee.initial_balance, wei(374_400_000));
+        assert_eq!(rotsee.topup_balance, wei(201_600_000));
+        assert_eq!(rotsee.lower_balance_threshold, wei(201_600_000));
+        assert_eq!(rotsee.min_safe_balance_required, wei(201_600_000));
+
+        // jura: ticket price 1e13 wei, win_prob 4e-6 (1/250 000)
+        let jura = funding.resolve::<TestTransport>(wei(10_000_000_000_000), 4.0e-6);
+        assert_eq!(jura.initial_balance, wei(67_500_000_000_000_000_000));
+        assert_eq!(jura.topup_balance, wei(45_000_000_000_000_000_000));
+        assert_eq!(
+            jura.lower_balance_threshold,
+            wei(45_000_000_000_000_000_000)
+        );
+        assert_eq!(
+            jura.min_safe_balance_required,
+            wei(45_000_000_000_000_000_000)
+        );
+
+        Ok(())
+    }
 }

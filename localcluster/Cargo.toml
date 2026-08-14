@@ -1,6 +1,6 @@
 [package]
 name = "hoprd-localcluster"
-version = "0.2.2"
+version = "0.2.5"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -29,7 +29,6 @@ hopr-lib = { workspace = true }
 hopr-session-server-forwarder = { workspace = true }
 hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }
-lazy_static = { workspace = true }
 nix = { workspace = true, features = ["fs", "signal"] }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
@@ -50,3 +49,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+validator = { workspace = true }

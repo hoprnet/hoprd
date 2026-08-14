@@ -34,13 +34,14 @@ strategy:
           allowlist: ~
           blocklist: []
         funding:
-          sizing_mode: deterministic
+          sizing_mode:
+            probabilistic:
+              success_probability: 0.99
           initial_capacity: "1 GiB"
           topup_capacity: "512 MiB"
           lower_capacity_threshold: "512 MiB"
           min_safe_capacity_required: "512 MiB"
           stop_when_unfunded: true
-          assumed_hops: 3
         proactive_funding:
           enabled: true
           safety_margin: 1.5

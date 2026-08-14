@@ -131,6 +131,34 @@ All three should print `200`. The endpoints (defined in `rest-api/src/checks.rs`
 
 ---
 
+## Smoke test
+
+`scripts/localcluster-smoke.sh` brings up a real cluster and asserts it becomes usable: it waits for `state=running`, checks every node reached the expected state with its **frozen identity**, then requires a clean `SIGTERM` shutdown. It exits non-zero with the cluster and node logs on any failure.
+
+```bash
+nix build -L --out-link result-hoprd .#binary-hoprd
+nix build -L --out-link result-localcluster .#binary-hoprd-localcluster
+
+HOPRD_BIN=./result-hoprd/bin/hoprd \
+LOCALCLUSTER_BIN=./result-localcluster/bin/hoprd-localcluster \
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc \
+  ./scripts/localcluster-smoke.sh
+```
+
+Knobs: `CLUSTER_SIZE` (default 2), `CHANNEL_MANAGEMENT` (default `api`), `CONTAINER_RUNTIME` (default `docker`), `DATA_DIR`, `SMOKE_TIMEOUT` (default 600s), `POLL_INTERVAL`.
+
+Two nodes is the minimum: `/readyz` requires network health above `Red`, so a lone node never becomes ready.
+
+This runs on every PR (`Localcluster smoke` in `.github/workflows/pr.yaml`) after the binaries are built, so both `nix build`s are Cachix cache hits. Coverage that does not need a chain at all — frozen identity addresses, generated-config round-trip and validation, keystore decryption — lives in the `hoprd-localcluster` unit tests and runs in under a second. The heavier 3-node full-mesh strategy check is `localcluster/tests/smoke.rs`, marked `#[ignore]`:
+
+```bash
+HOPRD_BIN=./result-hoprd/bin/hoprd \
+HOPRD_CHAIN_IMAGE=<chain-image> \
+  nix develop -c cargo nextest run -p hoprd-localcluster --test smoke --run-ignored all -j 1
+```
+
+---
+
 ## Machine-readable status
 
 For CI and integration tooling, query the structured status instead of scraping stdout. A running cluster serves its **live** state on a unix domain socket at `<data-dir>/cluster.sock`. The `status` subcommand connects to it and prints the current snapshot as JSON:

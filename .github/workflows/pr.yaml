@@ -80,6 +80,7 @@ jobs:
     uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      lint_command: "nix build -L .#quick"
       runner_small: depot-ubuntu-24.04
       runner_large: depot-ubuntu-24.04-4
     secrets:
@@ -95,9 +96,7 @@ jobs:
       enable_benchmarks: false
       enable_unit_coverage: true
       enable_integration_coverage: false
-      unit_coverage_command: |
-        nix build -L .#coverage-unit
-        cp result coverage.lcov
+      unit_coverage_command: "nix build -L .#coverage -o coverage.lcov"
       runner_unit: depot-ubuntu-24.04-16
       runner_integration: depot-ubuntu-24.04-8
     secrets:
@@ -191,7 +190,31 @@ jobs:
         with:
           source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          command: nix build -L .#docs
+  localcluster-smoke:
+    name: Localcluster smoke
+    # Runs after the binaries are built so both `nix build`s below are Cachix cache
+    # hits rather than rebuilds — this job is dominated by waiting, not by compute.
+    needs: build-binaries
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Pinned by digest so a chain-image rebuild cannot silently break CI.
+      # Keep in sync with localcluster/docker-compose.yml.
+      CHAIN_IMAGE: >-
+        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
+    steps:
+      - name: Start a local cluster and verify it becomes usable
+        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
+        with:
+          source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           command: |
-            set -e
-            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items --no-default-features --features runtime-tokio,telemetry,transport-quic
-            nix build -L .#docs
+            nix build -L .#binary-hoprd-x86_64-linux -o result-hoprd
+            nix build -L .#binary-hoprd-localcluster-x86_64-linux -o result-localcluster
+            HOPRD_BIN="$PWD/result-hoprd/bin/hoprd" \
+            LOCALCLUSTER_BIN="$PWD/result-localcluster/bin/hoprd-localcluster" \
+            DATA_DIR="$RUNNER_TEMP/localcluster" \
+              ./scripts/localcluster-smoke.sh

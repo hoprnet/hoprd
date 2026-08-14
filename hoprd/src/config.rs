@@ -467,6 +467,16 @@ mod tests {
     }
 
     #[test]
+    fn nfpm_sample_config_should_parse_and_validate() -> anyhow::Result<()> {
+        let cfg = serde_saphyr::from_str::<HoprdConfig>(include_str!(
+            "../../deploy/nfpm/hoprd-sample.cfg.yaml"
+        ))
+        .context("nfpm sample config must deserialize")?;
+        cfg.validate().context("nfpm sample config must validate")?;
+        Ok(())
+    }
+
+    #[test]
     fn test_config_should_be_deserializable_from_a_string_in_a_file() -> anyhow::Result<()> {
         let mut config_file = NamedTempFile::new()?;
         let mut prepared_config_file = config_file.reopen()?;
