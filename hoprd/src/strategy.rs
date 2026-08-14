@@ -159,6 +159,12 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                         initial_capacity: bytesize::ByteSize::gib(10),
                         topup_capacity: bytesize::ByteSize::gib(10),
                         lower_capacity_threshold: bytesize::ByteSize::gib(1),
+                        // Stated with the other three. Upstream's defaults move as a set, so
+                        // leaving this at the 1 GiB default while the rest go to 10 GiB makes
+                        // the `stop_when_unfunded` pre-gate reason about a channel cost that no
+                        // longer exists -- a wasted funding pass rather than a failed open, but
+                        // an incoherent set either way.
+                        min_safe_capacity_required: bytesize::ByteSize::gib(10),
                         sizing_mode: CapacitySizingMode::Probabilistic {
                             success_probability: 0.99,
                         },

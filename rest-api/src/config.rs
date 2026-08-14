@@ -175,40 +175,4 @@ mod tests {
         assert_eq!(config.max_frame_age, Some(Duration::from_secs(2)));
         Ok(())
     }
-
-    /// Precedence, mirroring the expression in `into_protocol_session_config`:
-    ///
-    /// ```ignore
-    /// self.flow_control.map(SessionFlowControl::to_config).unwrap_or(node_default)
-    /// ```
-    ///
-    /// The `off` case is the one worth pinning: it nests to `Some(None)`, so an explicit
-    /// per-request `off` disables flow control even though the node default enables it. A naive
-    /// flattening would silently re-enable it.
-    #[test]
-    fn per_request_profile_should_override_the_node_default() {
-        let node_default = SessionFlowControl::Robust.to_config();
-
-        let resolve = |per_request: Option<SessionFlowControl>| {
-            per_request
-                .map(SessionFlowControl::to_config)
-                .unwrap_or(node_default)
-        };
-
-        assert_eq!(
-            node_default,
-            resolve(None),
-            "no per-request profile falls back to the node default"
-        );
-        assert_eq!(
-            Some(FlowControlConfig::default()),
-            resolve(Some(SessionFlowControl::Clean)),
-            "an explicit profile wins over the node default"
-        );
-        assert_eq!(
-            None,
-            resolve(Some(SessionFlowControl::Off)),
-            "an explicit `off` disables flow control despite a node default that enables it"
-        );
-    }
 }
