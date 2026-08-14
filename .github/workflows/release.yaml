@@ -75,6 +75,8 @@ jobs:
       docker_image_format: skopeo
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      docker_hub_username: ${{ secrets.DOCKER_HUB_USERNAME }}
+      docker_hub_token: ${{ secrets.DOCKER_HUB_TOKEN }}
   release:
     name: Close release
     needs:
