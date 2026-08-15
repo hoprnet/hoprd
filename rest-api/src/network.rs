@@ -126,16 +126,18 @@ pub(crate) struct ConnectedPeerResponse {
     #[serde(serialize_with = "checksum_address_serializer")]
     #[schema(value_type = String, example = "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe")]
     address: Address,
+    /// Probe success rate, if the edge has been probed.
     #[schema(example = 0.476)]
-    probe_rate: f64,
+    probe_rate: Option<f64>,
     /// Epoch milliseconds of the last observation update.
     #[schema(example = 1690000000000_u128)]
     last_update: u128,
     /// Average latency in milliseconds, if available.
     #[schema(example = 100)]
     average_latency: Option<u128>,
+    /// Combined edge score, if the edge carries any measurement.
     #[schema(example = 0.7)]
-    score: f64,
+    score: Option<f64>,
 }
 
 /// Lists peers with immediate observation data from the network graph.
@@ -177,7 +179,9 @@ pub(super) async fn connected<
         let Some(imm) = obs.immediate_qos() else {
             continue;
         };
-        if !imm.is_connected() {
+        // Only edges observed to be up. An unchecked edge is not evidence of connectivity, so it is
+        // skipped here exactly as an observed-down one is.
+        if imm.is_connected() != Some(true) {
             continue;
         }
 
@@ -377,16 +381,21 @@ pub(super) async fn graph<
     for (src, dst, obs) in &edges {
         let src_label = label(src);
         let dst_label = label(dst);
-        let mut attrs = vec![format!("score={:.2}", obs.score())];
+        // An unmeasured edge carries no score; omitting the attribute keeps it distinguishable from
+        // one that scored zero.
+        let mut attrs = Vec::new();
+        if let Some(score) = obs.score() {
+            attrs.push(format!("score={score:.2}"));
+        }
         if let Some(imm) = obs.immediate_qos()
             && let Some(latency) = imm.average_latency()
         {
             attrs.push(format!("lat={}ms", latency.as_millis()));
         }
         if let Some(inter) = obs.intermediate_qos()
-            && let Some(cap) = inter.capacity()
+            && let Some(balance) = inter.balance()
         {
-            attrs.push(format!("cap={cap}"));
+            attrs.push(format!("balance={balance}"));
         }
         use std::fmt::Write;
         let _ = writeln!(

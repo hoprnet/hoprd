@@ -81,16 +81,18 @@ pub(crate) struct PeerChannelInfo {
 }))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeerQosInfo {
+    /// Probe success rate, if the edge has been probed.
     #[schema(example = 0.476)]
-    probe_rate: f64,
+    probe_rate: Option<f64>,
     /// Epoch milliseconds of the last observation update.
     #[schema(example = 1690000000000_u128)]
     last_update: u128,
     /// Average latency in milliseconds, if available.
     #[schema(example = 100)]
     average_latency: Option<u128>,
+    /// Combined edge score, if the edge carries any measurement.
     #[schema(example = 0.7)]
-    score: f64,
+    score: Option<f64>,
 }
 
 #[serde_as]
@@ -474,10 +476,10 @@ mod tests {
     #[test]
     fn peer_qos_info_should_serialize_with_all_fields() {
         let qos = PeerQosInfo {
-            probe_rate: 0.5,
+            probe_rate: Some(0.5),
             last_update: 1690000000000,
             average_latency: Some(100),
-            score: 0.7,
+            score: Some(0.7),
         };
 
         let json = serde_json::to_value(&qos).unwrap();
@@ -490,10 +492,10 @@ mod tests {
     #[test]
     fn peer_qos_info_should_serialize_without_latency() {
         let qos = PeerQosInfo {
-            probe_rate: 0.3,
+            probe_rate: Some(0.3),
             last_update: 1690000000000,
             average_latency: None,
-            score: 0.5,
+            score: Some(0.5),
         };
 
         let json = serde_json::to_value(&qos).unwrap();
@@ -506,10 +508,10 @@ mod tests {
             announced_sources: vec![],
             observed: vec![],
             qos: Some(PeerQosInfo {
-                probe_rate: 0.5,
+                probe_rate: Some(0.5),
                 last_update: 1690000000000,
                 average_latency: Some(100),
-                score: 0.7,
+                score: Some(0.7),
             }),
             outgoing_channel: Some(PeerChannelInfo {
                 id: Hash::default(),
