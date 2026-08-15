@@ -490,6 +490,25 @@ mod tests {
     }
 
     #[test]
+    fn peer_qos_info_should_serialize_absent_measurements_as_null() {
+        // `probe_rate` and `score` are independently absent: an edge can be probed without
+        // carrying a score, or scored without a probe rate. Serializing either as `0` would make
+        // "never measured" indistinguishable from "measured and dead".
+        for (probe_rate, score) in [(None, None), (Some(0.5), None), (None, Some(0.7))] {
+            let qos = PeerQosInfo {
+                probe_rate,
+                last_update: 1690000000000,
+                average_latency: None,
+                score,
+            };
+
+            let json = serde_json::to_value(&qos).unwrap();
+            assert_eq!(json["probeRate"].is_null(), probe_rate.is_none(), "{json}");
+            assert_eq!(json["score"].is_null(), score.is_none(), "{json}");
+        }
+    }
+
+    #[test]
     fn peer_qos_info_should_serialize_without_latency() {
         let qos = PeerQosInfo {
             probe_rate: Some(0.3),

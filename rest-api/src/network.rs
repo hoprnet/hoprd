@@ -527,6 +527,8 @@ mod tests {
             .route("/network/price", get(price::<MockChainNode>))
             .route("/network/probability", get(probability::<MockChainNode>))
             .route("/network/announced", get(announced::<MockChainNode>))
+            .route("/network/connected", get(connected::<MockChainNode>))
+            .route("/network/graph", get(graph::<MockChainNode>))
             .with_state(state)
     }
 
@@ -593,6 +595,179 @@ mod tests {
             0
         );
 
+        Ok(())
+    }
+
+    // ── Presence semantics: connectivity and absent measurements ───────────
+
+    use std::time::Duration;
+
+    use hopr_lib::api::types::crypto::keypairs::{ChainKeypair, Keypair as _, OffchainKeypair};
+
+    use crate::testing::{StubEdge, StubGraph, StubMeasurement};
+
+    /// A node whose graph holds one edge `me -> peer`, with `peer` resolvable on chain.
+    fn node_with_edge(edge: StubEdge) -> (MockChainNode, Address) {
+        let mut node = MockChainNode::random();
+        let me = *node.graph.identity();
+
+        let peer_kp = OffchainKeypair::random();
+        let peer = *peer_kp.public();
+        let peer_addr = ChainKeypair::random().public().to_address();
+        node.chain.register_peer(peer, peer_addr);
+
+        node.graph = StubGraph::new(me).with_edge(me, peer, edge);
+        (node, peer_addr)
+    }
+
+    async fn connected_peers(node: MockChainNode) -> anyhow::Result<serde_json::Value> {
+        let resp = network_router(node)
+            .oneshot(Request::get("/network/connected").body(Body::empty())?)
+            .await?;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+        Ok(serde_json::from_slice(&body)?)
+    }
+
+    fn measurement(connected: Option<bool>) -> StubMeasurement {
+        StubMeasurement {
+            connected,
+            probe_rate: Some(0.5),
+            latency: Some(Duration::from_millis(20)),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn connected_should_list_a_peer_observed_to_be_up() -> anyhow::Result<()> {
+        let (node, addr) = node_with_edge(StubEdge {
+            immediate: Some(measurement(Some(true))),
+            score: Some(0.7),
+            ..Default::default()
+        });
+
+        let json = connected_peers(node).await?;
+        let peers = json.as_array().context("response should be an array")?;
+        assert_eq!(peers.len(), 1, "an edge observed up must be listed");
+        assert_eq!(
+            peers[0]["address"]
+                .as_str()
+                .context("address")?
+                .to_lowercase(),
+            addr.to_string().to_lowercase()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn connected_should_exclude_a_peer_observed_to_be_down() -> anyhow::Result<()> {
+        let (node, _) = node_with_edge(StubEdge {
+            immediate: Some(measurement(Some(false))),
+            ..Default::default()
+        });
+
+        let json = connected_peers(node).await?;
+        assert!(
+            json.as_array().context("array")?.is_empty(),
+            "an edge observed down must not be listed"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn connected_should_exclude_a_peer_never_checked() -> anyhow::Result<()> {
+        // The case the whole stack exists for: unchecked is not evidence of being up, so it must
+        // be excluded exactly as an observed-down edge is -- and not admitted by a `!false` test.
+        let (node, _) = node_with_edge(StubEdge {
+            immediate: Some(measurement(None)),
+            ..Default::default()
+        });
+
+        let json = connected_peers(node).await?;
+        assert!(
+            json.as_array().context("array")?.is_empty(),
+            "an unchecked edge must not be reported as connected"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn connected_should_report_absent_measurements_as_null() -> anyhow::Result<()> {
+        let (node, _) = node_with_edge(StubEdge {
+            immediate: Some(StubMeasurement {
+                connected: Some(true),
+                probe_rate: None,
+                latency: None,
+                ..Default::default()
+            }),
+            score: None,
+            ..Default::default()
+        });
+
+        let json = connected_peers(node).await?;
+        let peers = json.as_array().context("array")?;
+        assert_eq!(peers.len(), 1, "the peer is up, so it is listed");
+        assert!(
+            peers[0]["probeRate"].is_null(),
+            "an unprobed edge has no rate"
+        );
+        assert!(
+            peers[0]["score"].is_null(),
+            "an unmeasured edge has no score"
+        );
+        assert!(peers[0]["averageLatency"].is_null());
+        Ok(())
+    }
+
+    // ── DOT rendering ──────────────────────────────────────────────────────
+
+    async fn dot_of(node: MockChainNode) -> anyhow::Result<String> {
+        let resp = network_router(node)
+            .oneshot(Request::get("/network/graph").body(Body::empty())?)
+            .await?;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+        Ok(String::from_utf8(body.to_vec())?)
+    }
+
+    #[tokio::test]
+    async fn dot_should_distinguish_a_zero_score_from_an_absent_one() -> anyhow::Result<()> {
+        let (measured, _) = node_with_edge(StubEdge {
+            score: Some(0.0),
+            ..Default::default()
+        });
+        assert!(
+            dot_of(measured).await?.contains("score=0.00"),
+            "a measured zero must be rendered, not hidden"
+        );
+
+        let (unmeasured, _) = node_with_edge(StubEdge {
+            score: None,
+            ..Default::default()
+        });
+        assert!(
+            !dot_of(unmeasured).await?.contains("score="),
+            "an unmeasured edge must omit the attribute rather than fabricate one"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn dot_should_label_the_intermediate_balance_as_balance() -> anyhow::Result<()> {
+        let (node, _) = node_with_edge(StubEdge {
+            intermediate: Some(StubMeasurement {
+                balance: Some(hopr_lib::api::graph::traits::Balance::from(42u32)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let dot = dot_of(node).await?;
+        assert!(dot.contains("balance=42"), "got: {dot}");
+        assert!(
+            !dot.contains("cap="),
+            "the stale `cap=` label must be gone: {dot}"
+        );
         Ok(())
     }
 }
