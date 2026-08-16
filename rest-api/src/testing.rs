@@ -735,6 +735,21 @@ impl StubGraph {
         }
     }
 
+    /// Every distinct node the graph knows: its own identity plus both endpoints of every edge.
+    ///
+    /// Deduplicated in insertion order rather than through a set, so `nodes()` is reproducible
+    /// across runs — `OffchainPublicKey` is not `Ord`, and a `HashSet` would reorder per process.
+    fn node_set(&self) -> Vec<OffchainPublicKey> {
+        let mut seen = Vec::new();
+        for key in std::iter::once(self.me).chain(self.edges.iter().flat_map(|(s, d, _)| [*s, *d]))
+        {
+            if !seen.contains(&key) {
+                seen.push(key);
+            }
+        }
+        seen
+    }
+
     /// Adds a directed edge.
     pub fn with_edge(
         mut self,
@@ -760,16 +775,15 @@ impl hopr_lib::api::graph::NetworkGraphView for StubGraph {
     }
 
     fn node_count(&self) -> usize {
-        self.edges.len()
+        self.node_set().len()
     }
 
     fn contains_node(&self, key: &Self::NodeId) -> bool {
-        self.edges.iter().any(|(s, d, _)| s == key || d == key)
+        self.node_set().contains(key)
     }
 
     fn nodes(&self) -> BoxStream<'static, Self::NodeId> {
-        let all: Vec<_> = self.edges.iter().flat_map(|(s, d, _)| [*s, *d]).collect();
-        Box::pin(stream::iter(all))
+        Box::pin(stream::iter(self.node_set()))
     }
 
     fn edge(&self, src: &Self::NodeId, dest: &Self::NodeId) -> Option<Self::Observed> {
