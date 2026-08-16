@@ -656,6 +656,16 @@ mod tests {
                 .to_lowercase(),
             addr.to_string().to_lowercase()
         );
+        // Distinct values on purpose: the rate comes from the immediate measurement and the score
+        // from the edge, so equal ones would let the handler read either through the other.
+        assert_eq!(
+            peers[0]["probeRate"], 0.5,
+            "probe rate comes from the immediate stream"
+        );
+        assert_eq!(
+            peers[0]["score"], 0.7,
+            "score comes from the edge, not the stream"
+        );
         Ok(())
     }
 

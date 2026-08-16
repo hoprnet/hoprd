@@ -716,9 +716,13 @@ pub struct StubMeasurement {
 }
 
 /// A graph holding a fixed set of edges out of [`identity`](StubGraph::identity).
-#[derive(Clone, Default)]
+///
+/// Deliberately not `Default`: the identity has to come from somewhere, and a defaulted one would
+/// have to be invented — leaving every defaulted graph in the process sharing a single made-up key
+/// belonging to no node.
+#[derive(Clone)]
 pub struct StubGraph {
-    me: Option<OffchainPublicKey>,
+    me: OffchainPublicKey,
     edges: Vec<(OffchainPublicKey, OffchainPublicKey, StubEdge)>,
 }
 
@@ -726,7 +730,7 @@ impl StubGraph {
     /// A graph whose self-identity is `me` and which holds no edges.
     pub fn new(me: OffchainPublicKey) -> Self {
         Self {
-            me: Some(me),
+            me,
             edges: Vec::new(),
         }
     }
@@ -740,13 +744,6 @@ impl StubGraph {
     ) -> Self {
         self.edges.push((src, dst, edge));
         self
-    }
-
-    fn identity_key(&self) -> &OffchainPublicKey {
-        static FALLBACK: std::sync::OnceLock<OffchainPublicKey> = std::sync::OnceLock::new();
-        self.me
-            .as_ref()
-            .unwrap_or_else(|| FALLBACK.get_or_init(|| *OffchainKeypair::random().public()))
     }
 }
 
@@ -783,7 +780,7 @@ impl hopr_lib::api::graph::NetworkGraphView for StubGraph {
     }
 
     fn identity(&self) -> &Self::NodeId {
-        self.identity_key()
+        &self.me
     }
 }
 
