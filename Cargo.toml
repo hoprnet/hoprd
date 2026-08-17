@@ -17,21 +17,21 @@ hoprd-api-client = { path = "rest-api-client" }
 
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/test/transport/return-routing-origination-stall", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
-hopr-strategy = { version = "0.28.0", git = "https://github.com/hoprnet/hopr-strategy", rev = "272f41000cd6e1bec9e2d08e2cd85f37aa804ea9", default-features = false }
+hopr-strategy = { version = "0.28.0", git = "https://github.com/hoprnet/hopr-strategy", rev = "5fac611d95768a161aa972c24902070d3aad5f10", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/test/transport/return-routing-origination-stall", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "2.0.0", git = "https://github.com/hoprnet/hopr-api", rev = "ee65b340cf09fd6031735477cc1171d7610694a3" }
-hopr-chain-connector = { version = "0.22.2", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44" }
-hopr-ct-full-network = { version = "0.4.0", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44", default-features = false }
-hopr-network-graph = { version = "0.5.0", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44", default-features = false }
-hopr-session-server-forwarder = { version = "0.1.1", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44", default-features = false }
-hopr-ticket-manager = { version = "0.5.2", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44", default-features = false, features = [
+hopr-api = { version = "2.0.0" }
+hopr-chain-connector = { version = "0.22.2" }
+hopr-ct-full-network = { version = "0.4.0", default-features = false }
+hopr-network-graph = { version = "0.5.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.1.1", default-features = false }
+hopr-ticket-manager = { version = "0.5.2", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
-hopr-transport-p2p = { version = "0.9.5", git = "https://github.com/hoprnet/hopr-impls", rev = "ad0fd7e4b35ac462846011ec7446fd404f5bcf44", default-features = false }
+hopr-transport-p2p = { version = "0.9.5", default-features = false }
 
 # Third-party deps
 anyhow = "1.0.104"
