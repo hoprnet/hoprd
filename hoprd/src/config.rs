@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, SurbPopOrder, SurbStoreConfig},
+        protocol::PacketPipelineConfig,
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
@@ -298,6 +299,15 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     // immediately instead of only after a stale backlog has been drained.
                     surb_store: SurbStoreConfig {
                         pop_order: SurbPopOrder::Lifo,
+                        ..Default::default()
+                    },
+                    pipeline: PacketPipelineConfig {
+                        // Tighter than the library default, which errs long because it cannot know
+                        // the session frame timeout. Ours is 3 s, past which a held return packet
+                        // is discarded by the receiver anyway -- so waiting longer cannot deliver
+                        // it and only holds up every other packet this node originates, since
+                        // routing resolution preserves submission order.
+                        surb_resolution_wait: Some(Duration::from_secs(1)),
                         ..Default::default()
                     },
                     ..Default::default()
