@@ -81,16 +81,18 @@ pub(crate) struct PeerChannelInfo {
 }))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeerQosInfo {
+    /// Probe success rate, if the edge has been probed.
     #[schema(example = 0.476)]
-    probe_rate: f64,
+    probe_rate: Option<f64>,
     /// Epoch milliseconds of the last observation update.
     #[schema(example = 1690000000000_u128)]
     last_update: u128,
     /// Average latency in milliseconds, if available.
     #[schema(example = 100)]
     average_latency: Option<u128>,
+    /// Combined edge score, if the edge carries any measurement.
     #[schema(example = 0.7)]
-    score: f64,
+    score: Option<f64>,
 }
 
 #[serde_as]
@@ -474,10 +476,10 @@ mod tests {
     #[test]
     fn peer_qos_info_should_serialize_with_all_fields() {
         let qos = PeerQosInfo {
-            probe_rate: 0.5,
+            probe_rate: Some(0.5),
             last_update: 1690000000000,
             average_latency: Some(100),
-            score: 0.7,
+            score: Some(0.7),
         };
 
         let json = serde_json::to_value(&qos).unwrap();
@@ -488,12 +490,31 @@ mod tests {
     }
 
     #[test]
+    fn peer_qos_info_should_serialize_absent_measurements_as_null() {
+        // `probe_rate` and `score` are independently absent: an edge can be probed without
+        // carrying a score, or scored without a probe rate. Serializing either as `0` would make
+        // "never measured" indistinguishable from "measured and dead".
+        for (probe_rate, score) in [(None, None), (Some(0.5), None), (None, Some(0.7))] {
+            let qos = PeerQosInfo {
+                probe_rate,
+                last_update: 1690000000000,
+                average_latency: None,
+                score,
+            };
+
+            let json = serde_json::to_value(&qos).unwrap();
+            assert_eq!(json["probeRate"].is_null(), probe_rate.is_none(), "{json}");
+            assert_eq!(json["score"].is_null(), score.is_none(), "{json}");
+        }
+    }
+
+    #[test]
     fn peer_qos_info_should_serialize_without_latency() {
         let qos = PeerQosInfo {
-            probe_rate: 0.3,
+            probe_rate: Some(0.3),
             last_update: 1690000000000,
             average_latency: None,
-            score: 0.5,
+            score: Some(0.5),
         };
 
         let json = serde_json::to_value(&qos).unwrap();
@@ -506,10 +527,10 @@ mod tests {
             announced_sources: vec![],
             observed: vec![],
             qos: Some(PeerQosInfo {
-                probe_rate: 0.5,
+                probe_rate: Some(0.5),
                 last_update: 1690000000000,
                 average_latency: Some(100),
-                score: 0.7,
+                score: Some(0.7),
             }),
             outgoing_channel: Some(PeerChannelInfo {
                 id: Hash::default(),

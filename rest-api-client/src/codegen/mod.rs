@@ -775,9 +775,7 @@ pub mod types {
     ///  "type": "object",
     ///  "required": [
     ///    "address",
-    ///    "lastUpdate",
-    ///    "probeRate",
-    ///    "score"
+    ///    "lastUpdate"
     ///  ],
     ///  "properties": {
     ///    "address": {
@@ -806,17 +804,25 @@ pub mod types {
     ///      "minimum": 0.0
     ///    },
     ///    "probeRate": {
+    ///      "description": "Probe success rate, if the edge has been probed.",
     ///      "examples": [
     ///        0.476
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    },
     ///    "score": {
+    ///      "description": "Combined edge score, if the edge carries any measurement.",
     ///      "examples": [
     ///        0.7
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    }
     ///  }
@@ -836,9 +842,16 @@ pub mod types {
         ///Epoch milliseconds of the last observation update.
         #[serde(rename = "lastUpdate")]
         pub last_update: u64,
-        #[serde(rename = "probeRate")]
-        pub probe_rate: f64,
-        pub score: f64,
+        ///Probe success rate, if the edge has been probed.
+        #[serde(
+            rename = "probeRate",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub probe_rate: ::std::option::Option<f64>,
+        ///Combined edge score, if the edge carries any measurement.
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub score: ::std::option::Option<f64>,
     }
     ///Specifies the amount of HOPR tokens to fund a channel with.
     ///
@@ -1674,9 +1687,7 @@ and indexer state.*/
     ///  ],
     ///  "type": "object",
     ///  "required": [
-    ///    "lastUpdate",
-    ///    "probeRate",
-    ///    "score"
+    ///    "lastUpdate"
     ///  ],
     ///  "properties": {
     ///    "averageLatency": {
@@ -1699,17 +1710,25 @@ and indexer state.*/
     ///      "minimum": 0.0
     ///    },
     ///    "probeRate": {
+    ///      "description": "Probe success rate, if the edge has been probed.",
     ///      "examples": [
     ///        0.476
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    },
     ///    "score": {
+    ///      "description": "Combined edge score, if the edge carries any measurement.",
     ///      "examples": [
     ///        0.7
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    }
     ///  }
@@ -1728,9 +1747,16 @@ and indexer state.*/
         ///Epoch milliseconds of the last observation update.
         #[serde(rename = "lastUpdate")]
         pub last_update: u64,
-        #[serde(rename = "probeRate")]
-        pub probe_rate: f64,
-        pub score: f64,
+        ///Probe success rate, if the edge has been probed.
+        #[serde(
+            rename = "probeRate",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub probe_rate: ::std::option::Option<f64>,
+        ///Combined edge score, if the edge carries any measurement.
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub score: ::std::option::Option<f64>,
     }
     ///Contains the latency and the reported version of a peer that has been pinged.
     ///

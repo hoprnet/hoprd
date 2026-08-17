@@ -191,6 +191,11 @@ impl StubChain {
             mapper: StubKeyMapper,
         }
     }
+
+    /// Registers a peer so `packet_key_to_chain_key` can resolve it.
+    pub fn register_peer(&mut self, packet: OffchainPublicKey, address: Address) {
+        self.keys.insert(address, packet);
+    }
 }
 
 // --- ChainReadChannelOperations ---
@@ -549,6 +554,7 @@ impl hopr_lib::api::node::ComponentStatusReporter for StubChain {
 pub struct MockChainNode {
     pub identity: NodeOnchainIdentity,
     pub chain: StubChain,
+    pub graph: StubGraph,
 }
 
 impl MockChainNode {
@@ -568,7 +574,20 @@ impl MockChainNode {
                 module_address: module_chain.public().to_address(),
             },
             chain: StubChain::new(&offchain, &chain_kp),
+            graph: StubGraph::new(*offchain.public()),
         }
+    }
+}
+
+impl hopr_lib::api::node::HasGraphView for MockChainNode {
+    type Graph = StubGraph;
+
+    fn graph(&self) -> &StubGraph {
+        &self.graph
+    }
+
+    fn status(&self) -> ComponentStatus {
+        ComponentStatus::Ready
     }
 }
 
@@ -666,5 +685,221 @@ impl HasTicketManagement for MockChainNode {
 
     fn status(&self) -> ComponentStatus {
         ComponentStatus::Ready
+    }
+}
+
+// ===========================================================================
+// StubGraph — a controllable network graph for the `network` endpoints
+// ===========================================================================
+
+/// One observed edge, with every measurement independently settable.
+///
+/// The point of the fixture is that each observation can be *absent* as well as
+/// present: `None` means never measured, which the endpoints must render
+/// differently from a measured zero.
+#[derive(Clone, Default)]
+pub struct StubEdge {
+    pub last_update: Duration,
+    pub score: Option<f64>,
+    pub immediate: Option<StubMeasurement>,
+    pub intermediate: Option<StubMeasurement>,
+}
+
+/// One QoS stream on a [`StubEdge`].
+#[derive(Clone, Default)]
+pub struct StubMeasurement {
+    pub connected: Option<bool>,
+    pub probe_rate: Option<f64>,
+    pub latency: Option<Duration>,
+    pub ack_rate: Option<f64>,
+    pub balance: Option<hopr_lib::api::graph::traits::Balance>,
+}
+
+/// A graph holding a fixed set of edges out of [`identity`](StubGraph::identity).
+///
+/// Deliberately not `Default`: the identity has to come from somewhere, and a defaulted one would
+/// have to be invented — leaving every defaulted graph in the process sharing a single made-up key
+/// belonging to no node.
+#[derive(Clone)]
+pub struct StubGraph {
+    me: OffchainPublicKey,
+    edges: Vec<(OffchainPublicKey, OffchainPublicKey, StubEdge)>,
+}
+
+impl StubGraph {
+    /// A graph whose self-identity is `me` and which holds no edges.
+    pub fn new(me: OffchainPublicKey) -> Self {
+        Self {
+            me,
+            edges: Vec::new(),
+        }
+    }
+
+    /// Every distinct node the graph knows: its own identity plus both endpoints of every edge.
+    ///
+    /// Deduplicated in insertion order rather than through a set, so `nodes()` is reproducible
+    /// across runs — `OffchainPublicKey` is not `Ord`, and a `HashSet` would reorder per process.
+    fn node_set(&self) -> Vec<OffchainPublicKey> {
+        let mut seen = Vec::new();
+        for key in std::iter::once(self.me).chain(self.edges.iter().flat_map(|(s, d, _)| [*s, *d]))
+        {
+            if !seen.contains(&key) {
+                seen.push(key);
+            }
+        }
+        seen
+    }
+
+    /// Adds a directed edge.
+    pub fn with_edge(
+        mut self,
+        src: OffchainPublicKey,
+        dst: OffchainPublicKey,
+        edge: StubEdge,
+    ) -> Self {
+        self.edges.push((src, dst, edge));
+        self
+    }
+}
+
+impl hopr_lib::api::graph::NetworkGraphView for StubGraph {
+    type NodeId = OffchainPublicKey;
+    type Observed = StubEdge;
+
+    fn ticket_face_value(&self) -> Option<hopr_lib::api::graph::traits::Balance> {
+        None
+    }
+
+    fn path_slot(&self, _key: &Self::NodeId) -> Option<u64> {
+        None
+    }
+
+    fn node_count(&self) -> usize {
+        self.node_set().len()
+    }
+
+    fn contains_node(&self, key: &Self::NodeId) -> bool {
+        self.node_set().contains(key)
+    }
+
+    fn nodes(&self) -> BoxStream<'static, Self::NodeId> {
+        Box::pin(stream::iter(self.node_set()))
+    }
+
+    fn edge(&self, src: &Self::NodeId, dest: &Self::NodeId) -> Option<Self::Observed> {
+        self.edges
+            .iter()
+            .find(|(s, d, _)| s == src && d == dest)
+            .map(|(_, _, e)| e.clone())
+    }
+
+    fn identity(&self) -> &Self::NodeId {
+        &self.me
+    }
+}
+
+impl hopr_lib::api::graph::NetworkGraphConnectivity for StubGraph {
+    type NodeId = OffchainPublicKey;
+    type Observed = StubEdge;
+
+    fn connected_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)> {
+        self.edges.clone()
+    }
+
+    fn reachable_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)> {
+        self.edges.clone()
+    }
+}
+
+impl hopr_lib::api::graph::NetworkGraphTraverse for StubGraph {
+    type NodeId = OffchainPublicKey;
+    type Observed = StubEdge;
+
+    fn simple_paths<V: hopr_lib::api::graph::ValueFn<Weight = Self::Observed>>(
+        &self,
+        _source: &Self::NodeId,
+        _destination: &Self::NodeId,
+        _length: usize,
+        _take_count: Option<usize>,
+        _value_fn: V,
+    ) -> Vec<(Vec<Self::NodeId>, [u64; 5], V::Value)> {
+        Vec::new()
+    }
+
+    fn simple_paths_from<V: hopr_lib::api::graph::ValueFn<Weight = Self::Observed>>(
+        &self,
+        _source: &Self::NodeId,
+        _length: usize,
+        _take_count: Option<usize>,
+        _value_fn: V,
+    ) -> Vec<(Vec<Self::NodeId>, [u64; 5], V::Value)> {
+        Vec::new()
+    }
+
+    fn simple_loopback_to_self(
+        &self,
+        _length: usize,
+        _take_count: Option<usize>,
+    ) -> Vec<(Vec<Self::NodeId>, [u64; 5])> {
+        Vec::new()
+    }
+}
+
+impl hopr_lib::api::graph::EdgeObservableRead for StubEdge {
+    type ImmediateMeasurement = StubMeasurement;
+    type IntermediateMeasurement = StubMeasurement;
+
+    fn last_update(&self) -> Duration {
+        self.last_update
+    }
+
+    fn immediate_qos(&self) -> Option<&Self::ImmediateMeasurement> {
+        self.immediate.as_ref()
+    }
+
+    fn intermediate_qos(&self) -> Option<&Self::IntermediateMeasurement> {
+        self.intermediate.as_ref()
+    }
+
+    fn score(&self) -> Option<f64> {
+        self.score
+    }
+}
+
+impl hopr_lib::api::graph::traits::EdgeObservableWrite for StubEdge {
+    fn record(&mut self, _measurement: hopr_lib::api::graph::traits::EdgeWeightType) {}
+}
+
+impl hopr_lib::api::graph::EdgeLinkObservable for StubMeasurement {
+    fn record(&mut self, _: hopr_lib::api::graph::traits::EdgeTransportMeasurement) {}
+
+    fn average_latency(&self) -> Option<Duration> {
+        self.latency
+    }
+
+    fn average_probe_rate(&self) -> Option<f64> {
+        self.probe_rate
+    }
+
+    fn score(&self) -> Option<f64> {
+        self.probe_rate
+    }
+}
+
+impl hopr_lib::api::graph::traits::EdgeNetworkObservableRead for StubMeasurement {
+    fn is_connected(&self) -> Option<bool> {
+        self.connected
+    }
+}
+
+impl hopr_lib::api::graph::EdgeImmediateProtocolObservable for StubMeasurement {
+    fn ack_rate(&self) -> Option<f64> {
+        self.ack_rate
+    }
+}
+
+impl hopr_lib::api::graph::traits::EdgeProtocolObservable for StubMeasurement {
+    fn balance(&self) -> Option<hopr_lib::api::graph::traits::Balance> {
+        self.balance
     }
 }
