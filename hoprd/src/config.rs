@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, SurbPopOrder, SurbStoreConfig},
+        protocol::PacketPipelineConfig,
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
@@ -298,6 +299,15 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     // immediately instead of only after a stale backlog has been drained.
                     surb_store: SurbStoreConfig {
                         pop_order: SurbPopOrder::Lifo,
+                        ..Default::default()
+                    },
+                    pipeline: PacketPipelineConfig {
+                        // Tighter than the library default, which errs long because it cannot know
+                        // the session frame timeout. Ours is 3 s, past which a held return packet
+                        // is discarded by the receiver anyway -- so waiting longer cannot deliver
+                        // it and only holds up every other packet this node originates, since
+                        // routing resolution preserves submission order.
+                        surb_resolution_wait: Some(Duration::from_secs(1)),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -669,6 +679,25 @@ mod tests {
             Duration::from_millis(15)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn the_surb_resolution_wait_should_be_tightened_for_hoprd() -> anyhow::Result<()> {
+        use std::time::Duration;
+
+        // hoprd knows something the library cannot: its sessions time frames out at 3 s, past which
+        // a held return packet is discarded by the receiver anyway. The library default errs long
+        // for want of that knowledge, so leaving it unset would stall every other packet this node
+        // originates behind one that can no longer be delivered.
+        let cfg = example_cfg()?;
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+
+        assert_eq!(
+            lib_cfg.protocol.packet.pipeline.surb_resolution_wait,
+            Some(Duration::from_secs(1)),
+            "hoprd must override the library default rather than inherit it"
+        );
         Ok(())
     }
 
