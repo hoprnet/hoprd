@@ -15,10 +15,10 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/session/unreliable-frame-head-of-line", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/test/transport/return-routing-origination-stall", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { version = "0.28.0", git = "https://github.com/hoprnet/hopr-strategy", rev = "272f41000cd6e1bec9e2d08e2cd85f37aa804ea9", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/session/unreliable-frame-head-of-line", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/test/transport/return-routing-origination-stall", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "2.0.0", git = "https://github.com/hoprnet/hopr-api", rev = "ee65b340cf09fd6031735477cc1171d7610694a3" }
