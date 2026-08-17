@@ -683,6 +683,25 @@ mod tests {
     }
 
     #[test]
+    fn the_surb_resolution_wait_should_be_tightened_for_hoprd() -> anyhow::Result<()> {
+        use std::time::Duration;
+
+        // hoprd knows something the library cannot: its sessions time frames out at 3 s, past which
+        // a held return packet is discarded by the receiver anyway. The library default errs long
+        // for want of that knowledge, so leaving it unset would stall every other packet this node
+        // originates behind one that can no longer be delivered.
+        let cfg = example_cfg()?;
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+
+        assert_eq!(
+            lib_cfg.protocol.packet.pipeline.surb_resolution_wait,
+            Some(Duration::from_secs(1)),
+            "hoprd must override the library default rather than inherit it"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn mixer_env_var_fallback_is_read() {
         use std::time::Duration;
 
