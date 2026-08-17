@@ -467,6 +467,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
+                // Same standing as `counter_flush_interval` above: an interval at which telemetry
+                // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
+                // default rather than restated, so the number lives in one place.
+                surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
                 mixer: value.network.mixer,
                 transit_latency: None,
                 stream: Default::default(),

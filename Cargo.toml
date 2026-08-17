@@ -32,10 +32,16 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "luk
 # nothing. Versions and feature flags mirror hoprnet's own declarations exactly; they are
 # the same crates it links against, and a divergence here would show up as two copies of a
 # type that ought to be one.
-hopr-api = { version = "=1.20.0" }
+#
+# `hopr-api` is documentation, not a constraint: no crate in this workspace declares
+# `hopr-api = { workspace = true }` and nothing here names `hopr_api::`, so the requirement never
+# reaches the resolver and the `=` binds nothing. What hoprd actually links is whatever `hopr-lib`
+# asks for. It said `=1.20.0` while the build resolved 1.22.0 — stating the version it mirrors is
+# the whole value it has, so it is kept in step by hand.
+hopr-api = { version = "=1.22.0" }
 hopr-chain-connector = "0.22.1"
 hopr-ct-full-network = { version = "0.3.0", default-features = false }
-hopr-network-graph = { version = "0.3.1", default-features = false }
+hopr-network-graph = { version = "0.3.4", default-features = false }
 hopr-session-server-forwarder = { version = "0.1.0", default-features = false }
 hopr-ticket-manager = "0.5.1"
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
