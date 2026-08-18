@@ -25,9 +25,21 @@ hopr-utils = { package = "hopr-utilities", version = "0.9.0" }
 # which bundles it with the matching deposit pool; pinning it at the workspace level would force
 # one curve on every build and make the other unreachable — which is exactly the state this
 # workspace was in before the split.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
+#
+# The two hoprnet crates are pinned to a `rev` on `master` rather than tracked on a branch. PIX
+# landed on master as #8095 and `lukas/pix` was deleted, so there is no branch left to follow — and
+# a `branch` ref would be the wrong replacement anyway: `master` moves, and every unrelated commit
+# on it would arrive here silently between one `cargo update` and the next. The `rev` is what makes
+# a rebuild reproducible, and moving it is a reviewable change.
+#
+# `2436e5d4` was verified byte-identical to `66dee7c5`, the last `lukas/pix` head this was built and
+# demoed against; the PR squash-merged, so it is not an ancestor and `git merge-base` will not show
+# the relationship.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "2436e5d461d7f767670bed1c0b53f5a6dff51ec8", default-features = false }
+# Still a branch: `hopr-strategy`'s `lukas/pix` exists and is where PIX work continues. Worth
+# pinning to a `rev` too once it lands on that repo's `main`.
 hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/pix", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "lukas/pix", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "2436e5d461d7f767670bed1c0b53f5a6dff51ec8", default-features = false }
 
 # crates.io HOPR deps
 #
