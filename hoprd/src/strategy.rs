@@ -446,41 +446,67 @@ where
 {
     let mut strategies = Vec::<Box<dyn Strategy + Send>>::new();
 
+    // `build` became fallible in hopr-strategy 1.0: it validates the strategy's own config and
+    // returns `StrategyError::InvalidConfiguration` rather than constructing something that cannot
+    // work. Handled the way this function already handles the two failures it had — the recursive
+    // `Multi` below and `build_default_pool` in `build_strategies`: log which strategy was dropped
+    // and carry on with the rest, rather than taking the whole node down over one stanza.
+    //
+    // `continue` rather than falling through, so the telemetry gauge at the end of the loop is not
+    // set for a strategy that was never built. That is the same reason the `Multi` arm continues.
+    // `$kind` is passed in rather than read from the loop below, because `macro_rules` resolves a
+    // local name at the definition site and the loop variable is not in scope here.
+    macro_rules! push_built {
+        ($kind:expr, $builder:expr) => {
+            match $builder.build(Arc::clone(&node)) {
+                Ok(built) => strategies.push(built),
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        strategy = %$kind,
+                        "strategy configuration is invalid; skipping this strategy"
+                    );
+                    continue;
+                }
+            }
+        };
+    }
+
     for strategy in cfg.strategies.iter() {
         match strategy {
             #[cfg(feature = "runtime-tokio")]
-            StrategyKind::AutoRedeeming(sub_cfg) => strategies.push(
+            StrategyKind::AutoRedeeming(sub_cfg) => push_built!(
+                strategy,
                 hopr_strategy::auto_redeeming::AutoRedeemingStrategy::new(
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
             ),
             #[cfg(feature = "runtime-tokio")]
-            StrategyKind::AutoFunding(sub_cfg) => strategies.push(
+            StrategyKind::AutoFunding(sub_cfg) => push_built!(
+                strategy,
                 hopr_strategy::auto_funding::AutoFundingStrategy::new(
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
             ),
             #[cfg(feature = "runtime-tokio")]
-            StrategyKind::ClosureFinalizer(sub_cfg) => strategies.push(
+            StrategyKind::ClosureFinalizer(sub_cfg) => push_built!(
+                strategy,
                 hopr_strategy::channel_finalizer::ClosureFinalizerStrategy::new(
                     *sub_cfg,
                     cfg.execution_interval,
                 )
-                .build(Arc::clone(&node)),
             ),
             // ChannelLifecycle owns its own tick cadence via
             // ChannelLifecycleConfig::tick_interval and runs as an independent
             // async task; cfg.execution_interval does not apply to it.
             #[cfg(feature = "runtime-tokio")]
-            StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
+            StrategyKind::ChannelLifecycle(sub_cfg) => push_built!(
+                strategy,
                 hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(
                     (**sub_cfg).clone(),
                 )
-                .build(Arc::clone(&node)),
             ),
             StrategyKind::Multi(sub_cfg) => {
                 if cfg.allow_recursive {
