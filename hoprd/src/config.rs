@@ -7,7 +7,8 @@ use hopr_lib::{
         SafeModule, SessionGlobalConfig, TransportConfig,
     },
     exports::transport::{
-        HoprProtocolConfig, TagAllocatorConfig, config::HoprCodecConfig, config::PixGlobalConfig,
+        HoprProtocolConfig, TagAllocatorConfig,
+        config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
         session::IncomingSessionPixConfig,
     },
 };
@@ -430,8 +431,16 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
                         ..Default::default()
                     },
+                    // Reply with the freshest SURBs first, so a return-path change takes effect
+                    // immediately instead of only after a stale backlog has been drained.
+                    surb_store: SurbStoreConfig {
+                        pop_order: SurbPopOrder::Lifo,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
+                // Simulated transit-latency shim (testing only); production leaves it disabled.
+                transit_latency: None,
                 probe: ProbeConfig {
                     interval: value.network.probe_interval,
                     recheck_threshold: value.network.probe_recheck_threshold,
@@ -472,7 +481,6 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // default rather than restated, so the number lives in one place.
                 surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
                 mixer: value.network.mixer,
-                transit_latency: None,
                 stream: Default::default(),
             },
             ..Default::default()
@@ -624,6 +632,16 @@ mod tests {
         serde_saphyr::from_str::<HoprdConfig>(include_str!(
             "../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"
         ))?;
+        Ok(())
+    }
+
+    #[test]
+    fn nfpm_sample_config_should_parse_and_validate() -> anyhow::Result<()> {
+        let cfg = serde_saphyr::from_str::<HoprdConfig>(include_str!(
+            "../../deploy/nfpm/hoprd-sample.cfg.yaml"
+        ))
+        .context("nfpm sample config must deserialize")?;
+        cfg.validate().context("nfpm sample config must validate")?;
         Ok(())
     }
 

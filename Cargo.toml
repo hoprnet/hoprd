@@ -3,7 +3,7 @@ resolver = "2"
 members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 
 [workspace.package]
-rust-version = "1.91"
+rust-version = "1.97"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
 license = "GPL-3.0-only"
@@ -76,7 +76,14 @@ hopr-session-server-forwarder = { version = "0.1.1", default-features = false }
 # job is to document a version; this is a real dependency the resolver acts on, and pinning it
 # exactly would conflict with any other crate in the graph asking for a later 1.x.
 hopr-strategy = { version = "1.0.0", default-features = false }
-hopr-ticket-manager = "0.5.2"
+# Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
+# `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
+# feature the rest of the workspace expects.
+hopr-ticket-manager = { version = "0.5.2", default-features = false, features = [
+  "redb",
+  "cli",
+  "serde",
+] }
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
 hopr-transport-p2p = { version = "0.9.5", features = ["transport-quic"] }
@@ -121,7 +128,7 @@ openapiv3 = "2.2.0"
 opentelemetry = { version = "0.32.0" }
 opentelemetry-otlp = { version = "0.32.0", default-features = false }
 opentelemetry-prometheus-text-exporter = { version = "0.3.0" }
-opentelemetry_sdk = { version = "0.32.0" }
+opentelemetry_sdk = { version = "0.32.1" }
 percent-encoding = "2.3.2"
 prettyplease = "0.3.0"
 proc-macro-regex = "~1.1.0"
@@ -133,8 +140,8 @@ reqwest = { version = "0.13.4", default-features = false, features = [
   "json",
   "stream",
 ] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde-saphyr = "0.0.27"
+serde = { version = "1.0.229", features = ["derive"] }
+serde-saphyr = "0.0.29"
 serde_json = "1.0.151"
 serde_urlencoded = "0.7.1"
 serde_with = { version = "3.21.0", features = ["base64"] }
@@ -177,7 +184,7 @@ utoipa-swagger-ui = { version = "9.0.2", features = [
 ] }
 uuid = { version = "1.23.3" }
 validator = { version = "0.21.0", features = ["derive"] }
-vergen-gix = { version = "9.1.0", features = ["build"] }
+vergen-gix = { version = "10.0.2", features = ["build"] }
 
 [profile.dev]
 panic = "abort"
@@ -229,4 +236,4 @@ lto = false
 codegen-units = 16
 
 [workspace.metadata.cargo-shear]
-ignored = ["oas3", "humantime-serde", "hopr-api", "hopr-utils"]
+ignored = ["hopr-api"]

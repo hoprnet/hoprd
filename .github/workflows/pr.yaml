@@ -54,12 +54,12 @@ jobs:
       pull-requests: write
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
@@ -75,18 +75,70 @@ jobs:
           if [[ "$HEAD_REPO" != "$BASE_REPO" ]]; then
             gh pr edit "$PR_NUMBER" --add-label "external"
           fi
+  validate-release-branch-deps:
+    name: Release branch dependencies
+    if: github.event_name == 'pull_request'
+    runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every hoprnet git dependency must track a release branch
+        run: |
+          set -euo pipefail
+
+          # Cargo forbids `branch` and `rev` together, so the branch lives in the
+          # manifest and the resolved commit in the lock. A bare `rev` pin therefore
+          # loses the branch entirely, and nothing else notices: the build still
+          # succeeds against whatever commit was pinned, however stale, and the drift
+          # only surfaces as behaviour that does not match the release it claims.
+          fail=0
+
+          # Manifests: any line naming the hoprnet repo must carry branch = "release/...".
+          # Matched on `hoprnet/hoprnet` rather than a full URL literal, so a `.git` suffix or a
+          # different scheme still counts. The lock check below is the authoritative one -- it
+          # sees the resolved source however the manifest was spelled, including a multi-line
+          # [dependencies.hopr-lib] table this line-based scan would miss entirely.
+          while IFS= read -r line; do
+            case "${line}" in
+              *'branch = "release/'*) ;;
+              *) echo "::error::not on a release branch: ${line}"; fail=1 ;;
+            esac
+          done < <(grep -nE 'git *= *"[^"]*hoprnet/hoprnet' Cargo.toml || true)
+
+          # Lock: the resolved source must record the same, so a stale lock cannot
+          # quietly outlive a corrected manifest.
+          while IFS= read -r src; do
+            case "${src}" in
+              *'?branch=release%2F'*) ;;
+              *) echo "::error::lock entry is not from a release branch: ${src}"; fail=1 ;;
+            esac
+          done < <(grep -o 'source = "git+https://github.com/hoprnet/hoprnet[^"]*"' Cargo.lock | sort -u || true)
+
+          if [ "${fail}" -ne 0 ]; then
+            echo "::error::hoprnet dependencies must use branch = \"release/<x.y>\"; a bare rev pin is not accepted"
+            exit 1
+          fi
+
+          echo "All hoprnet git dependencies track a release branch:"
+          grep -n 'git = "https://github.com/hoprnet/hoprnet"' Cargo.toml || true
+          grep -o 'source = "git+https://github.com/hoprnet/hoprnet[^"]*"' Cargo.lock | sort -u || true
   checks:
     name: Check
-    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@d0cffaf9e9209c8eca00e8c74e82ac3f5f3cf7bb # workflow-checks-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      lint_command: "nix build -L .#quick"
       runner_small: depot-ubuntu-24.04
       runner_large: depot-ubuntu-24.04-4
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   tests:
     name: Test
-    uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@798d791de5c5485c3043049781dfd0938539a36a # workflow-tests-v6
+    uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-tests-v6
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
       enable_unit_tests: true
@@ -95,9 +147,7 @@ jobs:
       enable_benchmarks: false
       enable_unit_coverage: true
       enable_integration_coverage: false
-      unit_coverage_command: |
-        nix build -L .#coverage-unit
-        cp result coverage.lcov
+      unit_coverage_command: "nix build -L .#coverage -o coverage.lcov"
       runner_unit: depot-ubuntu-24.04-16
       runner_integration: depot-ubuntu-24.04-8
     secrets:
@@ -187,11 +237,35 @@ jobs:
       contents: read
     steps:
       - name: Build docs
-        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
+        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
+        with:
+          source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          command: nix build -L .#docs
+  localcluster-smoke:
+    name: Localcluster smoke
+    # Runs after the binaries are built so both `nix build`s below are Cachix cache
+    # hits rather than rebuilds — this job is dominated by waiting, not by compute.
+    needs: build-binaries
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Pinned by digest so a chain-image rebuild cannot silently break CI.
+      # Keep in sync with localcluster/docker-compose.yml.
+      CHAIN_IMAGE: >-
+        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
+    steps:
+      - name: Start a local cluster and verify it becomes usable
+        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
         with:
           source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           command: |
-            set -e
-            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items --no-default-features --features runtime-tokio,telemetry,transport-quic
-            nix build -L .#docs
+            nix build -L .#binary-hoprd-x86_64-linux -o result-hoprd
+            nix build -L .#binary-hoprd-localcluster-x86_64-linux -o result-localcluster
+            HOPRD_BIN="$PWD/result-hoprd/bin/hoprd" \
+            LOCALCLUSTER_BIN="$PWD/result-localcluster/bin/hoprd-localcluster" \
+            DATA_DIR="$RUNNER_TEMP/localcluster" \
+              ./scripts/localcluster-smoke.sh

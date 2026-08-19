@@ -342,6 +342,7 @@ impl HoprdApiClient {
             return_path: RoutingOptions::Hops(hops),
             target: SessionTargetSpec::Plain(target.to_string()),
             capabilities,
+            flow_control: None,
             listen_host: None,
             max_client_sessions: None,
             max_surb_upstream,

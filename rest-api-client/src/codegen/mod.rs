@@ -280,8 +280,8 @@ pub mod types {
     ///  "description": "Standardized error response for the API",
     ///  "examples": [
     ///    {
-    ///      "error": "Invalid value passed in parameter 'XYZ'",
-    ///      "status": "INVALID_INPUT"
+    ///      "status": "INVALID_INPUT",
+    ///      "error": "Invalid value passed in parameter 'XYZ'"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -621,8 +621,8 @@ pub mod types {
     ///  "description": "Parameters for enumerating channels.",
     ///  "examples": [
     ///    {
-    ///      "fullTopology": false,
-    ///      "includingClosed": true
+    ///      "includingClosed": true,
+    ///      "fullTopology": false
     ///    }
     ///  ],
     ///  "type": "object",
@@ -667,7 +667,6 @@ pub mod types {
     ///  "description": "Status of the channel after a close operation.",
     ///  "examples": [
     ///    {
-    ///      "channelStatus": "PendingToClose",
     ///      "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
     ///    }
     ///  ],
@@ -767,9 +766,9 @@ pub mod types {
     ///  "examples": [
     ///    {
     ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -1046,10 +1045,10 @@ nothing has been learned about yet would read as one known to be failing.*/
     ///  "description": "Channel information as seen by the node.",
     ///  "examples": [
     ///    {
-    ///      "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
+    ///      "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1107,14 +1106,14 @@ nothing has been learned about yet would read as one known to be failing.*/
     ///    {
     ///      "all": [
     ///        {
-    ///          "balance": "10 wxHOPR",
-    ///          "channelEpoch": 1,
     ///          "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///          "closureTime": 0,
-    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
     ///          "source": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6",
+    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    ///          "balance": "10 wxHOPR",
     ///          "status": "Open",
-    ///          "ticketIndex": 0
+    ///          "ticketIndex": 0,
+    ///          "channelEpoch": 1,
+    ///          "closureTime": 0
     ///        }
     ///      ],
     ///      "incoming": [],
@@ -1182,15 +1181,15 @@ and indexer state.*/
     ///      "announcedAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
     ///      ],
-    ///      "chainStatus": "Ready",
+    ///      "providerUrl": "https://staging.blokli.hoprnet.link",
+    ///      "hoprNetworkName": "rotsee",
     ///      "channelClosurePeriod": 15,
     ///      "connectivityStatus": "Green",
-    ///      "hoprNetworkName": "rotsee",
+    ///      "chainStatus": "Ready",
     ///      "hoprNodeSafe": "0x42bc901b1d040f984ed626eff550718498a6798a",
     ///      "listeningAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
-    ///      ],
-    ///      "providerUrl": "https://staging.blokli.hoprnet.link"
+    ///      ]
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1310,16 +1309,16 @@ and indexer state.*/
     ///      "observed": [
     ///        "/ip4/10.0.2.100/tcp/19093"
     ///      ],
-    ///      "outgoingChannel": {
-    ///        "balance": "10 wxHOPR",
-    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///        "status": "Open"
-    ///      },
     ///      "qos": {
-    ///        "averageLatency": 100,
-    ///        "lastUpdate": 1690000000000,
     ///        "probeRate": 0.476,
+    ///        "lastUpdate": 1690000000000,
+    ///        "averageLatency": 100,
     ///        "score": 0.7
+    ///      },
+    ///      "outgoingChannel": {
+    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
+    ///        "status": "Open",
+    ///        "balance": "10 wxHOPR"
     ///      }
     ///    }
     ///  ],
@@ -1389,6 +1388,8 @@ and indexer state.*/
     ///{
     ///  "examples": [
     ///    {
+    ///      "overall": "Ready",
+    ///      "nodeState": "Node is running",
     ///      "components": {
     ///        "chain": {
     ///          "status": "Ready"
@@ -1399,9 +1400,7 @@ and indexer state.*/
     ///        "transport": {
     ///          "status": "Ready"
     ///        }
-    ///      },
-    ///      "nodeState": "Node is running",
-    ///      "overall": "Ready"
+    ///      }
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1450,11 +1449,11 @@ and indexer state.*/
     ///  "description": "Received tickets statistics.",
     ///  "examples": [
     ///    {
+    ///      "winningCount": 0,
     ///      "neglectedValue": "0 wxHOPR",
     ///      "redeemedValue": "1000 wxHOPR",
     ///      "rejectedValue": "0 wxHOPR",
-    ///      "unredeemedValue": "2000 wxHOPR",
-    ///      "winningCount": 0
+    ///      "unredeemedValue": "2000 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1636,9 +1635,9 @@ and indexer state.*/
     ///  "description": "Channel information for a specific peer.",
     ///  "examples": [
     ///    {
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1685,9 +1684,9 @@ and indexer state.*/
     ///  "description": "QoS observation data for a peer.",
     ///  "examples": [
     ///    {
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -2005,25 +2004,25 @@ If omitted, tickets in all channels are redeemed.*/
     ///  "description": "Request body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "capabilities": [
-    ///        "Retransmission",
-    ///        "Segmentation"
-    ///      ],
     ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "listenHost": "127.0.0.1:10000",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
     ///      "target": {
     ///        "Plain": "localhost:8080"
-    ///      }
+    ///      },
+    ///      "listenHost": "127.0.0.1:10000",
+    ///      "capabilities": [
+    ///        "Retransmission",
+    ///        "Segmentation"
+    ///      ],
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "sessionPool": 0,
+    ///      "maxClientSessions": 2
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2047,6 +2046,9 @@ If omitted, tickets in all channels are redeemed.*/
     ///    "destination": {
     ///      "description": "Address of the Exit node.",
     ///      "type": "string"
+    ///    },
+    ///    "flowControl": {
+    ///      "$ref": "#/components/schemas/SessionFlowControl"
     ///    },
     ///    "forwardPath": {
     ///      "$ref": "#/components/schemas/RoutingOptions"
@@ -2126,6 +2128,12 @@ Defaults to `Segmentation` and `Retransmission` for TCP and nothing for UDP.*/
         pub capabilities: ::std::option::Option<::std::vec::Vec<SessionCapability>>,
         ///Address of the Exit node.
         pub destination: ::std::string::String,
+        #[serde(
+            rename = "flowControl",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub flow_control: ::std::option::Option<SessionFlowControl>,
         #[serde(rename = "forwardPath")]
         pub forward_path: RoutingOptions,
         /**Listen host (`ip:port`) for the Session socket at the Entry node.
@@ -2232,24 +2240,24 @@ Currently, the maximum value is 5.*/
     ///  "description": "Response body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "activeClients": [],
+    ///      "target": "example.com:80",
     ///      "destination": "0x5112D584a1C72Fc250176B57aEba5fFbbB287D8F",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "hoprMtu": 1002,
-    ///      "ip": "127.0.0.1",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "port": 5542,
-    ///      "protocol": "tcp",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
+    ///      "protocol": "tcp",
+    ///      "ip": "127.0.0.1",
+    ///      "port": 5542,
+    ///      "hoprMtu": 1002,
     ///      "surbLen": 398,
-    ///      "target": "example.com:80"
+    ///      "activeClients": [],
+    ///      "maxClientSessions": 2,
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "responseBuffer": "2 MB",
+    ///      "sessionPool": 0
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2418,8 +2426,8 @@ This is useful for SURB balancing calculations.*/
     ///{
     ///  "examples": [
     ///    {
-    ///      "maxSurbUpstream": "2 Mbps",
-    ///      "responseBuffer": "2 MB"
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2 Mbps"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2473,6 +2481,88 @@ at least the size of 2 Session packet payloads.*/
                 max_surb_upstream: Default::default(),
                 response_buffer: Default::default(),
             }
+        }
+    }
+    ///Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.
+    ///
+    /// <details><summary>JSON schema</summary>
+    ///
+    /// ```json
+    ///{
+    ///  "description": "Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.",
+    ///  "type": "string",
+    ///  "enum": [
+    ///    "off",
+    ///    "clean",
+    ///    "robust"
+    ///  ]
+    ///}
+    /// ```
+    /// </details>
+    #[derive(
+        ::serde::Deserialize,
+        ::serde::Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd
+    )]
+    pub enum SessionFlowControl {
+        #[serde(rename = "off")]
+        Off,
+        #[serde(rename = "clean")]
+        Clean,
+        #[serde(rename = "robust")]
+        Robust,
+    }
+    impl ::std::fmt::Display for SessionFlowControl {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Off => f.write_str("off"),
+                Self::Clean => f.write_str("clean"),
+                Self::Robust => f.write_str("robust"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for SessionFlowControl {
+        type Err = self::error::ConversionError;
+        fn from_str(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "off" => Ok(Self::Off),
+                "clean" => Ok(Self::Clean),
+                "robust" => Ok(Self::Robust),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for SessionFlowControl {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     ///Session target specification.
@@ -2698,7 +2788,7 @@ at least the size of 2 Session packet payloads.*/
 
 API enabling developers to interact with a hoprd node programatically through HTTP REST API.
 
-Version: 4.12.1*/
+Version: 4.14.0*/
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -2734,7 +2824,7 @@ impl Client {
 }
 impl ClientInfo<()> for Client {
     fn api_version() -> &'static str {
-        "4.12.1"
+        "4.14.0"
     }
     fn baseurl(&self) -> &str {
         self.baseurl.as_str()

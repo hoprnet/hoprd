@@ -100,7 +100,8 @@ jobs:
           private-key: ${{ secrets.GH_APP_GNOSISVPN_BOT_PRIVATE_KEY }}
           owner: gnosis
           repositories: gnosis_vpn-infrastructure
-      - name: Deploy to Gnosis Dev
+      - name: Deploy to Gnosis Piz-Palu Dev
+        if: github.event.pull_request.base.ref == 'main'
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.bot-token.outputs.token }}
@@ -108,33 +109,19 @@ jobs:
           event-type: restart_hoprd
           client-payload: |-
             {
-              "environment": "dev"
+              "environment": "piz-palu-dev"
             }
-  cache_deps:
-    name: Cache deps
-    if: github.event.pull_request.merged == true
-    runs-on: depot-ubuntu-24.04-4
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - name: Cache dependencies
-        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
+      - name: Deploy to Gnosis Jura Dev
+        if: github.event.pull_request.base.ref == vars.MAINTENANCE_RELEASE_BRANCH
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
-          source_branch: ${{ github.event.pull_request.merge_commit_sha }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: |
-            set -e
-            cat >> .cargo/config.toml << TOML
-            [source.hopr-cargo-registry-cache]
-            registry = "sparse+${PRIVATE_CARGO_REGISTRY_PROXY_URL}"
-
-            [source.crates-io]
-            replace-with = "hopr-cargo-registry-cache"
-            TOML
-            nix develop -c cargo fetch
-        env:
-          PRIVATE_CARGO_REGISTRY_PROXY_URL: ${{ secrets.PRIVATE_CARGO_REGISTRY_PROXY_URL }}
+          token: ${{ steps.bot-token.outputs.token }}
+          repository: gnosis/gnosis_vpn-infrastructure
+          event-type: restart_hoprd
+          client-payload: |-
+            {
+              "environment": "jura-dev"
+            }
   docs:
     name: Docs
     if: github.event.pull_request.merged == true
@@ -146,14 +133,11 @@ jobs:
       contents: write
     steps:
       - name: Build docs
-        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
+        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
         with:
           source_branch: ${{ github.event.pull_request.merge_commit_sha }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: |
-            set -e
-            RUSTDOCFLAGS="-D warnings" nix develop -c cargo doc --no-deps --document-private-items --no-default-features --features runtime-tokio,telemetry,transport-quic
-            nix build -L .#docs
+          command: nix build -L .#docs
       - name: Increase git buffer size
         run: git config --global http.postBuffer 524288000
       - name: Deploy
@@ -173,7 +157,7 @@ jobs:
     runs-on: depot-ubuntu-24.04
     steps:
       - name: Notify failed merge pipeline
-        uses: zulip/github-actions-zulip/send-message@bd8ec52de371d139ae8313661b7d8318c19266aa # v2.0.1
+        uses: zulip/github-actions-zulip/send-message@f675f2b4eb2a95fae974215476dcb7ad8dfeff6b # v2.0.2
         with:
           api-key: ${{ secrets.ZULIP_API_KEY }}
           email: ${{ secrets.ZULIP_EMAIL }}
@@ -191,12 +175,12 @@ jobs:
       actions: write
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.base.ref }}

@@ -65,7 +65,10 @@ async fn run() -> Result<()> {
         blokli_url: blokli_url.clone(),
         num_nodes,
         config_home: cluster.data_dir.clone(),
-        random_identities: true,
+        // Frozen identities on purpose: they are what a real cluster run uses, so this test
+        // also covers the frozen key derivation. See `scripts/localcluster-smoke.sh` for the
+        // cheaper 2-node variant that CI runs on every PR.
+        random_identities: false,
         p2p_host: P2P_HOST.to_string(),
         p2p_port_base: P2P_PORT_BASE,
         strategies: identity::StrategySet {

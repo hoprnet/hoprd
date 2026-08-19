@@ -1,4 +1,5 @@
 ---
+blokli_url: https://blokli.prod.hoprnet.link
 db:
   data: /var/lib/hoprd
 identity:
@@ -10,8 +11,9 @@ strategy:
   allow_recursive: false
   strategies:
     - AutoRedeeming:
-        redeem_only_aggregated: false
+        redeem_all_on_close: true
         minimum_redeem_ticket_value: "1 wxHOPR"
+        redeem_on_winning: true
     - ChannelLifecycle:
         population:
           min_open_channels: 5
@@ -25,10 +27,13 @@ strategy:
           allowlist: ~
           blocklist: []
         funding:
-          initial_balance: "1 wxHOPR"
-          topup_balance: "1 wxHOPR"
-          lower_balance_threshold: "1 wxHOPR"
-          min_safe_balance_required: "1 wxHOPR"
+          sizing_mode:
+            probabilistic:
+              success_probability: 0.99
+          initial_capacity: "1 GiB"
+          topup_capacity: "512 MiB"
+          lower_capacity_threshold: "512 MiB"
+          min_safe_capacity_required: "512 MiB"
           stop_when_unfunded: true
         proactive_funding:
           enabled: true
@@ -45,9 +50,11 @@ strategy:
         restart: {}
         concurrency:
           max_concurrent_actions: 4
+        selector: default
 hopr:
   network:
     probe_interval: "3s"
     probe_recheck_threshold: "10s"
   safe_module:
-    safe_transaction_service_provider: https://safe-transaction.prod.hoprnet.link/
+    safe_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
+    module_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value

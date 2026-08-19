@@ -288,6 +288,13 @@ pub(crate) struct SessionClientRequest {
     #[serde(default)]
     #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
     pub pix_ssa_quota: Option<(u16, u8, u8)>,
+    /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
+    ///
+    /// Flow control paces the entry (sending) side of the session. When omitted, the node's
+    /// configured default (`api.session_flow_control`) is used. `robust` is the tail-tolerance
+    /// profile for throttled / high-latency multi-hop paths.
+    #[serde(default)]
+    pub flow_control: Option<crate::config::SessionFlowControl>,
 }
 
 impl SessionClientRequest {
@@ -295,6 +302,7 @@ impl SessionClientRequest {
     pub(crate) async fn into_protocol_session_config(
         self,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
         Ok((
@@ -329,6 +337,11 @@ impl SessionClientRequest {
                     .map(|(polys, shares, surplus)| PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus))
                     .transpose()
                     .map_err(|_| ApiErrorStatus::InvalidInput)?,
+                // Per-request profile overrides the node default when present.
+                flow_control: self
+                    .flow_control
+                    .map(crate::config::SessionFlowControl::to_config)
+                    .unwrap_or(flow_control),
                 ..Default::default()
             },
         ))
@@ -384,6 +397,7 @@ impl SessionClientExplicitPathRequest {
         self,
         hopr: &H,
         target_protocol: IpProtocol,
+        flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<
         (
             Address,
@@ -469,6 +483,9 @@ impl SessionClientExplicitPathRequest {
                         })
                         .transpose()
                         .map_err(|_| ApiErrorStatus::InvalidInput)?,
+                    // The deprecated explicit-path endpoint has no per-request override, so it
+                    // always uses the node default profile.
+                    flow_control,
                     ..Default::default()
                 }
             },
@@ -659,7 +676,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::TCP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_tcp_client_binding(
@@ -713,7 +734,11 @@ async fn create_client_explicit_path_impl<
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config, forward_path, return_path) = args
                 .clone()
-                .into_protocol_session_explicit_config(&*state.hopr, IpProtocol::UDP)
+                .into_protocol_session_explicit_config(
+                    &*state.hopr,
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
             let (bound_host, udp_session_id, max_client_sessions) = create_udp_client_binding(
@@ -787,7 +812,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::TCP)
+                .into_protocol_session_config(
+                    IpProtocol::TCP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -819,7 +847,10 @@ async fn create_client_impl<H: crate::RestApiSessionFactory>(
             let target_spec: hopr_utils_session::SessionTargetSpec = args.target.clone().into();
             let (destination, _target, config) = args
                 .clone()
-                .into_protocol_session_config(IpProtocol::UDP)
+                .into_protocol_session_config(
+                    IpProtocol::UDP,
+                    state.session_flow_control.to_config(),
+                )
                 .await
                 .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e))?;
 
@@ -1262,6 +1293,61 @@ mod tests {
     use super::*;
     use crate::testing::NoopNode;
 
+    /// Flow-control precedence, exercised through the production function rather than a
+    /// re-statement of it: a test that re-implements
+    /// `self.flow_control.map(to_config).unwrap_or(node_default)` cannot catch that expression
+    /// changing, which is the only thing worth pinning here.
+    ///
+    /// The `off` case is the subtle one. It nests to `Some(None)`, so an explicit per-request
+    /// `off` must disable flow control even though the node default enables it; a flatten in the
+    /// wrong place would silently re-enable it.
+    #[tokio::test]
+    async fn per_request_flow_control_should_override_the_node_default() -> anyhow::Result<()> {
+        use crate::config::SessionFlowControl;
+
+        let node_default = SessionFlowControl::Robust.to_config();
+
+        let request = |per_request: Option<SessionFlowControl>| SessionClientRequest {
+            destination: Address::from([1u8; 20]),
+            forward_path: RoutingOptions::Hops(1),
+            return_path: RoutingOptions::Hops(1),
+            target: SessionTargetSpec::Plain("127.0.0.1:8080".into()),
+            listen_host: None,
+            capabilities: None,
+            response_buffer: None,
+            max_surb_upstream: None,
+            session_pool: None,
+            max_client_sessions: None,
+            pix_ssa_quota: None,
+            flow_control: per_request,
+        };
+
+        let resolve = async |per_request| -> anyhow::Result<_> {
+            let (_, _, cfg) = request(per_request)
+                .into_protocol_session_config(IpProtocol::UDP, node_default)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            Ok(cfg.flow_control)
+        };
+
+        assert_eq!(
+            node_default,
+            resolve(None).await?,
+            "no per-request profile falls back to the node default"
+        );
+        assert_eq!(
+            SessionFlowControl::Clean.to_config(),
+            resolve(Some(SessionFlowControl::Clean)).await?,
+            "an explicit profile wins over the node default"
+        );
+        assert_eq!(
+            None,
+            resolve(Some(SessionFlowControl::Off)).await?,
+            "an explicit `off` disables flow control despite a node default that enables it"
+        );
+        Ok(())
+    }
+
     fn session_router() -> Router {
         let state: Arc<InternalState<NoopNode>> = Arc::new(InternalState {
             version: "test-version".to_string(),
@@ -1270,6 +1356,7 @@ mod tests {
             hopr: Arc::new(NoopNode),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            session_flow_control: Default::default(),
         });
         Router::new()
             .route("/session/{protocol}", get(list_clients::<NoopNode>))
@@ -1319,6 +1406,7 @@ mod tests {
             session_pool: None,
             max_client_sessions: None,
             pix_ssa_quota: Some((8, 4, 2)),
+            flow_control: None,
         };
         let serialized = serde_json::to_value(&req).expect("serialize");
         assert_eq!(serialized["pixSsaQuota"], serde_json::json!([8, 4, 2]));
