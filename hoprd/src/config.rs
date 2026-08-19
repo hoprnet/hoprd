@@ -433,8 +433,29 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     // Reply with the freshest SURBs first, so a return-path change takes effect
                     // immediately instead of only after a stale backlog has been drained.
+                    //
+                    // Not under PIX, which needs the opposite end. A PIX share is delivered to the
+                    // reconstructor only when its SURB is *used*, and the ring buffer evicts from
+                    // the oldest end — so popping newest-first leaves the oldest SURBs unspent
+                    // until they are overwritten, and each overwrite is a permanently lost share.
+                    // Under sustained traffic the Exit then never assembles `ssa_part_size` shares
+                    // for any polynomial: the key is never reconstructed, nothing is swept, and the
+                    // Entry never gets a second deposit request. Observed exactly that — one
+                    // deposit confirmed, then a stall with no error anywhere — before this gate.
+                    //
+                    // `Fifo` is upstream's default for this reason; see `SurbPopOrder`, whose own
+                    // documentation calls out the lost-share hazard.
+                    //
+                    // Gated on the feature rather than on `enforce_pix` so the pop order is a
+                    // property of the binary rather than something a config toggle changes
+                    // underneath a running deployment. The cost is that a PIX-capable build which
+                    // never sets `HOPRD_ENABLE_PIX` also gets `Fifo` — that is upstream's default,
+                    // so it forgoes an optimisation rather than regressing.
                     surb_store: SurbStoreConfig {
+                        #[cfg(not(feature = "pix"))]
                         pop_order: SurbPopOrder::Lifo,
+                        #[cfg(feature = "pix")]
+                        pop_order: SurbPopOrder::Fifo,
                         ..Default::default()
                     },
                     ..Default::default()
