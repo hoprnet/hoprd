@@ -11,10 +11,12 @@ license.workspace = true
 build = "build.rs"
 
 [features]
-# No `strategy-pix-*` pairing here, deliberately. The two are mutually exclusive, and Cargo
-# unifies features across a workspace build — so a default pairing would collide with the one
-# `hoprd-localcluster` selects for the pool it tests, and `cargo check --workspace` would fail.
-# A mutually exclusive choice cannot have a default; it has to be named by whoever builds.
+# No `strategy-pix-*` pairing here, deliberately. Each one pins `HoprPixSpec` to a different
+# deposit-address type, and a spec has exactly one — so the choice is exclusive *at this level*
+# even though `hopr-strategy` now compiles both pools together. Cargo unifies features across a
+# workspace build, so a default pairing would collide with the one `hoprd-localcluster` selects
+# for the pool it tests. An exclusive choice cannot have a default; it has to be named by whoever
+# builds.
 default = [
   "runtime-tokio",
   "telemetry",
@@ -42,9 +44,14 @@ runtime-tokio = [
 # `HoprPixSpec` produces is chosen by a feature on `hopr-crypto-packet`, three crates away.
 # Cargo cannot express "these two must agree" across crates, but it can express "these two are
 # one feature" — so each pool is bundled with the spec feature that makes it settleable, and
-# `src/strategy.rs` asserts the result at compile time as the backstop.
+# `src/strategy.rs` passes the resulting spec address type to the pool's builder as the backstop.
 #
-# These two are mutually exclusive; `hopr-strategy` rejects both with a `compile_error!`.
+# `hopr-strategy` no longer rejects both with a `compile_error!` — it compiles both pools and lets
+# the call site choose, because features are additive and two unrelated consumers in one graph may
+# each want a different pool. Here the exclusion is still real: the two select conflicting
+# `hopr-lib/pix-*` features, and `HoprPixSpec` has one deposit-address type. Nothing enforces it
+# mechanically, so the secp256k1 arm wins by `cfg` precedence if both are somehow on.
+#
 # Neither is in `default` — see the note there. Enabling neither is also valid and yields a
 # binary without PIX, which says so at startup if `HOPRD_ENABLE_PIX` is set.
 #

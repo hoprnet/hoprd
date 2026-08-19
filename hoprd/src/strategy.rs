@@ -12,13 +12,20 @@ use hopr_lib::api::{
     tickets::TicketManagement,
 };
 // `hopr_strategy::pix` needs one of the `strategy-pix-*` pairings, which is now an independent
-// choice from `runtime-tokio` — so the imports, the build block and the assertion all gate on
-// `pix` below rather than on the runtime.
+// choice from `runtime-tokio` — so the imports and the build block gate on `pix` below rather
+// than on the runtime.
 #[cfg(feature = "pix")]
-use hopr_strategy::pix::{
-    PoolConfig, PoolKeypair,
-    strategy::{PixStrategy, PixStrategyConfig},
-};
+use hopr_strategy::pix::strategy::{PixStrategy, PixStrategyConfig};
+// `PoolConfig` is per-pool: each pool module exports its own under that name, and the two share no
+// fields. Importing the selected one under a single name is what lets the two build blocks below
+// differ only in the fields they set.
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+use hopr_strategy::pix::curvy::PoolConfig;
+#[cfg(feature = "strategy-pix-secp256k1")]
+use hopr_strategy::pix::secp256k1::PoolConfig;
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
 use serde::{Deserialize, Serialize};
 
@@ -40,17 +47,18 @@ pub const POOL: &str = "non-anonymous-secp256k1";
 ))]
 pub const POOL: &str = "curvy";
 
-/// The deposit address the PIX spec produces must be the one the selected pool can spend.
+/// The deposit address type this build's `HoprPixSpec` produces.
 ///
-/// Gated on the same feature as the pool itself, so the assertion exists exactly when the thing
-/// it constrains does. Each `strategy-pix-*` pairing bundles the pool with the spec feature that
-/// makes it settleable, which is what makes this hold — this is the backstop for the spec being
-/// flipped by something other than that pairing.
+/// Naming this in the `build_*` call below *is* the assertion that the spec and the selected pool
+/// agree: each builder is bound on `A: DepositAddressOf<PoolKeypair>`, which holds only for the
+/// address its own pool settles to. A mismatched pairing therefore stops at that call site with a
+/// message naming both the offending type and the two features that fix it, instead of failing
+/// once per event at runtime having deposited nothing.
 ///
 /// Which instantiation of `HoprPixSpec` is in play is decided by the *feature graph*, not by
-/// anything visible in this file. Today's pool settles with a plain `HoprToken.transfer` signed
-/// by the node key, so it can only reach an Ethereum address; a Baby JubJub public key is a curve
-/// point, not an account, and no transfer can reach one.
+/// anything visible in this file. The secp256k1 pool settles with a plain `HoprToken.transfer`
+/// signed by the node key, so it can only reach an Ethereum address; a Baby JubJub public key is
+/// a curve point, not an account, and no transfer can reach one.
 ///
 /// That combination has already cost a day. hoprnet 27b4b255f9 enabled QUIC by default and, as
 /// collateral, dropped `default-features = false` from two workspace dependencies whose `default`
@@ -59,28 +67,14 @@ pub const POOL: &str = "curvy";
 /// `pix event failed: input argument to the function is invalid` and a strategy that never
 /// deposited — indistinguishable, from the outside, from a Session that had simply stalled.
 ///
-/// Stated against [`PoolKeypair`] rather than against [`Address`] directly, the invariant is
-/// *which curve the pool is for* rather than *secp256k1*, so it holds unedited under either
-/// pairing — both sides move together. What it rejects is the two sides moving apart, which is
-/// the failure that actually happened.
-///
-/// It costs nothing at runtime: the function is never called, only type-checked.
-///
-/// [`Address`]: hopr_lib::api::types::primitive::prelude::Address
+/// This replaces a free-standing `const _: () = { … }` assertion against `PoolKeypair::Public`.
+/// The two checked the same thing, but a separate assertion can drift out of step with the
+/// builder actually called; passing the witness to the builder cannot, because the assertion and
+/// the choice are then one expression. It costs nothing at runtime — the parameter appears only
+/// in a bound.
 #[cfg(feature = "pix")]
-const _: () = {
-    type SpecDepositAddress =
-        <hopr_lib::exports::transport::HoprPixSpec as hopr_lib::exports::transport::PixSpec>::DepositAddress;
-    type PoolDepositAddress =
-        <PoolKeypair as hopr_lib::api::types::crypto::prelude::Keypair>::Public;
-
-    #[allow(dead_code)]
-    fn pix_spec_and_pool_must_agree_on_the_deposit_address(
-        a: SpecDepositAddress,
-    ) -> PoolDepositAddress {
-        a
-    }
-};
+type SpecDepositAddress =
+    <hopr_lib::exports::transport::HoprPixSpec as hopr_lib::exports::transport::PixSpec>::DepositAddress;
 
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
@@ -374,7 +368,6 @@ where
                 "HOPRD_PIX_MAX_SSA_ALLOCATION",
                 "100 wxHOPR".parse().expect("valid static amount"),
             ),
-            pool: pool_cfg,
             pix_recovery_db_path: None,
             pix_recovery_password_env: None,
             // Likewise the deposit/withdrawal batching windows.
@@ -387,12 +380,23 @@ where
             pool = POOL,
             price_per_byte = %pix_cfg.price_per_byte,
             max_ssa_allocation = %pix_cfg.max_ssa_allocation,
-            max_deposit_tracking_time = ?pix_cfg.pool.max_deposit_tracking_time,
+            max_deposit_tracking_time = ?pool_cfg.max_deposit_tracking_time,
             "enabling the PIX strategy"
         );
-        // `build_default_pool` selects whichever pool the `strategy-pix-*` pairing chose; the
-        // generic `build_with_pool` exists for supplying another.
-        match PixStrategy::new(pix_cfg).build_default_pool(Arc::clone(&node)) {
+        // One builder per pool rather than one call that dispatches: the pool is named here, and
+        // `SpecDepositAddress` is the witness that it can settle what this build's spec produces.
+        // The generic `build_with_pool` exists for supplying a pool from outside this crate.
+        #[cfg(feature = "strategy-pix-secp256k1")]
+        let built = PixStrategy::new(pix_cfg)
+            .build_non_anonymous::<_, SpecDepositAddress>(Arc::clone(&node), pool_cfg);
+        #[cfg(all(
+            feature = "strategy-pix-curvy",
+            not(feature = "strategy-pix-secp256k1")
+        ))]
+        let built = PixStrategy::new(pix_cfg)
+            .build_curvy::<_, SpecDepositAddress>(Arc::clone(&node), pool_cfg);
+
+        match built {
             Ok(pix) => {
                 multi = Box::new(MultiStrategy::new(vec![multi, pix]));
                 #[cfg(all(feature = "telemetry", not(test)))]
