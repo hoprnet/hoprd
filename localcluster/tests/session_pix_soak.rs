@@ -4,6 +4,31 @@
 //! resembling real use — tens of megabytes crossing the Session in both directions, SSA
 //! cycles counted in the tens — and run to its natural end rather than to a target.
 //!
+//! # Four nodes, two of them relays
+//!
+//! ```text
+//!            ┌── node1 ──┐
+//!   Entry ───┤           ├─── Exit
+//!            └── node2 ──┘
+//! ```
+//!
+//! One Session at [`HOPS`] = 1, and *both* relays carry it. Nothing in this test alternates
+//! between them: hoprd re-resolves the route for every outgoing packet, so a second viable
+//! relay is a second candidate the planner draws from. `resolve_routing_stage` ("resolves the
+//! routing of every outgoing packet") feeds `PathPlanner::resolve_routing`, whose `Hops` arm
+//! picks from a cached weighted collection of validated paths with `pick_one()`; return paths
+//! go through `resolve_diverse_return_paths`, which draws from γ-tempered weights with a share
+//! of uniform exploration on top. Both live in `hopr-transport::path::planner`.
+//!
+//! So the split is statistical rather than round-robin, which is what
+//! [`MIN_RELAY_SHARE_PERCENT`] is a floor for. Two relays instead of one changes neither the
+//! aggregate packet rate nor the SSA geometry — each simply relays about half — so every figure
+//! below is unaffected by the topology.
+//!
+//! It does buy one thing no 3-node run can: a relay that never reaches the path selector at all
+//! — an unopened channel, a missed announcement, a graph that only ever found one path — leaves
+//! every *other* assertion in this test passing. Here it fails the share floor.
+//!
 //! # The run ends when the Entry runs out of money
 //!
 //! There is no cycle target and no clock. The Entry is funded with a fixed float, it
@@ -20,8 +45,9 @@
 //!
 //! Both terms on the right are knobs: `HOPRD_PIX_SOAK_FLOAT` buys cycles and
 //! `HOPRD_PIX_SOAK_RATE` sets how fast each one is consumed. The default float is exactly
-//! [`DEFAULT_FUNDED_CYCLES`] cycles' worth, which lands the whole run inside ~6 minutes —
-//! about half of which is cluster bootstrap, so the traffic itself is the shorter half.
+//! [`DEFAULT_FUNDED_CYCLES`] cycles' worth, which lands the whole run inside ~7 minutes —
+//! measured 407 s, of which 244 s is cluster bootstrap, so the traffic itself is the shorter
+//! half.
 //! To leave the cluster up for observation, fund it for longer:
 //!
 //! ```bash
@@ -146,11 +172,24 @@ const P2P_HOST: &str = "127.0.0.1";
 const P2P_PORT_BASE: u16 = 19500;
 const API_PORT_BASE: u16 = 13500;
 
-const NUM_NODES: usize = 3;
+const NUM_NODES: usize = 4;
 const ENTRY: usize = 0;
-const EXIT: usize = 2;
+/// Both are candidates for every packet — see the module docs.
+const RELAYS: [usize; 2] = [1, 2];
+const EXIT: usize = 3;
 /// PIX requires at least one intermediate relay: the share encryption key comes from the
 /// first relayer's acknowledgement.
+///
+/// One hop, but not one relay — the planner redraws it per packet, so which relayer supplies
+/// that key changes constantly. PIX is built for that: the Exit files each pending share under
+/// the peer it sent the reply to (`insert_encrypted_share(peer, ack_challenge, share)`) and the
+/// awaiting-acks structure is a per-peer cache, so an acknowledgement from either relay resolves
+/// its own share and nothing is shared between them.
+///
+/// `Hops(1)` also cannot degenerate into the direct path, even though the full mesh gives the
+/// Entry a channel straight to the Exit: the selector searches for paths of exactly `hops + 1`
+/// edges. That is already load-bearing today — the 3-node version of this test had the same
+/// direct channel and never routed around its relay.
 const HOPS: u64 = 1;
 
 // ── SSA geometry ────────────────────────────────────────────────────────────────
@@ -269,6 +308,19 @@ const MIN_TOTAL_BYTES: u64 = 4_000_000;
 /// Share of paid-for return packets that must be observed completing the round trip.
 /// The shortfall is packet loss downstream of the Exit, which still consumed the SURB.
 const MIN_DELIVERED_PERCENT: u32 = 80;
+/// Least share of the relayed packets each of the two [`RELAYS`] must carry.
+///
+/// Not 50: the forward path is drawn per packet by weighted random selection over the planner's
+/// candidates — weighted by latency, channel capacity and ack rate — and return paths come from
+/// tempered weights with a share of uniform exploration on top. So an even split is what two
+/// identical loopback relays tend to, not what any single run is owed, and a loaded machine skews
+/// it further.
+///
+/// The floor is set low because it is not measuring the split. It is measuring that a relay is
+/// carrying traffic *at all*, which is the failure a 3-node run cannot see: an unopened channel,
+/// a node that never announced, or a graph that only ever found one path leaves every other
+/// assertion here passing. Raise it only against measurements from several runs.
+const MIN_RELAY_SHARE_PERCENT: u64 = 15;
 /// SSAs that may legitimately be funded but not yet swept when the run ends.
 ///
 /// The Exit requests the next SSA at the early-recovery threshold, so one is normally in
@@ -288,9 +340,19 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Wall-clock ceiling for a run at the default float, bootstrap included.
 ///
 /// Only enforced when `HOPRD_PIX_SOAK_FLOAT` is unset: runtime scales with the float by
-/// design, so a deliberately larger one is expected to take longer. Measured at ~400 s,
-/// of which roughly half is cluster bootstrap.
-const DEFAULT_RUN_BUDGET: Duration = Duration::from_secs(7 * 60);
+/// design, so a deliberately larger one is expected to take longer.
+///
+/// The traffic phase does not care how many relays there are — it is the same aggregate rate over
+/// the same geometry — but the bootstrap does, and it is the larger half of a default run. The
+/// fourth node adds a serial round of identity provisioning (Safe deployment, Safe registration,
+/// pre-announce and two PIX top-ups, all sequential per node) and the full mesh goes from 6
+/// channel opens to 12, also sequential: measured 244 s to channels-ready against 190 s at three
+/// nodes, for a 407 s run against the 350 s one this replaces.
+///
+/// So 9 minutes is 130 s of headroom over a measured run, a little more than the 70 s the old
+/// budget left. Bootstrap is where a loaded machine costs the most and it is now the part that
+/// grew, which is what the extra margin is for.
+const DEFAULT_RUN_BUDGET: Duration = Duration::from_secs(9 * 60);
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 const SETUP_TIMEOUT: Duration = Duration::from_secs(300);
@@ -319,10 +381,15 @@ const PRICE_PER_BYTE: &str = "0.000001 wxHOPR";
 /// run before any money moves.
 const MAX_SSA_ALLOCATION: &str = "30 wxHOPR";
 const GAS_XDAI_PER_SWEEP: &str = "0.01 xdai";
-/// Per channel, out of each Safe's 1000 wxHOPR across two outgoing channels. Tens of
+/// Per channel, out of each Safe's 1000 wxHOPR across **three** outgoing channels. Tens of
 /// megabytes issue a lot of tickets, and a channel draining before the deposit float does
 /// would stall packet flow and end the run for the wrong reason.
-const CHANNEL_STAKE: &str = "400 wxHOPR";
+///
+/// Down from 400 because a four-node full mesh gives every node one more outgoing channel to
+/// fund: 3 × 300 = 900 of the 1000 wxHOPR each Safe holds. Against the traffic it is a *rise*
+/// rather than a cut — the forward leg now splits across two relays, so a channel carries about
+/// half the tickets it used to for three quarters of the stake.
+const CHANNEL_STAKE: &str = "300 wxHOPR";
 
 // ── Exit deadlines ──────────────────────────────────────────────────────────────
 
@@ -570,6 +637,9 @@ struct NodeMetrics {
     // `hopr_session_*` series from this endpoint and exports them over OTLP instead.
     packets_sent: u64,
     packets_received: u64,
+    /// Relayed on behalf of someone else, both directions of the Session together. Only a relay
+    /// reports any, which is what makes it the per-relay traffic share.
+    packets_forwarded: u64,
 }
 
 impl NodeMetrics {
@@ -597,8 +667,35 @@ impl NodeMetrics {
             sweeps: m.sum("hopr_strategy_pix_sweeps_total") as u64,
             packets_sent: packets("sent"),
             packets_received: packets("received"),
+            packets_forwarded: packets("forwarded"),
         }
     }
+}
+
+/// Packets each relay forwarded since `before`, in [`RELAYS`] order.
+///
+/// Measured as a delta because bootstrap is not quiet: probes are relayed too, and 1-hop probe
+/// paths keep running for the whole life of the cluster. They are a rounding error against a
+/// traffic phase of millions of packets, but the baseline is free to subtract.
+async fn relay_forwarded(nodes: &[client_helper::NodeProcess], before: &[NodeMetrics]) -> Vec<u64> {
+    let mut out = Vec::with_capacity(RELAYS.len());
+    for (relay, before) in RELAYS.iter().zip(before) {
+        let now = NodeMetrics::scrape(&nodes[*relay].api).await;
+        out.push(
+            now.packets_forwarded
+                .saturating_sub(before.packets_forwarded),
+        );
+    }
+    out
+}
+
+/// Each relay's percentage of everything the relays forwarded between them.
+fn relay_shares(forwarded: &[u64]) -> Vec<u64> {
+    let total: u64 = forwarded.iter().sum();
+    forwarded
+        .iter()
+        .map(|n| if total == 0 { 0 } else { n * 100 / total })
+        .collect()
 }
 
 async fn setup_cluster(
@@ -778,6 +875,10 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     let exit_before = exit_node.api.balances().await.context("exit balances")?;
     let entry_metrics_before = NodeMetrics::scrape(&entry.api).await;
     let exit_metrics_before = NodeMetrics::scrape(&exit_node.api).await;
+    let mut relays_metrics_before = Vec::with_capacity(RELAYS.len());
+    for relay in RELAYS {
+        relays_metrics_before.push(NodeMetrics::scrape(&cleanup.nodes[relay].api).await);
+    }
     assert_eq!(
         entry_before.node_hopr, float,
         "the Entry node account holds {} rather than the {float} float it was configured \
@@ -905,6 +1006,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         cycles = completed_cycles(recovered, per_cycle).unwrap_or(cycles);
         entry_metrics = NodeMetrics::scrape(&entry.api).await;
         exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
+        let relayed = relay_forwarded(&cleanup.nodes, &relays_metrics_before).await;
 
         let sent_n = sent.load(Ordering::Acquire);
         let echoed_n = echoed.load(Ordering::Acquire);
@@ -924,6 +1026,8 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             exit_pkts_recv = exit_metrics
                 .packets_received
                 .saturating_sub(exit_metrics_before.packets_received),
+            relayed = ?relayed,
+            relay_split_pct = ?relay_shares(&relayed),
             deposits = entry_metrics.deposits,
             deposits_failed = entry_metrics.deposits_failed,
             confirmed = exit_metrics.deposits_confirmed,
@@ -964,6 +1068,8 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         }
     }
     entry_metrics = NodeMetrics::scrape(&entry.api).await;
+    let relayed = relay_forwarded(&cleanup.nodes, &relays_metrics_before).await;
+    let relay_split = relay_shares(&relayed);
 
     stop.store(true, Ordering::Release);
     sender.abort();
@@ -989,6 +1095,27 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         entry_metrics.deposits,
         exit_metrics.keys_recovered
     );
+
+    // Both relays carried the Session. Nothing here distributes the traffic — hoprd redraws the
+    // route per packet — so what this asserts is that the cluster is wired the way the topology
+    // says and that a Session still spreads over the candidates it is given.
+    let total_relayed: u64 = relayed.iter().sum();
+    assert!(
+        total_relayed > 0,
+        "neither relay forwarded a packet, yet {echoed_n} datagrams completed the round trip — \
+         a {HOPS}-hop Session cannot have delivered them without one"
+    );
+    for ((relay, forwarded), share) in RELAYS.iter().zip(&relayed).zip(&relay_split) {
+        assert!(
+            forwarded * 100 >= total_relayed * MIN_RELAY_SHARE_PERCENT,
+            "node{relay} forwarded {forwarded} of the {total_relayed} packets the relays carried \
+             between them ({share}%), under the {MIN_RELAY_SHARE_PERCENT}% floor: the Session is \
+             not spread over both relays. Check that node{relay}'s channels to the Entry and to \
+             the Exit are open and funded and that it announced on chain — a relay missing any of \
+             those never enters the path selector's candidate set, and every other assertion in \
+             this test passes without it."
+        );
+    }
 
     // The run ended the way it is designed to.
     assert!(
@@ -1112,6 +1239,8 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         %spent,
         sent_mb = sent_n * CHUNK_SIZE as u64 / 1_000_000,
         echoed_mb = echoed_bytes / 1_000_000,
+        relayed = ?relayed,
+        relay_split_pct = ?relay_split,
         deposits = entry_metrics.deposits,
         deposits_failed = entry_metrics.deposits_failed,
         confirmed = exit_metrics.deposits_confirmed,

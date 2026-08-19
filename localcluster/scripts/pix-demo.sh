@@ -2,13 +2,16 @@
 #
 # Live dashboard for the PIX Session soak test.
 #
-# Runs `session_pix_soak` against a throwaway 3-node localcluster and renders what the
-# three nodes are doing while it happens: traffic crossing the Session, SSA cycles
-# advancing through deposit → confirmation → key recovery → sweep, and the Exit's Safe
-# filling up one quota-sized deposit at a time. The run ends by itself when the Entry can
-# no longer afford a deposit and the Exit's kill switch closes the Session.
+# Runs `session_pix_soak` against a throwaway 4-node localcluster — an Entry, two relays and
+# an Exit — and renders what all four are doing while it happens: traffic crossing the Session
+# over both relays, SSA cycles advancing through deposit → confirmation → key recovery → sweep,
+# and the Exit's Safe filling up one quota-sized deposit at a time. The run ends by itself when
+# the Entry can no longer afford a deposit and the Exit's kill switch closes the Session.
 #
-#   ./localcluster/scripts/pix-demo.sh                  # ~6 minutes
+# The single Session is one hop, but not one relay: hoprd redraws the route for every packet, so
+# both relays carry it and both earn. The per-relay rows are where that shows.
+#
+#   ./localcluster/scripts/pix-demo.sh                  # ~7 minutes
 #   PIX_DEMO_FLOAT="150 wxHOPR" ./localcluster/scripts/pix-demo.sh    # more cycles
 #   PIX_DEMO_RATE=6000 ./localcluster/scripts/pix-demo.sh             # faster
 #
@@ -37,7 +40,13 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 API_PORT_BASE=13500
-NODES=(Entry Relay Exit)
+# Node index → role, matching `session_pix_soak`'s own ENTRY/RELAYS/EXIT. Every reading below is
+# taken by index, so this is the only place the mapping is stated. Node `i` scrapes on
+# `API_PORT_BASE + i`.
+ENTRY_IDX=0
+RELAY_IDXS=(1 2)
+EXIT_IDX=3
+ALL_IDXS=("$ENTRY_IDX" "${RELAY_IDXS[@]}" "$EXIT_IDX")
 # Fixed rather than under $TMPDIR: the test runs inside `nix develop`, which sets its own
 # TMPDIR, and `--dashboard` is meant to be usable from any shell against the same run.
 STATE_DIR="/tmp/pix-demo"
@@ -169,7 +178,7 @@ RATE_WINDOW=6
 # CPU ticks consumed by one node's hoprd process, or empty if it is not running.
 #
 # Nodes are identified by `--apiPort`, which `client_helper` puts on the command line and which
-# is the same port this script already scrapes — so the mapping to Entry/Relay/Exit is exact
+# is the same port this script already scrapes — so the mapping to Entry/relay/Exit is exact
 # rather than positional. The `[ ]` is the same self-match guard as `reset_cluster`'s `pkill`:
 # harmless here, since the pattern only lives in this file, but it keeps the line safe to
 # paste into a shell while debugging.
@@ -242,12 +251,13 @@ node_address() {
   printf '%s\n' "$value"
 }
 
-# One field of the relay's ticket statistics for the incoming channel from `$2`.
+# One field of relay `$1`'s ticket statistics for the incoming channel from `$2`.
 #
-# Scoping by counterparty is what separates the two directions: the relay's forward leg and
+# Scoping by counterparty is what separates the two directions: a relay's forward leg and
 # return leg are two different incoming channels, earning independently, and the unscoped
-# aggregate adds them together. Auto-redeeming is off for this test, so nothing is ever moved
-# out of `unredeemedValue` — it is the whole of what the leg has earned.
+# aggregate adds them together. With two relays it also separates the two of them, since each
+# has its own channel from the Entry and from the Exit. Auto-redeeming is off for this test, so
+# nothing is ever moved out of `unredeemedValue` — it is the whole of what the leg has earned.
 ticket_stat() { # node counterparty field
   local cache="$STATE_DIR/tickets_$1_$2_$3" value
   [ -z "$2" ] && {
@@ -300,21 +310,21 @@ trim() { printf '%s' "${1:-0}" | sed -e 's/\(\.[0-9]*[1-9]\)0*$/\1/' -e 's/\.0*$
 # ── dashboard ───────────────────────────────────────────────────────────────────
 
 render() {
-  for i in 0 1 2; do scrape "$i"; done
+  for i in "${ALL_IDXS[@]}"; do scrape "$i"; done
 
   local sweeps deposits made_failed confirmed keys last_sweep
-  sweeps=$(metric 2 hopr_strategy_pix_sweeps)
-  deposits=$(metric 0 hopr_strategy_pix_deposits)
-  made_failed=$(metric 0 hopr_strategy_pix_deposits_failed)
-  confirmed=$(metric 2 hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
-  keys=$(metric 2 hopr_strategy_pix_keys_recovered)
-  last_sweep=$(grep -E '^hopr_strategy_pix_last_sweep_hopr' "$STATE_DIR/metrics_2" 2>/dev/null |
+  sweeps=$(metric "$EXIT_IDX" hopr_strategy_pix_sweeps)
+  deposits=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits)
+  made_failed=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_failed)
+  confirmed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
+  keys=$(metric "$EXIT_IDX" hopr_strategy_pix_keys_recovered)
+  last_sweep=$(grep -E '^hopr_strategy_pix_last_sweep_hopr' "$STATE_DIR/metrics_$EXIT_IDX" 2>/dev/null |
     awk '{ print $NF }' | head -1)
 
   # The Exit's Safe only ever *gains* wxHOPR from PIX sweeps, so its growth over a baseline is
   # the recovered total. Choosing when to stop moving that baseline is the whole difficulty.
   #
-  # It cannot be the first frame: opening the channels takes 800 wxHOPR back out of the Safe
+  # It cannot be the first frame: opening the channels takes 900 wxHOPR back out of the Safe
   # after the nodes answer /readyz, which a pinned first-frame baseline reports as a large
   # negative recovery. It also cannot be "until the first sweep lands" — the sweep counter
   # increments only once `withdraw_from_signer` has returned, by which time the transaction is
@@ -326,7 +336,7 @@ render() {
   # seconds — far more than this loop's refresh — so a baseline taken while `deposits == 0` is
   # guaranteed to be after channel funding and before any PIX money has moved.
   local exit_safe
-  exit_safe=$(balance 2 safeHopr)
+  exit_safe=$(balance "$EXIT_IDX" safeHopr)
   if [ "$deposits" -eq 0 ] 2>/dev/null || [ ! -f "$STATE_DIR/baseline" ]; then
     echo "$exit_safe" >"$STATE_DIR/baseline"
   fi
@@ -336,7 +346,7 @@ render() {
   recovered=$(trim "$(echo "$exit_safe - $baseline" | bc -l)")
 
   local entry_float
-  entry_float=$(balance 0 hopr)
+  entry_float=$(balance "$ENTRY_IDX" hopr)
   local per_cycle
   per_cycle=$(from_log "per_cycle")
   local funded
@@ -358,22 +368,41 @@ render() {
   started=$(cat "$STATE_DIR/started")
   local elapsed=$(($(date +%s) - started))
 
-  # Relay earnings, per direction. The forward leg's tickets are issued by the Entry, the
-  # return leg's by the Exit, so each node's address names the channel that direction pays on.
-  local entry_addr exit_addr fwd_win fwd_val ret_win ret_val
-  entry_addr=$(node_address 0)
-  exit_addr=$(node_address 2)
-  fwd_win=$(ticket_stat 1 "$entry_addr" winningCount)
-  fwd_val=$(ticket_stat 1 "$entry_addr" unredeemedValue)
-  ret_win=$(ticket_stat 1 "$exit_addr" winningCount)
-  ret_val=$(ticket_stat 1 "$exit_addr" unredeemedValue)
+  # Relay earnings, per relay and per direction. The forward leg's tickets are issued by the
+  # Entry, the return leg's by the Exit, so each node's address names the channel that direction
+  # pays on — and every relay has one channel from each.
+  local entry_addr exit_addr
+  entry_addr=$(node_address "$ENTRY_IDX")
+  exit_addr=$(node_address "$EXIT_IDX")
+  local -a fwd_win fwd_val ret_win ret_val
+  local r
+  for r in "${RELAY_IDXS[@]}"; do
+    fwd_win+=("$(ticket_stat "$r" "$entry_addr" winningCount)")
+    fwd_val+=("$(ticket_stat "$r" "$entry_addr" unredeemedValue)")
+    ret_win+=("$(ticket_stat "$r" "$exit_addr" winningCount)")
+    ret_val+=("$(ticket_stat "$r" "$exit_addr" unredeemedValue)")
+  done
 
-  local e_sent x_recv x_sent e_recv r_fwd
-  e_sent=$(metric 0 hopr_packets_count 'type="sent"')
-  e_recv=$(metric 0 hopr_packets_count 'type="received"')
-  x_sent=$(metric 2 hopr_packets_count 'type="sent"')
-  x_recv=$(metric 2 hopr_packets_count 'type="received"')
-  r_fwd=$(metric 1 hopr_packets_count 'type="forwarded"')
+  local e_sent x_recv x_sent e_recv
+  e_sent=$(metric "$ENTRY_IDX" hopr_packets_count 'type="sent"')
+  e_recv=$(metric "$ENTRY_IDX" hopr_packets_count 'type="received"')
+  x_sent=$(metric "$EXIT_IDX" hopr_packets_count 'type="sent"')
+  x_recv=$(metric "$EXIT_IDX" hopr_packets_count 'type="received"')
+
+  # Per-relay forwarding, and each relay's share of the two totals. This is where the route
+  # actually shows: nothing in the test spreads the traffic, hoprd redraws the path per packet,
+  # so two rows climbing together is the split happening. A relay stuck at zero means it never
+  # entered the path selector's candidate set — an unopened channel or a missed announcement.
+  local -a r_fwd r_share
+  local r_total=0
+  for r in "${RELAY_IDXS[@]}"; do
+    r_fwd+=("$(metric "$r" hopr_packets_count 'type="forwarded"')")
+    r_total=$((r_total + ${r_fwd[-1]}))
+  done
+  local n
+  for n in "${r_fwd[@]}"; do
+    if [ "$r_total" -gt 0 ]; then r_share+=("$((n * 100 / r_total))"); else r_share+=(0); fi
+  done
 
   # Derived from the same counters as the totals above, so the rate and the running total can
   # never tell different stories. These are node-wide HOPR packet counts, which include the
@@ -384,12 +413,15 @@ render() {
   fwd_rate=$(pkt_rate fwd "$e_sent")
   ret_rate=$(pkt_rate ret "$x_sent")
 
-  # What that rate costs. Worth showing next to it: the three nodes are Sphinx-processing every
-  # packet in both directions on one machine, and the relay pays for both legs.
-  local cpu_e cpu_r cpu_x
-  cpu_e=$(cpu_pct 0)
-  cpu_r=$(cpu_pct 1)
-  cpu_x=$(cpu_pct 2)
+  # What that rate costs. Worth showing next to it: all four nodes are Sphinx-processing every
+  # packet in both directions on one machine. The relays land between the two endpoints —
+  # measured 527% Entry, 341% and 349% for the relays, 269% Exit — because each carries about
+  # half the packets but both directions of its half.
+  local cpu_e cpu_x
+  cpu_e=$(cpu_pct "$ENTRY_IDX")
+  cpu_x=$(cpu_pct "$EXIT_IDX")
+  local -a cpu_r
+  for r in "${RELAY_IDXS[@]}"; do cpu_r+=("$(cpu_pct "$r")"); done
 
   # Bars are scaled to the cycles the float pays for, which the test announces at startup.
   # Attaching to a cluster somebody else started leaves that unknown, so fall back to
@@ -449,7 +481,14 @@ render() {
     "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
   printf '    %-22s %12s pkts  %s->%s  %12s recv\n' "Entry -> Exit" "$(num "$e_sent")" "$C_DIM" "$C_RESET" "$(num "$x_recv")"
   printf '    %-22s %12s pkts  %s<-%s  %12s recv\n' "Exit  -> Entry" "$(num "$x_sent")" "$C_DIM" "$C_RESET" "$(num "$e_recv")"
-  printf '    %-22s %12s pkts\n' "Relay forwarded" "$(num "$r_fwd")"
+  # One row per relay with its share, because the share is the point: the Session is one hop but
+  # not one relay, and these two rows climbing together is hoprd redrawing the route per packet.
+  local i
+  for i in "${!RELAY_IDXS[@]}"; do
+    printf '    %-22s %12s pkts  %s%3s%%%s %sof relayed%s\n' \
+      "Relay $((i + 1)) forwarded" "$(num "${r_fwd[i]}")" \
+      "$C_CYAN" "${r_share[i]}" "$C_RESET" "$C_DIM" "$C_RESET"
+  done
   # The headline of the run, so it gets the same emphasis as the money. Kept on one line in
   # the same value column as the totals above rather than a fourth column on each row: those
   # rows already end at column 67 inside a 74-wide frame.
@@ -459,23 +498,32 @@ render() {
     "$C_DIM" "$C_RESET" \
     "$C_CYAN$C_BOLD" "$(num "$ret_rate")" "$C_RESET"
   # 100% is one core, so these routinely exceed it — hoprd is multi-threaded and every packet
-  # costs a Sphinx unwrap per hop.
-  printf '    %-22s %sEntry %4s%%%s  %s·%s  %sRelay %4s%%%s  %s·%s  %sExit %4s%%%s\n' \
+  # costs a Sphinx unwrap per hop. Four columns fit in the same 69 that three did only with the
+  # labels shortened and the separators tightened; widening any of them overruns the frame.
+  printf '    %-22s %sEntry %3s%%%s %s·%s %sR1 %3s%%%s %s·%s %sR2 %3s%%%s %s·%s %sExit %3s%%%s\n' \
     "peak node CPU" \
     "$C_YELLOW" "$cpu_e" "$C_RESET" "$C_DIM" "$C_RESET" \
-    "$C_YELLOW" "$cpu_r" "$C_RESET" "$C_DIM" "$C_RESET" \
+    "$C_YELLOW" "${cpu_r[0]}" "$C_RESET" "$C_DIM" "$C_RESET" \
+    "$C_YELLOW" "${cpu_r[1]}" "$C_RESET" "$C_DIM" "$C_RESET" \
     "$C_YELLOW" "$cpu_x" "$C_RESET"
   printf '\n'
 
-  # The relay is paid separately for each leg, by whoever issued the tickets on it — a second,
+  # A relay is paid separately for each leg, by whoever issued the tickets on it — a second,
   # independent incentive running alongside the Entry paying the Exit. Only a small fraction of
   # packets carry a winning ticket, so these counts are far below the packet counts above.
+  #
+  # Four rows rather than a relay × leg matrix: a matrix cell wide enough for a count and a
+  # wxHOPR value needs 84 columns for two of them, and the frame is 74.
   printf '  %sRELAY EARNINGS%s  %seach leg is its own channel, paid for by whoever sends on it%s\n\n' \
     "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
-    "from Entry (fwd leg)" "$(num "$fwd_win")" "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$fwd_val" "$C_RESET"
-  printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
-    "from Exit (return leg)" "$(num "$ret_win")" "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "$ret_val" "$C_RESET"
+  for i in "${!RELAY_IDXS[@]}"; do
+    printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
+      "Relay $((i + 1)) <- Entry (fwd)" "$(num "${fwd_win[i]}")" \
+      "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "${fwd_val[i]}" "$C_RESET"
+    printf '    %-22s %12s %swinning%s  %s%16s wxHOPR%s\n' \
+      "Relay $((i + 1)) <- Exit (ret)" "$(num "${ret_win[i]}")" \
+      "$C_DIM" "$C_RESET" "$C_GREEN$C_BOLD" "${ret_val[i]}" "$C_RESET"
+  done
   printf '\n'
 
   if [ -n "${1:-}" ]; then
@@ -488,7 +536,7 @@ render() {
 mkdir -p "$STATE_DIR"
 
 if [ "${1:-}" = "--dashboard" ]; then
-  render "metrics: http://127.0.0.1:$API_PORT_BASE/metrics (+1, +2)"
+  render "metrics: http://127.0.0.1:$API_PORT_BASE/metrics (+1, +2, +3)"
   exit 0
 fi
 
@@ -585,13 +633,13 @@ rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
 reset_cluster
 date +%s >"$STATE_DIR/started"
 
-echo "starting the localcluster (chain, 3 nodes, channels) — this takes a couple of minutes"
+echo "starting the localcluster (chain, 4 nodes, 12 channels) — this takes a few minutes"
 echo "full test output: $TEST_LOG"
 (cd "$REPO_ROOT" && cargo nextest run -p hoprd-localcluster --test session_pix_soak \
   --run-ignored ignored-only -j 1 --no-capture) >"$TEST_LOG" 2>&1 &
 TEST_PID=$!
 
-# Killing the nextest process alone is not enough: the three `hoprd` children and the chain
+# Killing the nextest process alone is not enough: the four `hoprd` children and the chain
 # container outlive it, and on Ctrl-C the test's own teardown never runs. Left behind, they
 # are exactly what `reset_cluster` has to clear before the next attempt — so clear them here
 # and a re-run needs no manual intervention. Safe on the normal-exit path too, where the
@@ -605,7 +653,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 printf '\033[?25l'
-until curl -s --max-time 2 "http://127.0.0.1:$((API_PORT_BASE + 2))/readyz" >/dev/null 2>&1; do
+until curl -s --max-time 2 "http://127.0.0.1:$((API_PORT_BASE + EXIT_IDX))/readyz" >/dev/null 2>&1; do
   kill -0 "$TEST_PID" 2>/dev/null || {
     printf '\033[?25h'
     echo
@@ -616,7 +664,7 @@ until curl -s --max-time 2 "http://127.0.0.1:$((API_PORT_BASE + 2))/readyz" >/de
   sleep 2
 done
 # The nodes answer /readyz before the Session opens; hold off until traffic is flowing so
-# the first frame is not three columns of zeroes.
+# the first frame is not four columns of zeroes.
 sleep 5
 
 while kill -0 "$TEST_PID" 2>/dev/null; do
