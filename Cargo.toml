@@ -26,19 +26,19 @@ hopr-utils = { package = "hopr-utilities", version = "0.9.0" }
 # one curve on every build and make the other unreachable — which is exactly the state this
 # workspace was in before the split.
 #
-# All three git deps are pinned to a `rev` rather than tracked on a branch. PIX has landed on the
-# default branch of both repos — hoprnet #8095, hopr-strategy #10 — and both `lukas/pix` branches
-# were deleted, so there is nothing left to follow. A `branch` ref would be the wrong replacement
-# anyway: default branches move, and every unrelated commit on them would arrive here silently
-# between one `cargo update` and the next. The `rev` is what makes a rebuild reproducible, and
-# moving it is a reviewable change.
+# Both are pinned to a `rev` rather than tracked on a branch. PIX landed on `master` as #8095 and
+# `lukas/pix` was deleted, so there is no branch left to follow — and a `branch` ref would be the
+# wrong replacement anyway: `master` moves, and every unrelated commit on it would arrive here
+# silently between one `cargo update` and the next. The `rev` is what makes a rebuild
+# reproducible, and moving it is a reviewable change.
 #
-# Both PRs squash-merged, so neither rev is an ancestor of the branch head it replaces and
-# `git merge-base` will not show the relationship. Each was verified by content diff instead:
-# hoprnet `2436e5d4` == `66dee7c5`, and hopr-strategy `748ec3ba` == `578babf`, the last branch
-# heads this was built and demoed against.
+# The PR squash-merged, so the rev is not an ancestor of the branch head it replaces and
+# `git merge-base` will not show the relationship; `2436e5d4` was verified byte-identical to
+# `66dee7c5` by content diff instead, and `7b46149b` moves only `.cargo/audit.toml` on top of it.
+#
+# These two stay on git because hoprnet does not publish them. Everything it does publish is in
+# the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
-hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", rev = "748ec3baae38d2261d9e6bfb8191972563109e9b", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
 
 # crates.io HOPR deps
@@ -67,6 +67,15 @@ hopr-chain-connector = "0.22.2"
 hopr-ct-full-network = { version = "0.4.0", default-features = false }
 hopr-network-graph = { version = "0.5.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.1.1", default-features = false }
+# Was a `rev` on `hopr-strategy`'s `main` until that repo cut 1.0.0 from the very commit this was
+# pinned to — `748ec3ba`, per the release's `.cargo_vcs_info.json`. Verified rather than assumed:
+# the published `src/` tree diffs clean against the git checkout, the only omissions being the
+# `insta` snapshot directories, which the package excludes and no consumer compiles.
+#
+# A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its only
+# job is to document a version; this is a real dependency the resolver acts on, and pinning it
+# exactly would conflict with any other crate in the graph asking for a later 1.x.
+hopr-strategy = { version = "1.0.0", default-features = false }
 hopr-ticket-manager = "0.5.2"
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.

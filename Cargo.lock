@@ -5247,7 +5247,8 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "1.0.0"
-source = "git+https://github.com/hoprnet/hopr-strategy?rev=748ec3baae38d2261d9e6bfb8191972563109e9b#748ec3baae38d2261d9e6bfb8191972563109e9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff9e403c7ccadc6ba4006ac747454b8336132efacdd238352c49158a8f8dde32"
 dependencies = [
  "anyhow",
  "async-trait",
