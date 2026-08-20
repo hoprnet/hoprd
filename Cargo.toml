@@ -69,7 +69,13 @@ hopr-session-server-forwarder = { version = "0.1.1", default-features = false }
 # A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its only
 # job is to document a version; this is a real dependency the resolver acts on, and pinning it
 # exactly would conflict with any other crate in the graph asking for a later 1.x.
-hopr-strategy = { version = "1.0.0", default-features = false }
+#
+# 1.0.2 is the floor rather than 1.0.0, and both patches are load-bearing here. 1.0.1 gave the PIX
+# config types `DisplayFromStr` on their balance fields — without it a balance is a positional
+# `[U256, currency]` pair and `price_per_byte: 0.0001 wxHOPR` does not parse — plus `PartialEq`,
+# which `StrategyKind`'s own derive requires of anything it carries. 1.0.2 extended the same set to
+# `CurvyDepositPoolConfig`, which 1.0.1 missed and which `--features strategy-pix-curvy` selects.
+hopr-strategy = { version = "1.0.2", default-features = false }
 # Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
 # `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
 # feature the rest of the workspace expects.

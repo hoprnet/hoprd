@@ -74,8 +74,12 @@ async fn run() -> Result<()> {
         strategies: identity::StrategySet {
             auto_redeeming: true,
             channel_lifecycle: true,
-            pix: true,
         },
+        // PIX off. It used to be on here, but only as `HOPRD_ENABLE_PIX=1`, which a binary
+        // without a deposit pool logged and ignored — so this test stayed runnable against a
+        // plain `cargo build -p hoprd`. A `Pix` stanza is not ignorable: it would now refuse
+        // to start that same binary. Nothing here opens a PIX Session, so there is nothing to
+        // keep; `session_pix` covers the strategy properly.
         ..Default::default()
     };
     identity::generate(&gen_cfg).await?;
@@ -92,7 +96,6 @@ async fn run() -> Result<()> {
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: Some(client_helper::PixStrategyEnv::default()),
     };
     cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
 

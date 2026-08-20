@@ -448,9 +448,9 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     //
                     // Gated on the feature rather than on `enforce_pix` so the pop order is a
                     // property of the binary rather than something a config toggle changes
-                    // underneath a running deployment. The cost is that a PIX-capable build which
-                    // never sets `HOPRD_ENABLE_PIX` also gets `Fifo` — that is upstream's default,
-                    // so it forgoes an optimisation rather than regressing.
+                    // underneath a running deployment. The cost is that a PIX-capable build whose
+                    // strategy list has no `Pix` stanza also gets `Fifo` — that is upstream's
+                    // default, so it forgoes an optimisation rather than regressing.
                     surb_store: SurbStoreConfig {
                         #[cfg(not(feature = "pix"))]
                         pop_order: SurbPopOrder::Lifo,

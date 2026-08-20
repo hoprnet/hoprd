@@ -134,8 +134,9 @@
 //! They are mutually exclusive and `hopr-strategy` rejects both with a `compile_error!`, so
 //! *neither* is in hoprd's `default`: Cargo unifies features across a workspace build, and a
 //! default pairing would collide with the one this crate selects. A plain
-//! `cargo build --release -p hoprd` therefore produces a binary with no PIX at all — it logs
-//! that at startup if `HOPRD_ENABLE_PIX` is set, rather than silently doing nothing.
+//! `cargo build --release -p hoprd` therefore produces a binary with no PIX at all — one that
+//! refuses to start against a config carrying a `Pix` strategy stanza, rather than silently
+//! running without the strategy it was asked for.
 //!
 //! Either way the binary is wrong for this test in a way that costs a full bootstrap to
 //! discover, which is why `pix-demo.sh` checks it before starting the cluster.
@@ -484,8 +485,8 @@ fn packet_rate() -> u64 {
     }
 }
 
-fn pix_settings(node_deposit_float: HoprBalance) -> identity::PixSettings {
-    identity::PixSettings {
+fn pix_settings(node_deposit_float: HoprBalance) -> anyhow::Result<identity::PixSettings> {
+    Ok(identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
         additional_shares: PIX_ADDITIONAL_SHARES as usize,
@@ -499,11 +500,8 @@ fn pix_settings(node_deposit_float: HoprBalance) -> identity::PixSettings {
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         enforce_on_nodes: vec![EXIT],
         node_deposit_float,
-    }
-}
-
-fn pix_strategy_env() -> anyhow::Result<client_helper::PixStrategyEnv> {
-    Ok(client_helper::PixStrategyEnv {
+        // Settlement knobs. These used to travel as environment variables; they are written
+        // into the generated node config's `Pix` strategy stanza now.
         price_per_byte: PRICE_PER_BYTE.parse().context("parsing price per byte")?,
         max_ssa_allocation: MAX_SSA_ALLOCATION
             .parse()
@@ -772,7 +770,6 @@ async fn setup_cluster(
         strategies: identity::StrategySet {
             auto_redeeming: false,
             channel_lifecycle: false,
-            pix: true,
         },
         strategy_execution_interval: Some(Duration::from_secs(600)),
         pix: Some(settings),
@@ -793,7 +790,6 @@ async fn setup_cluster(
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: Some(pix_strategy_env()?),
     })
     .await
     .context("starting nodes")?;
@@ -894,7 +890,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
          each way, the run ends when {funded_cycles} deposits have drained the float"
     );
 
-    setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)).await?;
+    setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)?).await?;
 
     let echo_port = start_echo_server().await?;
     let entry = &cleanup.nodes[ENTRY];

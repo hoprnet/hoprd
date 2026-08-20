@@ -162,8 +162,8 @@ const MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(60);
 /// would poll every 6 min and never beat the 80 s fuse.
 const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(30);
 
-fn pix_settings() -> identity::PixSettings {
-    identity::PixSettings {
+fn pix_settings() -> anyhow::Result<identity::PixSettings> {
+    Ok(identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
         additional_shares: PIX_ADDITIONAL_SHARES as usize,
@@ -178,11 +178,8 @@ fn pix_settings() -> identity::PixSettings {
         enforce_on_nodes: vec![EXIT],
         // ~60 SSA deposits at this test's ~1.66 wxHOPR per cycle; it needs four.
         node_deposit_float: "100 wxHOPR".parse().expect("valid static amount"),
-    }
-}
-
-fn pix_strategy_env() -> anyhow::Result<client_helper::PixStrategyEnv> {
-    Ok(client_helper::PixStrategyEnv {
+        // Settlement knobs. These used to travel as environment variables; they are written
+        // into the generated node config's `Pix` strategy stanza now.
         price_per_byte: PRICE_PER_BYTE.parse().context("parsing price per byte")?,
         max_ssa_allocation: MAX_SSA_ALLOCATION
             .parse()
@@ -256,10 +253,9 @@ async fn setup_cluster(
         strategies: identity::StrategySet {
             auto_redeeming: false,
             channel_lifecycle: false,
-            pix: true,
         },
         strategy_execution_interval: Some(Duration::from_secs(600)),
-        pix: Some(pix_settings()),
+        pix: Some(pix_settings()?),
         ..Default::default()
     })
     .await
@@ -277,7 +273,6 @@ async fn setup_cluster(
         p2p_port_base: P2P_PORT_BASE,
         identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
         api_token: None,
-        pix: Some(pix_strategy_env()?),
     })
     .await
     .context("starting nodes")?;
@@ -337,7 +332,7 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
 
     setup_cluster(&env, &cluster, &mut cleanup).await?;
 
-    let settings = pix_settings();
+    let settings = pix_settings()?;
     let quota = settings.quota_per_ssa();
     let price_per_byte: HoprBalance = PRICE_PER_BYTE.parse().context("parsing price per byte")?;
     let per_cycle = price_per_byte * quota;

@@ -129,42 +129,6 @@ fn empty_strategies() -> Vec<StrategyKind> {
     vec![]
 }
 
-/// Reads `var` and parses it as `T`, falling back to `default` when the variable is
-/// unset or does not parse.
-///
-/// Used for the PIX knobs, which cannot be expressed in YAML (see
-/// [`build_strategies`]). A malformed value is a configuration mistake rather than a
-/// reason to refuse to start, so it is logged and the default is kept.
-#[cfg(feature = "pix")]
-fn pix_env_or<T>(var: &str, default: T) -> T
-where
-    T: std::str::FromStr,
-    T::Err: std::fmt::Display,
-{
-    match std::env::var(var) {
-        Ok(raw) => raw.trim().parse().unwrap_or_else(|error| {
-            tracing::warn!(%error, var, %raw, "invalid PIX override, keeping the default");
-            default
-        }),
-        Err(_) => default,
-    }
-}
-
-/// [`pix_env_or`] for [`Duration`], which has no `FromStr`; accepts humantime syntax
-/// such as `30s` or `2m`.
-#[cfg(feature = "pix")]
-fn pix_env_duration_or(var: &str, default: Duration) -> Duration {
-    match std::env::var(var) {
-        Ok(raw) => humantime_serde::re::humantime::parse_duration(raw.trim()).unwrap_or_else(
-            |error| {
-                tracing::warn!(%error, var, %raw, "invalid PIX duration override, keeping the default");
-                default
-            },
-        ),
-        Err(_) => default,
-    }
-}
-
 fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), ValidationError> {
     if interval < &Duration::from_secs(10) {
         Err(ValidationError::new(
@@ -174,6 +138,57 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
         Ok(())
     }
 }
+
+/// PIX settlement configuration, as it appears in the `Pix` strategy stanza.
+///
+/// Two nested sections rather than one flat one. `PixStrategyConfig` is pool-agnostic by
+/// design — upstream keeps settlement config out of it so that both pools can be compiled
+/// together — and `PoolConfig` is whichever pool this binary's `strategy-pix-*` feature
+/// selected. They are also not flattenable: `PixStrategyConfig` carries
+/// `deny_unknown_fields`, and `#[serde(flatten)]` routes sibling keys into the flattened
+/// type, so `pool` would be rejected as unknown.
+///
+/// ```yaml
+/// strategy:
+///   strategies:
+///     - Pix:
+///         strategy:
+///           price_per_byte: "0.0001 wxHOPR"
+///           max_ssa_allocation: "10 wxHOPR"
+///         pool:
+///           max_deposit_tracking_time: 30s
+///           gas_xdai_per_sweep: "0.01 xDai"
+/// ```
+///
+/// Both sections may be omitted; each falls back to the upstream defaults documented on the
+/// respective type. Note that the accepted keys under `pool` follow the build: a
+/// `strategy-pix-curvy` binary has only `max_deposit_tracking_time`, and — because
+/// `CurvyDepositPoolConfig` does not set `deny_unknown_fields` — it *ignores* the secp256k1
+/// keys rather than rejecting them.
+#[cfg(feature = "pix")]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Validate)]
+#[serde(default, deny_unknown_fields)]
+pub struct PixConfig {
+    /// Pool-agnostic settlement knobs: pricing, the per-deposit ceiling, the recovery store,
+    /// and the deposit/withdrawal batching windows.
+    #[validate(nested)]
+    pub strategy: PixStrategyConfig,
+    /// The selected deposit pool's own knobs.
+    #[validate(nested)]
+    pub pool: PoolConfig,
+}
+
+/// Stand-in for [`PixConfig`] in a binary built without a PIX deposit pool.
+///
+/// Exists only so a `Pix` stanza still *parses* there, which is what lets
+/// [`StrategyKind::validate`] answer with the two features that would fix it. Without the
+/// variant, serde rejects the stanza as an unknown one and lists the variants that do exist —
+/// true, but no help at all to someone who just wants to know why PIX is missing.
+///
+/// No `deny_unknown_fields`, so it swallows whatever the stanza contained.
+#[cfg(not(feature = "pix"))]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct PixNotBuilt {}
 
 /// Lists all possible strategies with their respective configurations.
 ///
@@ -191,6 +206,14 @@ pub enum StrategyKind {
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
     ChannelLifecycle(Box<hopr_strategy::channel_lifecycle::ChannelLifecycleConfig>),
+    /// Makes an Exit paid for the traffic it delivers: the Entry deposits to per-Session
+    /// stealth addresses, the Exit recovers each key from the shares its spent SURBs carried
+    /// and sweeps the deposit into its Safe. Not in [`hopr_default_strategies`] — opt-in.
+    #[cfg(feature = "pix")]
+    Pix(PixConfig),
+    /// See [`PixNotBuilt`]: parses so that validation can explain itself.
+    #[cfg(not(feature = "pix"))]
+    Pix(PixNotBuilt),
     Multi(MultiStrategyConfig),
     Passive,
 }
@@ -206,6 +229,24 @@ impl validator::Validate for StrategyKind {
             Self::ClosureFinalizer(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
             Self::ChannelLifecycle(cfg) => cfg.validate(),
+            #[cfg(feature = "pix")]
+            Self::Pix(cfg) => cfg.validate(),
+            // The stanza asks for a strategy this binary cannot provide. Refusing here stops
+            // the node before it starts rather than letting it relay with no deposit path.
+            #[cfg(not(feature = "pix"))]
+            Self::Pix(_) => {
+                let mut errors = validator::ValidationErrors::new();
+                errors.add(
+                    "Pix",
+                    ValidationError::new(
+                        "the configuration contains a `Pix` strategy but this binary was built \
+                         without a PIX deposit pool. Rebuild with `--features \
+                         strategy-pix-curvy` (production) or `--features \
+                         strategy-pix-secp256k1` (tests and demo).",
+                    ),
+                );
+                Err(errors)
+            }
             Self::Multi(cfg) => cfg.validate(),
             Self::Passive => Ok(()),
         }
@@ -288,25 +329,12 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// and returns a single `Box<dyn Strategy + Send>` that runs all sub-strategies
 /// concurrently.
 ///
-/// When the `HOPRD_ENABLE_PIX` environment variable is set to `1`, the
-/// PIX strategy is added programmatically (it is intentionally
-/// not a YAML-configurable [`StrategyKind`] because its config type's serde
-/// representation is incompatible with `serde_saphyr`).
-///
-/// For the same reason its knobs are read from the environment rather than from the
-/// config file. All are optional and fall back to the defaults shown:
-///
-/// | Variable | Default |
-/// |---|---|
-/// | `HOPRD_PIX_PRICE_PER_BYTE` | `1 wxHOPR` |
-/// | `HOPRD_PIX_MAX_SSA_ALLOCATION` | `100 wxHOPR` |
-/// | `HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME` | `1h` |
-/// | `HOPRD_PIX_GAS_XDAI_PER_SWEEP` | `0.01 xdai` |
-///
-/// Note that `max_deposit_tracking_time` drives the Exit's deposit poll cadence
-/// (`tracking_time / 10`), which must stay below the Exit's
-/// `max_deposit_wait + max_ssa_delivery_time` kill-switch deadline — otherwise only the
-/// single immediate balance check can land in time.
+/// PIX is one of those variants ([`StrategyKind::Pix`]) rather than a special case. It used
+/// to be enabled by `HOPRD_ENABLE_PIX=1` and tuned by four more environment variables,
+/// because a [`hopr_lib::api::types::primitive::prelude::HoprBalance`] had no readable serde
+/// form — it serialized as a positional `[U256, currency]` pair, so `1 wxHOPR` was not
+/// something a config file could say. `hopr-strategy` 1.0.1 gave those fields
+/// `DisplayFromStr` and the special case went away with them.
 ///
 /// External strategies can be composed by building this result first, then wrapping
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
@@ -344,131 +372,7 @@ where
         .iter()
         .for_each(|s| METRIC_ENABLED_STRATEGIES.set(&[*s], 0_f64));
 
-    // `mut` only when a PIX pool is selected — the block below is the sole mutator, and it is
-    // gated on `pix`. A no-pool build genuinely never writes to this, so the lint is right there.
-    #[cfg_attr(not(feature = "pix"), allow(unused_mut))]
-    let mut multi = build_strategies_inner(cfg, Arc::clone(&node))?;
-
-    // PIX is not a YAML-configurable StrategyKind because its
-    // HoprBalance fields don't round-trip through serde_saphyr. Instead it's
-    // enabled via environment variable for test/development use.
-    #[cfg(feature = "pix")]
-    if std::env::var("HOPRD_ENABLE_PIX")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-    {
-        // Built once per pool rather than once with a `cfg`-ed field, because the two configs
-        // share no fields by contract — the pools settle by different means, so neither one's
-        // knobs are evidence that the other needs them. Writing them separately is what stops a
-        // value meant for one from silently reaching the other; a shared literal would make the
-        // overlap load-bearing and quietly break when either config moves.
-        //
-        // `gas_xdai_per_sweep` is the clearest case: it funds a recovered stealth address so it
-        // can pay for its own `withdraw_from_signer` transaction, which is a fact about settling
-        // on-chain from an EOA. Reading `HOPRD_PIX_GAS_XDAI_PER_SWEEP` under the other pool and
-        // dropping it would be exactly the silent misconfiguration this arrangement exists to
-        // avoid, so that variable is only read here.
-        //
-        // Retry budgets are left at the upstream defaults: this block exists to wire the handful
-        // of values hoprd exposes as environment variables, and every other field is better
-        // served by whatever upstream currently documents.
-        #[cfg(feature = "strategy-pix-secp256k1")]
-        let pool_cfg = PoolConfig {
-            max_deposit_tracking_time: pix_env_duration_or(
-                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
-                Duration::from_secs(3600),
-            ),
-            // Not `Default::default()`: `Balance<XDai>::default()` is zero, which makes
-            // `fund_sweep_gas_impl` a no-op and leaves the address without gas.
-            gas_xdai_per_sweep: pix_env_or(
-                "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
-                "0.01 xdai".parse().expect("valid static amount"),
-            ),
-            ..Default::default()
-        };
-        // The curvy pool's settlement design is not written, so it has nothing to configure
-        // beyond the deadline the `DepositPool` contract makes it own. New knobs belong here,
-        // read from their own variables — not borrowed from the block above.
-        #[cfg(all(
-            feature = "strategy-pix-curvy",
-            not(feature = "strategy-pix-secp256k1")
-        ))]
-        let pool_cfg = PoolConfig {
-            max_deposit_tracking_time: pix_env_duration_or(
-                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
-                Duration::from_secs(3600),
-            ),
-        };
-
-        let pix_cfg = PixStrategyConfig {
-            price_per_byte: pix_env_or(
-                "HOPRD_PIX_PRICE_PER_BYTE",
-                "1 wxHOPR".parse().expect("valid static amount"),
-            ),
-            max_ssa_allocation: pix_env_or(
-                "HOPRD_PIX_MAX_SSA_ALLOCATION",
-                "100 wxHOPR".parse().expect("valid static amount"),
-            ),
-            pix_recovery_db_path: None,
-            pix_recovery_password_env: None,
-            // Likewise the deposit/withdrawal batching windows.
-            ..Default::default()
-        };
-        // The pool is a build-time choice with no runtime trace, and the localcluster runs a
-        // prebuilt binary — so without this line there is nothing in a log to say which pool a
-        // running node actually has. `POOL` is the name the test harness asserts against.
-        tracing::info!(
-            pool = POOL,
-            price_per_byte = %pix_cfg.price_per_byte,
-            max_ssa_allocation = %pix_cfg.max_ssa_allocation,
-            max_deposit_tracking_time = ?pool_cfg.max_deposit_tracking_time,
-            "enabling the PIX strategy"
-        );
-        // One builder per pool rather than one call that dispatches: the pool is named here, and
-        // `SpecDepositAddress` is the witness that it can settle what this build's spec produces.
-        // The generic `build_with_pool` exists for supplying a pool from outside this crate.
-        #[cfg(feature = "strategy-pix-secp256k1")]
-        let built = PixStrategy::new(pix_cfg)
-            .build_non_anonymous::<_, SpecDepositAddress>(Arc::clone(&node), pool_cfg);
-        #[cfg(all(
-            feature = "strategy-pix-curvy",
-            not(feature = "strategy-pix-secp256k1")
-        ))]
-        let built = PixStrategy::new(pix_cfg)
-            .build_curvy::<_, SpecDepositAddress>(Arc::clone(&node), pool_cfg);
-
-        // Fatal, unlike the `pix_env_or` values above. `HOPRD_ENABLE_PIX=1` is not a tuning knob:
-        // it asks for the strategy whose whole purpose is making an Exit paid for what it
-        // delivers. Starting without it produces a node that passes every health check, binds its
-        // API, accepts Sessions and forwards packets with no deposit path — indistinguishable from
-        // a working one until someone notices the Safe balance has not moved.
-        let pix = built.map_err(|e| {
-            anyhow::anyhow!(
-                "HOPRD_ENABLE_PIX is set but the PIX strategy could not be built: {e}. Starting \
-                 without it would relay traffic with no deposit path."
-            )
-        })?;
-        multi = Box::new(MultiStrategy::new(vec![multi, pix]));
-        #[cfg(all(feature = "telemetry", not(test)))]
-        METRIC_ENABLED_STRATEGIES.set(&["pix"], 1_f64);
-    }
-
-    // Without a `strategy-pix-*` pairing there is no pool to build, so the block above is
-    // compiled out entirely and `HOPRD_ENABLE_PIX=1` would otherwise do nothing at all — no
-    // strategy, no log line, no error. Silence is the one outcome this must not have.
-    #[cfg(not(feature = "pix"))]
-    if std::env::var("HOPRD_ENABLE_PIX")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-    {
-        tracing::error!(
-            "HOPRD_ENABLE_PIX is set but this binary was built without a PIX deposit pool, so \
-             the PIX strategy is not available. Rebuild with `--features strategy-pix-curvy` \
-             (production) or `--features strategy-pix-secp256k1` (tests and demo)."
-        );
-    }
-
-    Ok(multi)
+    build_strategies_inner(cfg, node)
 }
 
 fn build_strategies_inner<N>(
@@ -502,16 +406,8 @@ where
     // `StrategyError::InvalidConfiguration` rather than constructing something that cannot work.
     // The `?` propagates that out through `build_strategies` to `hoprd::run`, so a strategy stanza
     // that cannot be honoured stops the node from starting rather than being silently dropped.
-    //
-    // The PIX block in `build_strategies` propagates for the same reason. Its *values* come from
-    // environment variables under the `pix_env_or` log-and-default policy, but that policy has
-    // already substituted a default by the time the builder runs — so an `Err` from the builder is
-    // never "one malformed variable", it is the strategy failing to exist. There is nothing left to
-    // fall back to.
-    //
-    // The one place that still logs and continues is the `#[cfg(not(feature = "pix"))]` arm there:
-    // a binary built without a pool running without PIX is a documented outcome of the feature
-    // split, not a failure to honour a request this binary could have honoured.
+    // PIX included: a stanza asking for the strategy that makes an Exit paid, on a node that then
+    // relays with no deposit path, is the one failure that must not be survivable.
     for strategy in cfg.strategies.iter() {
         match strategy {
             #[cfg(feature = "runtime-tokio")]
@@ -541,6 +437,48 @@ where
             // ChannelLifecycle owns its own tick cadence via
             // ChannelLifecycleConfig::tick_interval and runs as an independent
             // async task; cfg.execution_interval does not apply to it.
+            #[cfg(feature = "pix")]
+            StrategyKind::Pix(sub_cfg) => {
+                // The pool is a build-time choice with no runtime trace, and the localcluster
+                // runs a prebuilt binary — so without this line there is nothing in a log to say
+                // which pool a running node actually has. `POOL` is the name the test harness
+                // asserts against.
+                tracing::info!(
+                    pool = POOL,
+                    price_per_byte = %sub_cfg.strategy.price_per_byte,
+                    max_ssa_allocation = %sub_cfg.strategy.max_ssa_allocation,
+                    max_deposit_tracking_time = ?sub_cfg.pool.max_deposit_tracking_time,
+                    "enabling the PIX strategy"
+                );
+                // One builder per pool rather than one call that dispatches: the pool is named
+                // here, and `SpecDepositAddress` is the witness that it can settle what this
+                // build's spec produces. The generic `build_with_pool` exists for supplying a
+                // pool from outside this crate.
+                #[cfg(feature = "strategy-pix-secp256k1")]
+                let built = PixStrategy::new(sub_cfg.strategy.clone())
+                    .build_non_anonymous::<_, SpecDepositAddress>(
+                        Arc::clone(&node),
+                        sub_cfg.pool.clone(),
+                    )?;
+                #[cfg(all(
+                    feature = "strategy-pix-curvy",
+                    not(feature = "strategy-pix-secp256k1")
+                ))]
+                let built = PixStrategy::new(sub_cfg.strategy.clone())
+                    .build_curvy::<_, SpecDepositAddress>(
+                        Arc::clone(&node),
+                        sub_cfg.pool.clone(),
+                    )?;
+                strategies.push(built);
+            }
+            // Unreachable: `StrategyKind::validate` rejects this stanza before a node with it in
+            // the config can start. Matched anyway so the arm list stays exhaustive.
+            #[cfg(not(feature = "pix"))]
+            StrategyKind::Pix(_) => anyhow::bail!(
+                "the configuration contains a `Pix` strategy but this binary was built without a \
+                 PIX deposit pool. Rebuild with `--features strategy-pix-curvy` (production) or \
+                 `--features strategy-pix-secp256k1` (tests and demo)."
+            ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
                 hopr_strategy::channel_lifecycle::ChannelLifecycleStrategy::new(
@@ -632,6 +570,107 @@ mod tests {
             wei(45_000_000_000_000_000_000)
         );
 
+        Ok(())
+    }
+
+    /// The `Pix` stanza in the form the docs promise. This is the whole point of the change:
+    /// before `hopr-strategy` 1.0.1 a balance was a positional `[U256, currency]` pair and
+    /// `price_per_byte: 0.0001 wxHOPR` failed to parse with "expected sequence start".
+    #[cfg(feature = "pix")]
+    #[test]
+    fn pix_stanza_parses_from_yaml() -> anyhow::Result<()> {
+        let cfg: MultiStrategyConfig = serde_saphyr::from_str(
+            r#"
+strategies:
+  - Pix:
+      strategy:
+        price_per_byte: 0.0001 wxHOPR
+        max_ssa_allocation: 10 wxHOPR
+      pool:
+        max_deposit_tracking_time: 30s
+"#,
+        )?;
+
+        let StrategyKind::Pix(pix) = &cfg.strategies[0] else {
+            anyhow::bail!("expected a Pix stanza, got {:?}", cfg.strategies[0]);
+        };
+        assert_eq!(pix.strategy.price_per_byte, "0.0001 wxHOPR".parse()?);
+        assert_eq!(pix.strategy.max_ssa_allocation, "10 wxHOPR".parse()?);
+        assert_eq!(pix.pool.max_deposit_tracking_time, Duration::from_secs(30));
+        Ok(())
+    }
+
+    /// Both halves are optional, and omitting them must not silently zero anything. The
+    /// buffer periods are the ones to watch: until 1.0.1 they carried a bare
+    /// `#[serde(default)]`, so the deserialize path produced `Duration::default()` — 0ns —
+    /// rather than the 500ms the type's own `Default` documents.
+    #[cfg(feature = "pix")]
+    #[test]
+    fn omitted_pix_sections_fall_back_to_documented_defaults() -> anyhow::Result<()> {
+        let cfg: MultiStrategyConfig = serde_saphyr::from_str("strategies:\n  - Pix: {}\n")?;
+
+        let StrategyKind::Pix(pix) = &cfg.strategies[0] else {
+            anyhow::bail!("expected a Pix stanza, got {:?}", cfg.strategies[0]);
+        };
+        assert_eq!(pix.strategy.price_per_byte, "1 wxHOPR".parse()?);
+        assert_eq!(pix.strategy.max_ssa_allocation, "100 wxHOPR".parse()?);
+        assert_eq!(
+            pix.strategy.deposit_buffer_period,
+            Duration::from_millis(500),
+            "a bare serde(default) here would give 0ns and disable debouncing"
+        );
+        assert_eq!(
+            pix.strategy.withdrawal_buffer_period,
+            Duration::from_millis(500)
+        );
+        assert_eq!(pix.pool, Default::default());
+        Ok(())
+    }
+
+    /// `deny_unknown_fields` upstream: a typo has to be an error, not a value that looks set
+    /// and is not.
+    #[cfg(feature = "pix")]
+    #[test]
+    fn a_misspelled_pix_key_is_rejected() {
+        let err = serde_saphyr::from_str::<MultiStrategyConfig>(
+            "strategies:\n  - Pix:\n      strategy:\n        price_per_bite: 1 wxHOPR\n",
+        );
+        assert!(err.is_err(), "expected a parse error, got {err:?}");
+    }
+
+    /// The stanza has to survive a write-read cycle, since `hoprd-cfg` dumps the running
+    /// config and the localcluster generates node configs the same way.
+    #[cfg(feature = "pix")]
+    #[test]
+    fn pix_stanza_round_trips() -> anyhow::Result<()> {
+        let before = MultiStrategyConfig {
+            strategies: vec![StrategyKind::Pix(PixConfig::default())],
+            ..hopr_default_strategies()
+        };
+        let after: MultiStrategyConfig =
+            serde_saphyr::from_str(&serde_saphyr::to_string(&before)?)?;
+        assert_eq!(before, after);
+        Ok(())
+    }
+
+    /// A pool-less binary must reject the stanza rather than start without the strategy it
+    /// names. The variant exists only so the message can say *which features* would provide
+    /// it; serde's own "unknown variant" error would not.
+    #[cfg(not(feature = "pix"))]
+    #[test]
+    fn a_pix_stanza_is_refused_by_a_binary_without_a_pool() -> anyhow::Result<()> {
+        let cfg: MultiStrategyConfig = serde_saphyr::from_str(
+            "strategies:\n  - Pix:\n      strategy:\n        price_per_byte: 1 wxHOPR\n",
+        )?;
+
+        let err = cfg
+            .validate()
+            .expect_err("a Pix stanza must not validate without a deposit pool");
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("strategy-pix-secp256k1"),
+            "the error should name the features that fix it, got {rendered}"
+        );
         Ok(())
     }
 }

@@ -49,44 +49,6 @@ pub struct OpenSessionRequest<'a> {
     pub pix_ssa_quota: Option<(u16, u8, u8)>,
 }
 
-/// `NonAnonymousPix` strategy configuration, handed to hoprd as environment variables.
-///
-/// The strategy cannot be configured from YAML (its `HoprBalance` fields do not
-/// round-trip through `serde_saphyr`), so hoprd reads these from the environment
-/// instead — see `hoprd::strategy::build_strategies`. Balances are emitted in wei so
-/// the value hoprd parses is bit-for-bit the one configured here.
-#[derive(Clone, Debug)]
-pub struct PixStrategyEnv {
-    /// Charged per byte of the agreed per-SSA quota; one SSA deposit is
-    /// `price_per_byte × quota`.
-    pub price_per_byte: HoprBalance,
-    /// Ceiling on a single SSA deposit. A larger computed deposit is refused outright,
-    /// which starves the Session and lets the Exit's kill switch close it.
-    pub max_ssa_allocation: HoprBalance,
-    /// How long the Exit keeps polling for the deposit.
-    ///
-    /// This also sets the poll cadence (`/10`), which must stay comfortably below the
-    /// Exit's `max_deposit_wait + max_ssa_delivery_time` deadline — otherwise only the
-    /// single immediate balance check happens before the kill switch fires.
-    pub max_deposit_tracking_time: std::time::Duration,
-    /// xDai moved from the Safe to a recovered stealth address so it can pay gas for
-    /// its own sweep. Zero disables the sweep's gas funding entirely.
-    pub gas_xdai_per_sweep: XDaiBalance,
-}
-
-impl Default for PixStrategyEnv {
-    /// Mirrors the hoprd-side fallbacks, so passing `Some(Default::default())` is
-    /// equivalent to the old `pix: true`.
-    fn default() -> Self {
-        Self {
-            price_per_byte: "1 wxHOPR".parse().expect("valid static amount"),
-            max_ssa_allocation: "100 wxHOPR".parse().expect("valid static amount"),
-            max_deposit_tracking_time: std::time::Duration::from_secs(3600),
-            gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
-        }
-    }
-}
-
 /// Balances reported by `GET /account/balances`, split by holder.
 #[derive(Clone, Copy, Debug)]
 pub struct NodeBalances {
@@ -489,9 +451,6 @@ pub struct NodeStartConfig<'a> {
     pub p2p_port_base: u16,
     pub identity_password: &'a str,
     pub api_token: Option<String>,
-    /// When set, each hoprd process gets `HOPRD_ENABLE_PIX=1` plus the strategy
-    /// configuration; when `None`, PIX is disabled.
-    pub pix: Option<PixStrategyEnv>,
 }
 
 /// Spawn `config.num_nodes` hoprd processes and return their handles.
@@ -558,34 +517,8 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
                 "HOPR_TX_TIMEOUT_MULTIPLIER",
                 crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
             )
-            .env(
-                "HOPRD_ENABLE_PIX",
-                if config.pix.is_some() { "1" } else { "0" },
-            )
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
-
-        if let Some(pix) = &config.pix {
-            // Balances go over as wei so hoprd reparses exactly this value; the
-            // decimal `Display` form would round-trip too, but only because it prints
-            // all 18 fractional digits.
-            cmd.env(
-                "HOPRD_PIX_PRICE_PER_BYTE",
-                pix.price_per_byte.format_in_wei(),
-            )
-            .env(
-                "HOPRD_PIX_MAX_SSA_ALLOCATION",
-                pix.max_ssa_allocation.format_in_wei(),
-            )
-            .env(
-                "HOPRD_PIX_MAX_DEPOSIT_TRACKING_TIME",
-                format!("{}s", pix.max_deposit_tracking_time.as_secs()),
-            )
-            .env(
-                "HOPRD_PIX_GAS_XDAI_PER_SWEEP",
-                pix.gas_xdai_per_sweep.format_in_wei(),
-            );
-        }
 
         if let Some(token) = &config.api_token {
             cmd.arg("--apiToken").arg(token);
