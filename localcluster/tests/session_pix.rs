@@ -167,8 +167,9 @@ fn pix_settings() -> identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
         additional_shares: PIX_ADDITIONAL_SHARES as usize,
-        // The Exit rejects any quota outside this window. Ours is ~16.6 kB against a
-        // production default window of ~130 MiB–519 MiB, so it has to be widened.
+        // The Exit rejects any quota outside this window. Ours is ~33.2 kB — the surplus is
+        // in the product, see `quota_per_ssa` — against a production default window of
+        // ~130 MiB–519 MiB, so it has to be widened.
         quota_range_min: 0,
         quota_range_max: 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
@@ -216,12 +217,17 @@ fn completed_cycles(delta: HoprBalance, per_cycle: HoprBalance) -> Option<u64> {
     (0..=MAX_PLAUSIBLE_CYCLES).find(|n| per_cycle * *n == delta)
 }
 
-/// Count occurrences of `needle` in node `id`'s hoprd log. Used only to explain a
-/// balance result, never as the primary assertion.
-fn count_in_node_log(log_dir: &std::path::Path, id: usize, needle: &str) -> usize {
-    std::fs::read_to_string(log_dir.join(format!("hoprd_{id}.log")))
-        .map(|log| log.matches(needle).count())
-        .unwrap_or(0)
+/// Count occurrences of `needle` in node `id`'s hoprd log.
+///
+/// Fallible on purpose. Two of the assertions below *are* primary assertions on these counts, and
+/// a missing or unreadable log would otherwise report zero — which reads as "the Exit never gave
+/// up waiting" when the truth is "the test never looked", and makes the companion assertion fail
+/// while blaming the Exit for a file-system problem.
+fn count_in_node_log(log_dir: &std::path::Path, id: usize, needle: &str) -> anyhow::Result<usize> {
+    let path = log_dir.join(format!("hoprd_{id}.log"));
+    let log = std::fs::read_to_string(&path)
+        .with_context(|| format!("reading {} to count {needle:?}", path.display()))?;
+    Ok(log.matches(needle).count())
 }
 
 async fn setup_cluster(
@@ -479,10 +485,10 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
     sender.abort();
     receiver.abort();
 
-    let deposits_made = count_in_node_log(&log_dir, ENTRY, "deposit successful");
-    let keys_recovered = count_in_node_log(&log_dir, EXIT, "private key recovered");
-    let deposits_seen = count_in_node_log(&log_dir, EXIT, "SSA deposit successful");
-    let deposits_missed = count_in_node_log(&log_dir, EXIT, "deposit confirmation timed out");
+    let deposits_made = count_in_node_log(&log_dir, ENTRY, "deposit successful")?;
+    let keys_recovered = count_in_node_log(&log_dir, EXIT, "private key recovered")?;
+    let deposits_seen = count_in_node_log(&log_dir, EXIT, "SSA deposit successful")?;
+    let deposits_missed = count_in_node_log(&log_dir, EXIT, "deposit confirmation timed out")?;
     let echoed = echoed.load(Ordering::Acquire);
 
     // ── Assertions ──────────────────────────────────────────────────────────────

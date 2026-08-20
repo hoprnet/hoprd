@@ -207,9 +207,15 @@ impl HoprdApiClient {
 
     /// Scrape this node's Prometheus `/metrics` endpoint.
     ///
-    /// Returns an empty snapshot rather than an error when the node answers with a
-    /// non-200 — it responds `422 BUILT WITHOUT METRICS SUPPORT` when compiled without
-    /// the `telemetry` feature, which should degrade a live progress report, not fail it.
+    /// Returns an empty snapshot rather than an error for exactly one answer: a node compiled
+    /// without the `telemetry` feature responds `422 BUILT WITHOUT METRICS SUPPORT`, and that
+    /// should degrade a live progress report rather than fail it.
+    ///
+    /// Every other non-2xx is a real scrape failure and is reported as one. A wrong API token
+    /// (401), a wrong base URL (404), a node in trouble (500) and a node still starting (503)
+    /// all used to arrive here as an empty snapshot, which reads downstream as "the node did
+    /// nothing" — and an assertion written against a counter that must stay at zero then passes
+    /// for having observed nothing at all.
     pub async fn metrics(&self) -> Result<MetricsSnapshot> {
         let url = format!("{}/metrics", self.base_url);
         let resp = self
@@ -218,8 +224,13 @@ impl HoprdApiClient {
             .send()
             .await
             .with_context(|| format!("scraping {url}"))?;
-        if !resp.status().is_success() {
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
             return Ok(MetricsSnapshot::default());
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("scraping {url}: HTTP {status} - {body}");
         }
         Ok(MetricsSnapshot::parse(
             &resp.text().await.context("reading metrics body")?,

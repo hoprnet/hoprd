@@ -89,9 +89,11 @@
 //!     buffer.
 //!
 //! The rate is not unbounded: the buffer must stay under `rb_capacity × 2/3` = 66 666 SURBs
-//! or the balancer's overshoot evicts shares, which caps this shape at roughly 3600
-//! datagrams/s. Beyond that needs the `NoRateControl` capability or a larger ring buffer,
-//! neither of which this test uses.
+//! ([`SURB_BUFFER_CEILING`]) or the balancer's overshoot evicts shares, which caps this shape at
+//! roughly 7000 datagrams/s — `SURB_RUNWAY_SECS × (share_rate + rate)` with a share rate of 1296.
+//! [`DEFAULT_PACKET_RATE`] is 4000 and the ladder below saturates at 6500, both inside it, and
+//! the test refuses to start above it rather than running into eviction. Beyond that needs the
+//! `NoRateControl` capability or a larger ring buffer, neither of which this test uses.
 //!
 //! # Live observation
 //!
@@ -448,12 +450,38 @@ fn deposit_float(per_cycle: HoprBalance) -> anyhow::Result<HoprBalance> {
     }
 }
 
+/// Datagrams per second the sender paces at, from `HOPRD_PIX_SOAK_RATE` or
+/// [`DEFAULT_PACKET_RATE`].
+///
+/// A rejected override is announced rather than swallowed. The rate is not cosmetic — it sizes
+/// [`surb_buffer_target`], [`response_buffer`], and every figure in the run's own measurement
+/// table — so a run that quietly ignored `HOPRD_PIX_SOAK_RATE=4o00` would print a table
+/// describing something other than what was asked for.
+///
+/// Called from [`surb_buffer_target`], which is infallible and two layers below the test body,
+/// so this warns and falls back instead of returning a `Result`. The ceiling check in the test
+/// body is the hard stop for a rate that is *valid but unsafe*.
 fn packet_rate() -> u64 {
-    std::env::var("HOPRD_PIX_SOAK_RATE")
-        .ok()
-        .and_then(|raw| raw.trim().parse::<u64>().ok())
-        .filter(|rate| *rate > 0)
-        .unwrap_or(DEFAULT_PACKET_RATE)
+    match std::env::var("HOPRD_PIX_SOAK_RATE") {
+        Ok(raw) => match raw.trim().parse::<u64>() {
+            Ok(rate) if rate > 0 => rate,
+            Ok(_) => {
+                tracing::warn!(
+                    "HOPRD_PIX_SOAK_RATE must be greater than zero, got {raw:?}; \
+                     falling back to {DEFAULT_PACKET_RATE}"
+                );
+                DEFAULT_PACKET_RATE
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "HOPRD_PIX_SOAK_RATE must be a positive integer, got {raw:?} ({e}); \
+                     falling back to {DEFAULT_PACKET_RATE}"
+                );
+                DEFAULT_PACKET_RATE
+            }
+        },
+        Err(_) => DEFAULT_PACKET_RATE,
+    }
 }
 
 fn pix_settings(node_deposit_float: HoprBalance) -> identity::PixSettings {
@@ -555,6 +583,18 @@ fn surb_buffer_target() -> u64 {
     SURB_RUNWAY_SECS * (share_rate + packet_rate())
 }
 
+/// `rb_capacity × 2/3`, the ceiling [`response_buffer`]'s doc names — `surb_buffer_target_ceiling`
+/// in `hopr-transport`, which is not a workspace member, so nothing clamps it on this side.
+///
+/// Crossing it is not a degradation: the balancer overshoots into a full ring buffer, the oldest
+/// SURBs are evicted, and a share bound to an evicted SURB can never be delivered. Checked in the
+/// test body rather than here, because [`surb_buffer_target`] is called from infallible helpers
+/// and the point is to refuse the run before it starts, not to clamp silently.
+///
+/// With the committed geometry the ceiling is reached at a packet rate of about 7000/s, which is
+/// the real bound on a `HOPRD_PIX_SOAK_RATE` override.
+const SURB_BUFFER_CEILING: u64 = 66_666;
+
 /// Cycle length the geometry is *sized* for. The cycle actually achieved is about twice it.
 ///
 /// Not a timeout — the cycle is bounded by packets, not seconds — but the figure the SSA width
@@ -643,12 +683,19 @@ struct NodeMetrics {
 }
 
 impl NodeMetrics {
-    /// A node that cannot be scraped reports zeroes rather than failing the run: this
-    /// feeds a progress display, and the authoritative signal is the on-chain balance.
+    /// Lenient read. A node that cannot be scraped reports zeroes rather than failing the run:
+    /// this feeds a progress display, and the authoritative signal is the on-chain balance.
+    ///
+    /// Only for the reporting loop. The closing assertions use [`try_scrape`](Self::try_scrape),
+    /// because there the same zeroes are indistinguishable from a node that genuinely did
+    /// nothing, and several of those assertions are satisfied by zero.
     async fn scrape(api: &client_helper::HoprdApiClient) -> Self {
-        let Ok(m) = api.metrics().await else {
-            return Self::default();
-        };
+        Self::try_scrape(api).await.unwrap_or_default()
+    }
+
+    /// Strict read, for anything an assertion depends on.
+    async fn try_scrape(api: &client_helper::HoprdApiClient) -> anyhow::Result<Self> {
+        let m = api.metrics().await.context("scraping node metrics")?;
         let tracking = |outcome: &str| {
             m.sum_where(
                 "hopr_strategy_pix_deposit_tracking_total",
@@ -657,7 +704,7 @@ impl NodeMetrics {
         };
         let packets =
             |kind: &str| m.sum_where("hopr_packets_count", &format!(r#"type="{kind}""#)) as u64;
-        Self {
+        Ok(Self {
             deposits: m.sum("hopr_strategy_pix_deposits_total") as u64,
             deposits_rejected: m.sum("hopr_strategy_pix_deposits_rejected_total") as u64,
             deposits_failed: m.sum("hopr_strategy_pix_deposits_failed_total") as u64,
@@ -668,7 +715,7 @@ impl NodeMetrics {
             packets_sent: packets("sent"),
             packets_received: packets("received"),
             packets_forwarded: packets("forwarded"),
-        }
+        })
     }
 }
 
@@ -795,6 +842,16 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     anyhow::ensure!(
         funded_cycles > 0,
         "the float {float} does not cover even one {per_cycle} deposit"
+    );
+    // Refuse a rate whose buffer would not fit, rather than running it and reporting the damage
+    // hundreds of lines later as an unexplained stranded deposit. Evicted SURBs lose their shares
+    // permanently, so there is no partial result worth having here.
+    let surb_buffer = surb_buffer_target();
+    anyhow::ensure!(
+        surb_buffer < SURB_BUFFER_CEILING,
+        "a rate of {rate} datagrams/s needs a {surb_buffer} SURB buffer, over the \
+         {SURB_BUFFER_CEILING} ring-buffer ceiling; the balancer would evict SURBs and \
+         permanently lose their shares"
     );
 
     let env = ClusterEnv::from_env().context("reading cluster environment")?;
@@ -1053,21 +1110,40 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // Sweeps of already-recovered keys outlive the Session, so give the last ones time to
     // land before reading the Safe for the final time.
     //
-    // The condition is "no new sweep since the last poll" rather than
-    // "keys_recovered == sweeps": the SSAs whose deposits failed still have their shares
-    // completed by the traffic that keeps flowing during the kill-switch fuse, so their
-    // keys are recovered but there is nothing at those addresses to sweep. Waiting for the
-    // counts to converge would always burn the full timeout.
+    // The condition is "no new sweep for a while" rather than "keys_recovered == sweeps": the
+    // SSAs whose deposits failed still have their shares completed by the traffic that keeps
+    // flowing during the kill-switch fuse, so their keys are recovered but there is nothing at
+    // those addresses to sweep. Waiting for the counts to converge would always burn the full
+    // timeout.
+    //
+    // "A while" is several polls, not one. `REPORT_INTERVAL` is 5 s and the Entry takes a
+    // measured ~5.0 s to confirm a sweep, so a single quiet interval is ordinary rather than
+    // evidence of settlement — and treating it as evidence undercounts `exit_metrics.sweeps`,
+    // which then reports funds "stranded at stealth addresses" for deposits swept a second after
+    // the test stopped looking. `SETTLE_TIMEOUT` (60 s) has the budget; spend it.
+    const QUIET_POLLS_REQUIRED: u32 = 3;
     let settle_until = Instant::now() + SETTLE_TIMEOUT;
+    let mut quiet_polls = 0u32;
     loop {
         let before = exit_metrics.sweeps;
         tokio::time::sleep(REPORT_INTERVAL).await;
-        exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
-        if exit_metrics.sweeps == before || Instant::now() >= settle_until {
+        // Strict from here on: everything below feeds an assertion, and a zeroed snapshot would
+        // both end this loop immediately and satisfy the assertions it ends up in.
+        exit_metrics = NodeMetrics::try_scrape(&exit_node.api)
+            .await
+            .context("scraping exit metrics while waiting for sweeps to settle")?;
+        quiet_polls = if exit_metrics.sweeps == before {
+            quiet_polls + 1
+        } else {
+            0
+        };
+        if quiet_polls >= QUIET_POLLS_REQUIRED || Instant::now() >= settle_until {
             break;
         }
     }
-    entry_metrics = NodeMetrics::scrape(&entry.api).await;
+    entry_metrics = NodeMetrics::try_scrape(&entry.api)
+        .await
+        .context("scraping entry metrics for the closing assertions")?;
     let relayed = relay_forwarded(&cleanup.nodes, &relays_metrics_before).await;
     let relay_split = relay_shares(&relayed);
 
