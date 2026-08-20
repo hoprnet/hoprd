@@ -48,8 +48,12 @@ RELAY_IDXS=(1 2)
 EXIT_IDX=3
 ALL_IDXS=("$ENTRY_IDX" "${RELAY_IDXS[@]}" "$EXIT_IDX")
 # Fixed rather than under $TMPDIR: the test runs inside `nix develop`, which sets its own
-# TMPDIR, and `--dashboard` is meant to be usable from any shell against the same run.
-STATE_DIR="/tmp/pix-demo"
+# TMPDIR, and `--dashboard` is meant to be usable from any shell against the same run — so the
+# name has to be predictable, which rules out `mktemp -d`. A fixed name under a world-writable
+# /tmp is only safe if it is checked, which the entry point below does; `PIX_DEMO_STATE_DIR` is
+# the way out when the check fails, and both the run and its dashboard must be given the same one.
+: "${PIX_DEMO_STATE_DIR:=/tmp/pix-demo}"
+STATE_DIR="$PIX_DEMO_STATE_DIR"
 TEST_LOG="$STATE_DIR/test.log"
 REFRESH=2
 
@@ -183,12 +187,16 @@ RATE_WINDOW=6
 # harmless here, since the pattern only lives in this file, but it keeps the line safe to
 # paste into a shell while debugging.
 #
+# The binary is matched as `hoprd` rather than `release/hoprd`: $HOPRD_BIN is overridable and
+# need not live under target/release, and a pattern that misses just makes the CPU column read
+# blank forever. `--apiPort` on this script's own fixed port block is the discriminator.
+#
 # `/proc/<pid>/stat` field 2 is the comm in parentheses and may contain spaces, so everything
 # up to the last `)` is dropped before splitting — after which utime and stime are fields 12
 # and 13 rather than 14 and 15.
 node_ticks() { # node-index
   local pid
-  pid=$(pgrep -f "release/hoprd .*--apiPort[ ]$((API_PORT_BASE + $1))" | head -1)
+  pid=$(pgrep -f "hoprd .*--apiPort[ ]$((API_PORT_BASE + $1))" | head -1)
   [ -z "$pid" ] && return 0
   awk '{ s = $0; sub(/^.*\) /, "", s); split(s, f, " "); print f[12] + f[13] }' \
     "/proc/$pid/stat" 2>/dev/null
@@ -533,7 +541,17 @@ render() {
 
 # ── entry points ────────────────────────────────────────────────────────────────
 
-mkdir -p "$STATE_DIR"
+# Every helper above caches a reading into $STATE_DIR and several read it straight back, so a
+# directory somebody else controls is a directory that decides what this script displays — and
+# a symlink there redirects each of those writes to wherever it points. /tmp being world-writable
+# means an attacker only has to create the name first, which is cheap and needs no privileges.
+# Refuse rather than adopt it: the run is worth less than the machine.
+mkdir -p "$STATE_DIR" 2>/dev/null
+if [ -L "$STATE_DIR" ] || [ ! -d "$STATE_DIR" ] || [ ! -O "$STATE_DIR" ]; then
+  echo "$STATE_DIR must be a directory owned by $(id -un) and not a symlink."
+  echo "Remove it, or point PIX_DEMO_STATE_DIR somewhere else (the dashboard needs the same value)."
+  exit 1
+fi
 
 if [ "${1:-}" = "--dashboard" ]; then
   render "metrics: http://127.0.0.1:$API_PORT_BASE/metrics (+1, +2, +3)"
@@ -558,11 +576,20 @@ cargo nextest --version >/dev/null 2>&1 || {
 # nodes bind a fixed port block, so one stale process from an interrupted run makes the next
 # one fail during bootstrap — in front of the audience, two minutes in.
 #
+# Matched on this script's own fixed API port block rather than on the binary's path. A pattern
+# of `release/hoprd` misses any $HOPRD_BIN built somewhere else — the stale nodes then survive
+# the reset and take the ports the next attempt needs, which is the exact failure this function
+# exists to prevent. Matching by port is also narrower: an unrelated hoprd on the same machine
+# is now left alone, where the old pattern killed every node started from a config file.
+#
 # The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
 # whose own command line contains the pattern; without it the script SIGTERMs itself.
 reset_cluster() {
   docker rm -f hopr-chain >/dev/null 2>&1
-  pkill -f "release/hoprd --configuration[F]ilePath" >/dev/null 2>&1
+  local i
+  for i in "${ALL_IDXS[@]}"; do
+    pkill -f "hoprd .*--apiPort[ ]$((API_PORT_BASE + i))" >/dev/null 2>&1
+  done
   sleep 2
 }
 
