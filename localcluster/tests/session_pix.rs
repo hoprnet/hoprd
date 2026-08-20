@@ -58,14 +58,10 @@ use std::{
 };
 
 use anyhow::Context;
-use common::{ClusterCleanup, ClusterEnv, TempCluster};
+use common::{Cluster, ClusterSpec, pix::completed_cycles, ports};
 use hopr_lib::api::types::primitive::prelude::HoprBalance;
 use hoprd_localcluster::{client_helper, identity};
 use tokio::net::UdpSocket;
-
-const P2P_HOST: &str = "127.0.0.1";
-const P2P_PORT_BASE: u16 = 19400;
-const API_PORT_BASE: u16 = 13400;
 
 const NUM_NODES: usize = 3;
 const ENTRY: usize = 0;
@@ -89,9 +85,6 @@ const PIX_ADDITIONAL_SHARES: u8 = 2;
 
 /// SSA cycles that must fully complete — deposit made, key recovered, funds swept.
 const TARGET_CYCLES: u64 = 4;
-/// Upper bound when interpreting a Safe balance delta as a whole number of cycles.
-/// Only a sanity limit for the search; the test never expects to approach it.
-const MAX_PLAUSIBLE_CYCLES: u64 = 1_000;
 /// How far the Entry's deposits may legitimately run ahead of the Exit's recoveries.
 ///
 /// The Exit requests the next SSA once the current one passes the early-recovery
@@ -190,30 +183,6 @@ fn pix_settings() -> anyhow::Result<identity::PixSettings> {
 }
 
 /// A UDP echo server for the Exit to forward Session payloads to. Echoing means the
-/// Exit → Entry volume matches the Entry → Exit volume, so pacing the sender paces
-/// share delivery.
-async fn start_echo_server() -> anyhow::Result<u16> {
-    let sock = UdpSocket::bind("127.0.0.1:0")
-        .await
-        .context("binding echo server")?;
-    let port = sock.local_addr().context("echo server address")?.port();
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 65535];
-        while let Ok((n, src)) = sock.recv_from(&mut buf).await {
-            if sock.send_to(&buf[..n], src).await.is_err() {
-                break;
-            }
-        }
-    });
-    Ok(port)
-}
-
-/// Number of whole SSA deposits that `delta` represents, or `None` when it is not an
-/// exact multiple — which would mean something other than PIX sweeps moved the Safe.
-fn completed_cycles(delta: HoprBalance, per_cycle: HoprBalance) -> Option<u64> {
-    (0..=MAX_PLAUSIBLE_CYCLES).find(|n| per_cycle * *n == delta)
-}
-
 /// Count occurrences of `needle` in node `id`'s hoprd log.
 ///
 /// Fallible on purpose. Two of the assertions below *are* primary assertions on these counts, and
@@ -227,86 +196,6 @@ fn count_in_node_log(log_dir: &std::path::Path, id: usize, needle: &str) -> anyh
     Ok(log.matches(needle).count())
 }
 
-async fn setup_cluster(
-    env: &ClusterEnv,
-    cluster: &TempCluster,
-    cleanup: &mut ClusterCleanup,
-) -> anyhow::Result<()> {
-    let t0 = std::time::Instant::now();
-    let blk = common::start_chain(env, &cluster.log_dir, cleanup)
-        .await
-        .context("starting chain")?;
-    common::wait_for_blokli_ready(&blk, WAIT_TIMEOUT)
-        .await
-        .context("waiting for blokli")?;
-    tracing::info!("chain ready after {:?}", t0.elapsed());
-
-    identity::generate(&identity::GenerationConfig {
-        blokli_url: blk,
-        num_nodes: NUM_NODES,
-        config_home: cluster.data_dir.clone(),
-        random_identities: true,
-        p2p_host: P2P_HOST.to_string(),
-        p2p_port_base: P2P_PORT_BASE,
-        // AutoRedeeming is deliberately off: ticket redemption also credits the Safe in
-        // wxHOPR, which would make the closing balance assertion ambiguous.
-        strategies: identity::StrategySet {
-            auto_redeeming: false,
-            channel_lifecycle: false,
-        },
-        strategy_execution_interval: Some(Duration::from_secs(600)),
-        pix: Some(pix_settings()?),
-        ..Default::default()
-    })
-    .await
-    .context("generating identities")?;
-    tracing::info!("identities generated after {:?}", t0.elapsed());
-
-    cleanup.nodes = client_helper::start_nodes(&client_helper::NodeStartConfig {
-        num_nodes: NUM_NODES,
-        hoprd_bin: &env.hoprd_bin,
-        data_dir: &cluster.data_dir,
-        log_dir: &cluster.log_dir,
-        api_host: "127.0.0.1",
-        api_port_base: API_PORT_BASE,
-        p2p_host: P2P_HOST,
-        p2p_port_base: P2P_PORT_BASE,
-        identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
-        api_token: None,
-    })
-    .await
-    .context("starting nodes")?;
-    tracing::info!("nodes started after {:?}", t0.elapsed());
-
-    futures::future::try_join_all(
-        cleanup
-            .nodes
-            .iter()
-            .map(|n| n.api.wait_started(WAIT_TIMEOUT)),
-    )
-    .await
-    .context("waiting for nodes to start")?;
-    for n in &mut cleanup.nodes {
-        n.address = Some(n.api.addresses().await.context("resolving node address")?);
-    }
-    futures::future::try_join_all(cleanup.nodes.iter().map(|n| n.api.wait_ready(WAIT_TIMEOUT)))
-        .await
-        .context("waiting for nodes to become ready")?;
-    tracing::info!("nodes ready after {:?}", t0.elapsed());
-
-    client_helper::open_full_mesh_channels(&cleanup.nodes, CHANNEL_STAKE, SETUP_TIMEOUT)
-        .await
-        .context("opening channels")?;
-    client_helper::wait_full_mesh_channels(&cleanup.nodes, SETUP_TIMEOUT)
-        .await
-        .context("waiting for channels")?;
-    client_helper::wait_full_mesh_reachable(&cleanup.nodes, SETUP_TIMEOUT)
-        .await
-        .context("waiting for peer reachability")?;
-    tracing::info!("channels ready after {:?}", t0.elapsed());
-    Ok(())
-}
-
 // `multi_thread`, matching `session_pix_soak`: the correctness of this test rests on packet
 // pacing. `SEND_INTERVAL` is a floor, not a rate, and a current-thread runtime multiplexes the
 // sender, the echo server task and the balance poller onto one thread — contention stretches the
@@ -317,18 +206,28 @@ async fn setup_cluster(
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> anyhow::Result<()> {
     common::init_tracing();
-    let env = ClusterEnv::from_env().context("reading cluster environment")?;
-    let cluster = TempCluster::new().context("creating temp cluster")?;
-    let mut cleanup = ClusterCleanup {
-        chain: None,
-        nodes: vec![],
-    };
     let t0 = std::time::Instant::now();
 
-    let log_dir = cluster.log_dir.clone();
-    let _log_guard = common::NodeLogs::new(log_dir.clone(), "/tmp/pix-session-logs");
-
-    setup_cluster(&env, &cluster, &mut cleanup).await?;
+    let cluster = Cluster::start(ClusterSpec {
+        num_nodes: NUM_NODES,
+        // AutoRedeeming is deliberately off: ticket redemption also credits the Safe in
+        // wxHOPR, which would make the closing balance assertion ambiguous.
+        strategies: identity::StrategySet {
+            auto_redeeming: false,
+            channel_lifecycle: false,
+        },
+        strategy_execution_interval: Some(Duration::from_secs(600)),
+        pix: Some(pix_settings()?),
+        logs_to: Some("/tmp/pix-session-logs"),
+        ..ClusterSpec::new(ports::SESSION_PIX)
+    })
+    .await?;
+    cluster.wait_ready(WAIT_TIMEOUT).await?;
+    cluster.open_channels(CHANNEL_STAKE, SETUP_TIMEOUT).await?;
+    cluster.wait_channels(SETUP_TIMEOUT).await?;
+    cluster.wait_reachable(SETUP_TIMEOUT).await?;
+    tracing::info!("channels ready after {:?}", t0.elapsed());
+    let log_dir = cluster.log_dir().to_path_buf();
 
     let settings = pix_settings()?;
     let quota = settings.quota_per_ssa();
@@ -340,9 +239,9 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
         "PIX accounting: one SSA cycle costs price_per_byte x quota"
     );
 
-    let echo_port = start_echo_server().await?;
-    let entry = &cleanup.nodes[ENTRY];
-    let exit_node = &cleanup.nodes[EXIT];
+    let echo_port = common::echo_server().await?;
+    let entry = cluster.node(ENTRY);
+    let exit_node = cluster.node(EXIT);
     let exit_addr = exit_node
         .address
         .as_ref()
@@ -453,6 +352,11 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
     // rather than wrapping.
     let deadline = std::time::Instant::now() + RECOVERY_TIMEOUT;
     let mut recovered = HoprBalance::default();
+    // Display only — the loop exits on `recovered`, not on this. Kept across iterations so a
+    // sample that lands mid-sweep, and is therefore not a whole multiple, reports the last
+    // consistent reading rather than 0. Printing 0 after three completed cycles reads as "the
+    // money went away", which is the most alarming thing this test can say and is false.
+    let mut cycles_seen = 0u64;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(BALANCE_POLL_INTERVAL).await;
 
@@ -464,7 +368,10 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
         recovered = exit_now.safe_hopr - exit_before.safe_hopr;
         tracing::info!(
             %recovered,
-            cycles = completed_cycles(recovered, per_cycle).unwrap_or(0),
+            cycles = {
+                cycles_seen = completed_cycles(recovered, per_cycle).unwrap_or(cycles_seen);
+                cycles_seen
+            },
             echoed = echoed.load(Ordering::Acquire),
             elapsed = ?t0.elapsed(),
             "waiting for SSA cycles"
