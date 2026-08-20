@@ -581,6 +581,8 @@ impl hopr_lib::api::node::ComponentStatusReporter for StubChain {
 pub struct MockChainNode {
     pub identity: NodeOnchainIdentity,
     pub chain: StubChain,
+    /// Owned, so [`HasTicketManagement::ticket_management`] can hand out a borrow of it.
+    pub tickets: StubTicketManager,
 }
 
 impl MockChainNode {
@@ -600,7 +602,35 @@ impl MockChainNode {
                 module_address: module_chain.public().to_address(),
             },
             chain: StubChain::new(&offchain, &chain_kp),
+            tickets: StubTicketManager::default(),
         }
+    }
+
+    /// Plants a channel into the underlying [`StubChain`].
+    #[must_use]
+    pub fn with_channel(mut self, channel: ChannelEntry) -> Self {
+        self.chain = self.chain.with_channel(channel);
+        self
+    }
+
+    /// Sets the stats the ticket manager reports for an unscoped request.
+    #[must_use]
+    pub fn with_aggregate_ticket_stats(mut self, stats: ChannelStats) -> Self {
+        self.tickets = self.tickets.with_aggregate_stats(stats);
+        self
+    }
+
+    /// Sets the stats the ticket manager reports for a request scoped to `channel_id`.
+    #[must_use]
+    pub fn with_channel_ticket_stats(mut self, channel_id: ChannelId, stats: ChannelStats) -> Self {
+        self.tickets = self.tickets.with_channel_stats(channel_id, stats);
+        self
+    }
+
+    /// Handle to the ticket manager's call log. Take it before the node is moved into the
+    /// router's state.
+    pub fn ticket_stats_calls(&self) -> TicketStatsCalls {
+        self.tickets.calls()
     }
 }
 
@@ -643,9 +673,58 @@ impl HasChainApi for MockChainNode {
 // StubTicketManager — minimal TicketManagement for test doubles
 // ===========================================================================
 
-/// Stub ticket manager returning zero stats and empty streams.
-#[derive(Debug, Clone)]
-pub struct StubTicketManager;
+/// Shared log of the `channel_id` argument of every [`TicketManagement::ticket_stats`] call
+/// made against a [`StubTicketManager`].
+///
+/// Cloning shares the log, which is what lets a test keep a handle after the node it belongs
+/// to has been moved into the router's state.
+#[derive(Debug, Clone, Default)]
+pub struct TicketStatsCalls(std::sync::Arc<parking_lot::Mutex<Vec<Option<ChannelId>>>>);
+
+impl TicketStatsCalls {
+    fn record(&self, channel_id: Option<&ChannelId>) {
+        self.0.lock().push(channel_id.copied());
+    }
+
+    /// The recorded calls, oldest first.
+    pub fn snapshot(&self) -> Vec<Option<ChannelId>> {
+        self.0.lock().clone()
+    }
+}
+
+/// Stub ticket manager returning configurable stats and empty streams.
+///
+/// Records the `channel_id` of every `ticket_stats` call, so a test can assert both what a
+/// handler reported and what it asked for. A scoped lookup for a channel nobody configured
+/// returns zeros rather than the aggregate, on purpose: that keeps "asked for the wrong
+/// channel" distinguishable from "asked for the aggregate".
+#[derive(Debug, Clone, Default)]
+pub struct StubTicketManager {
+    aggregate: ChannelStats,
+    per_channel: BTreeMap<ChannelId, ChannelStats>,
+    calls: TicketStatsCalls,
+}
+
+impl StubTicketManager {
+    /// Sets the stats reported for an unscoped (`None`) lookup.
+    #[must_use]
+    pub fn with_aggregate_stats(mut self, stats: ChannelStats) -> Self {
+        self.aggregate = stats;
+        self
+    }
+
+    /// Sets the stats reported for a lookup scoped to `channel_id`.
+    #[must_use]
+    pub fn with_channel_stats(mut self, channel_id: ChannelId, stats: ChannelStats) -> Self {
+        self.per_channel.insert(channel_id, stats);
+        self
+    }
+
+    /// Handle to the call log. Cloning the handle shares the log.
+    pub fn calls(&self) -> TicketStatsCalls {
+        self.calls.clone()
+    }
+}
 
 impl TicketManagement for StubTicketManager {
     type Error = StubError;
@@ -672,9 +751,13 @@ impl TicketManagement for StubTicketManager {
 
     fn ticket_stats(
         &self,
-        _channel_id: Option<&hopr_lib::api::chain::ChannelId>,
+        channel_id: Option<&hopr_lib::api::chain::ChannelId>,
     ) -> Result<ChannelStats, Self::Error> {
-        Ok(ChannelStats::default())
+        self.calls.record(channel_id);
+        Ok(match channel_id {
+            Some(id) => self.per_channel.get(id).copied().unwrap_or_default(),
+            None => self.aggregate,
+        })
     }
 
     fn insert_incoming_ticket(
@@ -689,7 +772,7 @@ impl HasTicketManagement for MockChainNode {
     type TicketManager = StubTicketManager;
 
     fn ticket_management(&self) -> &StubTicketManager {
-        &StubTicketManager
+        &self.tickets
     }
 
     fn subscribe_ticket_events(&self) -> impl futures::Stream<Item = TicketEvent> + Send + 'static {

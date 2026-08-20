@@ -372,10 +372,42 @@ mod tests {
 
     use std::sync::Arc;
 
+    use anyhow::Context;
     use axum::{Router, body::Body, http::Request, routing::get};
+    use hopr_lib::api::types::internal::prelude::{ChannelEntry, generate_channel_id};
     use tower::ServiceExt;
 
     use crate::testing::MockChainNode;
+
+    const COUNTERPARTY: &str = "0x188c4462b75e46f0c7262d7f48d182447b93a93c";
+
+    /// A channel from `src` to `dst`.
+    ///
+    /// `ChannelEntry` derives its id from the pair, which is both what the stub keys on and
+    /// what the handler's counterparty→me lookup recomputes — so the direction here is what
+    /// decides whether a scoped request finds this channel.
+    fn channel(src: Address, dst: Address, status: ChannelStatus) -> anyhow::Result<ChannelEntry> {
+        Ok(ChannelEntry::builder()
+            .between(src, dst)
+            .balance("10 wxHOPR".parse()?)
+            .status(status)
+            .build()?)
+    }
+
+    async fn get_statistics(
+        node: MockChainNode,
+        uri: &str,
+    ) -> anyhow::Result<(StatusCode, serde_json::Value)> {
+        let resp = tickets_router(node)
+            .oneshot(Request::get(uri).body(Body::empty())?)
+            .await?;
+        let status = resp.status();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+        Ok((
+            status,
+            serde_json::from_slice(&body).context("response body is not JSON")?,
+        ))
+    }
 
     fn tickets_router(node: MockChainNode) -> Router {
         let state = Arc::new(crate::InternalState {
@@ -397,23 +429,161 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ticket_statistics_should_return_stats() -> anyhow::Result<()> {
+    async fn ticket_statistics_unscoped_should_report_the_aggregate() -> anyhow::Result<()> {
+        let node = MockChainNode::random().with_aggregate_ticket_stats(ChannelStats {
+            winning_tickets: 99,
+            unredeemed_value: "99 wxHOPR".parse()?,
+            ..Default::default()
+        });
+        let calls = node.ticket_stats_calls();
+
+        let (status, json) = get_statistics(node, "/tickets/statistics").await?;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["winningCount"], 99);
+        assert_eq!(json["unredeemedValue"], "99 wxHOPR");
+        // Symmetric to the scoped case below: an unscoped request has to ask for the
+        // aggregate, not for some channel.
+        assert_eq!(calls.snapshot(), vec![None]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_scoped_to_a_counterparty_should_report_only_that_channel()
+    -> anyhow::Result<()> {
         let node = MockChainNode::random();
+        let me = node.identity.node_address;
+        let counterparty: Address = COUNTERPARTY.parse()?;
+        let incoming = channel(counterparty, me, ChannelStatus::Open)?;
 
-        let resp = tickets_router(node)
-            .oneshot(Request::get("/tickets/statistics").body(Body::empty())?)
-            .await?;
+        let node = node
+            .with_channel(incoming)
+            .with_aggregate_ticket_stats(ChannelStats {
+                winning_tickets: 99,
+                unredeemed_value: "99 wxHOPR".parse()?,
+                ..Default::default()
+            })
+            .with_channel_ticket_stats(
+                *incoming.get_id(),
+                ChannelStats {
+                    winning_tickets: 7,
+                    unredeemed_value: "3 wxHOPR".parse()?,
+                    ..Default::default()
+                },
+            );
 
-        assert_eq!(resp.status(), StatusCode::OK);
+        let (status, json) =
+            get_statistics(node, &format!("/tickets/statistics?address={COUNTERPARTY}")).await?;
 
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-        let json: serde_json::Value = serde_json::from_slice(&body)?;
+        assert_eq!(status, StatusCode::OK);
+        // The channel's own numbers, not the aggregate. Dropping the scope at the
+        // `ticket_stats` call would report 99 here and still return 200.
+        assert_eq!(json["winningCount"], 7);
+        assert_eq!(json["unredeemedValue"], "3 wxHOPR");
 
-        // StubTicketManager::ticket_stats returns ChannelStats::default() (all zeros)
-        assert_eq!(json["winningCount"], 0);
-        assert!(json["unredeemedValue"].is_string());
-        assert!(json["neglectedValue"].is_string());
-        assert!(json["rejectedValue"].is_string());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_scoped_to_a_counterparty_should_use_the_incoming_channel()
+    -> anyhow::Result<()> {
+        let node = MockChainNode::random();
+        let me = node.identity.node_address;
+        let counterparty: Address = COUNTERPARTY.parse()?;
+        let incoming = channel(counterparty, me, ChannelStatus::Open)?;
+        let outgoing = channel(me, counterparty, ChannelStatus::Open)?;
+
+        let node = node
+            .with_channel(incoming)
+            .with_channel(outgoing)
+            .with_channel_ticket_stats(
+                *incoming.get_id(),
+                ChannelStats {
+                    winning_tickets: 7,
+                    ..Default::default()
+                },
+            )
+            .with_channel_ticket_stats(
+                *outgoing.get_id(),
+                ChannelStats {
+                    winning_tickets: 42,
+                    ..Default::default()
+                },
+            );
+        let calls = node.ticket_stats_calls();
+
+        let (status, json) =
+            get_statistics(node, &format!("/tickets/statistics?address={COUNTERPARTY}")).await?;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["winningCount"], 7);
+        // Both directions exist, so a reversed lookup would also return 200 — only the
+        // forwarded id says which of the two channels was actually read. For a relay these
+        // are two independently earning channels, which is the whole point of the scope.
+        assert_eq!(
+            calls.snapshot(),
+            vec![Some(generate_channel_id(&counterparty, &me))]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_scoped_to_a_pending_to_close_channel_should_report_it()
+    -> anyhow::Result<()> {
+        // Tickets stay redeemable while a channel is closing, so its statistics have to stay
+        // reachable. This is the other half of the handler's `!= Closed` guard.
+        let node = MockChainNode::random();
+        let me = node.identity.node_address;
+        let counterparty: Address = COUNTERPARTY.parse()?;
+        let pending = channel(
+            counterparty,
+            me,
+            ChannelStatus::PendingToClose(std::time::SystemTime::now()),
+        )?;
+
+        let node = node.with_channel(pending).with_channel_ticket_stats(
+            *pending.get_id(),
+            ChannelStats {
+                winning_tickets: 7,
+                ..Default::default()
+            },
+        );
+
+        let (status, json) =
+            get_statistics(node, &format!("/tickets/statistics?address={COUNTERPARTY}")).await?;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["winningCount"], 7);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ticket_statistics_scoped_to_a_closed_channel_should_404() -> anyhow::Result<()> {
+        let node = MockChainNode::random();
+        let me = node.identity.node_address;
+        let counterparty: Address = COUNTERPARTY.parse()?;
+        let closed = channel(counterparty, me, ChannelStatus::Closed)?;
+
+        let node = node.with_channel(closed).with_channel_ticket_stats(
+            *closed.get_id(),
+            ChannelStats {
+                winning_tickets: 7,
+                ..Default::default()
+            },
+        );
+        let calls = node.ticket_stats_calls();
+
+        let (status, json) =
+            get_statistics(node, &format!("/tickets/statistics?address={COUNTERPARTY}")).await?;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(json["status"], "CHANNEL_NOT_FOUND");
+        // The channel does have statistics in the stub; a handler that dropped the `!= Closed`
+        // guard would happily report them instead of 404-ing.
+        assert!(calls.snapshot().is_empty());
 
         Ok(())
     }
@@ -427,21 +597,22 @@ mod tests {
     #[tokio::test]
     async fn ticket_statistics_scoped_to_a_counterparty_without_a_channel_should_404()
     -> anyhow::Result<()> {
-        // The stub has no channels, so this exercises the whole scoped path — the address
+        // No channel is planted, so this exercises the whole scoped path — the address
         // parses, the counterparty→me lookup runs, and finding nothing is reported as such
         // rather than silently falling back to the aggregate.
-        let node = MockChainNode::random();
+        let node = MockChainNode::random().with_aggregate_ticket_stats(ChannelStats {
+            winning_tickets: 99,
+            ..Default::default()
+        });
+        let calls = node.ticket_stats_calls();
 
-        let resp = tickets_router(node)
-            .oneshot(
-                Request::get(
-                    "/tickets/statistics?address=0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-                )
-                .body(Body::empty())?,
-            )
-            .await?;
+        let (status, json) =
+            get_statistics(node, &format!("/tickets/statistics?address={COUNTERPARTY}")).await?;
 
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(json["status"], "CHANNEL_NOT_FOUND");
+        assert!(calls.snapshot().is_empty());
+
         Ok(())
     }
 

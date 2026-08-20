@@ -122,6 +122,7 @@ mimalloc = { version = "0.1.52", default-features = false, features = [
   "secure",
 ] }
 nix = { version = "0.31.3", features = ["fs", "signal"] }
+parking_lot = "0.12.5"
 rstest = "0.26.1"
 oas3 = "0.22.0"
 openapiv3 = "2.2.0"

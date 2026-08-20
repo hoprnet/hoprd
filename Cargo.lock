@@ -5796,6 +5796,7 @@ dependencies = [
  "lazy_static",
  "mockall",
  "oas3",
+ "parking_lot",
  "regex",
  "rstest",
  "serde",
