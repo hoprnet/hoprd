@@ -5856,7 +5856,6 @@ dependencies = [
  "nix 0.31.3",
  "rand 0.10.2",
  "reqwest",
- "scopeguard",
  "serde",
  "serde-saphyr",
  "serde_json",
