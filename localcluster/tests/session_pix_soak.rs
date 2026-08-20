@@ -741,7 +741,7 @@ fn relay_shares(forwarded: &[u64]) -> Vec<u64> {
     let total: u64 = forwarded.iter().sum();
     forwarded
         .iter()
-        .map(|n| if total == 0 { 0 } else { n * 100 / total })
+        .map(|n| (n * 100).checked_div(total).unwrap_or(0))
         .collect()
 }
 

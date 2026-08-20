@@ -307,7 +307,13 @@ async fn setup_cluster(
     Ok(())
 }
 
-#[tokio::test]
+// `multi_thread`, matching `session_pix_soak`: the correctness of this test rests on packet
+// pacing. `SEND_INTERVAL` is a floor, not a rate, and a current-thread runtime multiplexes the
+// sender, the echo server task and the balance poller onto one thread — contention stretches the
+// interval, and a cycle that outruns its deposit leaves the Exit recovering a key against a zero
+// balance, logging "already swept" and stranding the funds. `RECOVERY_TIMEOUT` absorbs the
+// stretch until it does not.
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> anyhow::Result<()> {
     common::init_tracing();
