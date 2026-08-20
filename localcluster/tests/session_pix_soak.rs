@@ -168,14 +168,14 @@ use std::{
 };
 
 use anyhow::Context;
-use common::{ClusterCleanup, ClusterEnv, TempCluster};
+use common::{
+    Cluster, ClusterSpec,
+    pix::{MAX_PLAUSIBLE_CYCLES, completed_cycles},
+    ports,
+};
 use hopr_lib::api::types::primitive::prelude::HoprBalance;
 use hoprd_localcluster::{client_helper, identity};
 use tokio::net::UdpSocket;
-
-const P2P_HOST: &str = "127.0.0.1";
-const P2P_PORT_BASE: u16 = 19500;
-const API_PORT_BASE: u16 = 13500;
 
 const NUM_NODES: usize = 4;
 const ENTRY: usize = 0;
@@ -302,9 +302,6 @@ const CHUNK_SIZE: usize = 900;
 /// 1000/s), and ten of them land inside [`DEFAULT_RUN_BUDGET`] where at 1000/s only five did.
 const DEFAULT_FUNDED_CYCLES: u64 = 10;
 
-/// Ceiling when interpreting a Safe delta as a whole number of cycles; a bound on the
-/// division, not an expectation.
-const MAX_PLAUSIBLE_CYCLES: u64 = 100_000;
 /// Round-trip payload a run must move for "multi-megabyte" to mean anything. Far under
 /// what the default float implies (~140 MB at the committed rate), so it fails only on a
 /// real collapse in throughput rather than on ordinary variance — which is exactly how the
@@ -619,36 +616,6 @@ const TARGET_CYCLE_SECS: u64 = 16;
 
 /// A UDP echo server for the Exit to forward Session payloads to, making Exit → Entry
 /// volume mirror Entry → Exit volume.
-async fn start_echo_server() -> anyhow::Result<u16> {
-    let sock = UdpSocket::bind("127.0.0.1:0")
-        .await
-        .context("binding echo server")?;
-    let port = sock.local_addr().context("echo server address")?.port();
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 65535];
-        while let Ok((n, src)) = sock.recv_from(&mut buf).await {
-            if sock.send_to(&buf[..n], src).await.is_err() {
-                break;
-            }
-        }
-    });
-    Ok(port)
-}
-
-/// Whole SSA deposits represented by `delta`, or `None` when it is not an exact multiple
-/// — which would mean something other than PIX moved the balance.
-fn completed_cycles(delta: HoprBalance, per_cycle: HoprBalance) -> Option<u64> {
-    if per_cycle.is_zero() {
-        return None;
-    }
-    let n = delta.amount() / per_cycle.amount();
-    if n > MAX_PLAUSIBLE_CYCLES.into() {
-        return None;
-    }
-    let n = n.as_u64();
-    (per_cycle * n == delta).then_some(n)
-}
-
 /// Deposits `float` can pay for, rounding down.
 fn affordable_cycles(float: HoprBalance, per_cycle: HoprBalance) -> u64 {
     if per_cycle.is_zero() {
@@ -745,87 +712,6 @@ fn relay_shares(forwarded: &[u64]) -> Vec<u64> {
         .collect()
 }
 
-async fn setup_cluster(
-    env: &ClusterEnv,
-    cluster: &TempCluster,
-    cleanup: &mut ClusterCleanup,
-    settings: identity::PixSettings,
-) -> anyhow::Result<()> {
-    let t0 = Instant::now();
-    let blk = common::start_chain(env, &cluster.log_dir, cleanup)
-        .await
-        .context("starting chain")?;
-    common::wait_for_blokli_ready(&blk, WAIT_TIMEOUT)
-        .await
-        .context("waiting for blokli")?;
-    tracing::info!("chain ready after {:?}", t0.elapsed());
-
-    identity::generate(&identity::GenerationConfig {
-        blokli_url: blk,
-        num_nodes: NUM_NODES,
-        config_home: cluster.data_dir.clone(),
-        random_identities: true,
-        p2p_host: P2P_HOST.to_string(),
-        p2p_port_base: P2P_PORT_BASE,
-        // AutoRedeeming stays off: redeemed tickets also credit the Safe in wxHOPR, which
-        // would make the closing balance assertions ambiguous.
-        strategies: identity::StrategySet {
-            auto_redeeming: false,
-            channel_lifecycle: false,
-        },
-        strategy_execution_interval: Some(Duration::from_secs(600)),
-        pix: Some(settings),
-        ..Default::default()
-    })
-    .await
-    .context("generating identities")?;
-    tracing::info!("identities generated after {:?}", t0.elapsed());
-
-    cleanup.nodes = client_helper::start_nodes(&client_helper::NodeStartConfig {
-        num_nodes: NUM_NODES,
-        hoprd_bin: &env.hoprd_bin,
-        data_dir: &cluster.data_dir,
-        log_dir: &cluster.log_dir,
-        api_host: "127.0.0.1",
-        api_port_base: API_PORT_BASE,
-        p2p_host: P2P_HOST,
-        p2p_port_base: P2P_PORT_BASE,
-        identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
-        api_token: None,
-    })
-    .await
-    .context("starting nodes")?;
-    tracing::info!("nodes started after {:?}", t0.elapsed());
-
-    futures::future::try_join_all(
-        cleanup
-            .nodes
-            .iter()
-            .map(|n| n.api.wait_started(WAIT_TIMEOUT)),
-    )
-    .await
-    .context("waiting for nodes to start")?;
-    for n in &mut cleanup.nodes {
-        n.address = Some(n.api.addresses().await.context("resolving node address")?);
-    }
-    futures::future::try_join_all(cleanup.nodes.iter().map(|n| n.api.wait_ready(WAIT_TIMEOUT)))
-        .await
-        .context("waiting for nodes to become ready")?;
-    tracing::info!("nodes ready after {:?}", t0.elapsed());
-
-    client_helper::open_full_mesh_channels(&cleanup.nodes, CHANNEL_STAKE, SETUP_TIMEOUT)
-        .await
-        .context("opening channels")?;
-    client_helper::wait_full_mesh_channels(&cleanup.nodes, SETUP_TIMEOUT)
-        .await
-        .context("waiting for channels")?;
-    client_helper::wait_full_mesh_reachable(&cleanup.nodes, SETUP_TIMEOUT)
-        .await
-        .context("waiting for peer reachability")?;
-    tracing::info!("channels ready after {:?}", t0.elapsed());
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
 async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyhow::Result<()> {
@@ -852,16 +738,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
          permanently lose their shares"
     );
 
-    let env = ClusterEnv::from_env().context("reading cluster environment")?;
-    let cluster = TempCluster::new().context("creating temp cluster")?;
-    let mut cleanup = ClusterCleanup {
-        chain: None,
-        nodes: vec![],
-    };
     let t0 = Instant::now();
-
-    let log_dir = cluster.log_dir.clone();
-    let _log_guard = common::NodeLogs::new(log_dir.clone(), "/tmp/pix-soak-logs");
 
     // `ssa_polys`/`ssa_shares` are deliberately not named `polys`/`shares`: `pix-demo.sh`
     // greps this banner for `<name>=<number>` and takes the first match in the whole log, so
@@ -884,18 +761,39 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
          each way, the run ends when {funded_cycles} deposits have drained the float"
     );
 
-    setup_cluster(&env, &cluster, &mut cleanup, pix_settings(float)?).await?;
+    let cluster = Cluster::start(ClusterSpec {
+        // Four: an Entry, two relays and an Exit. `ENTRY`/`RELAYS`/`EXIT` above and
+        // `pix-demo.sh`'s own index→role mapping both assume this count.
+        num_nodes: NUM_NODES,
+        // AutoRedeeming stays off: redeemed tickets also credit the Safe in wxHOPR, which
+        // would make the closing balance assertions ambiguous.
+        strategies: identity::StrategySet {
+            auto_redeeming: false,
+            channel_lifecycle: false,
+        },
+        strategy_execution_interval: Some(Duration::from_secs(600)),
+        pix: Some(pix_settings(float)?),
+        logs_to: Some("/tmp/pix-soak-logs"),
+        ..ClusterSpec::new(ports::SESSION_PIX_SOAK)
+    })
+    .await?;
+    cluster.wait_ready(WAIT_TIMEOUT).await?;
+    cluster.open_channels(CHANNEL_STAKE, SETUP_TIMEOUT).await?;
+    cluster.wait_channels(SETUP_TIMEOUT).await?;
+    cluster.wait_reachable(SETUP_TIMEOUT).await?;
+    tracing::info!("channels ready after {:?}", t0.elapsed());
+    let log_dir = cluster.log_dir().to_path_buf();
 
-    let echo_port = start_echo_server().await?;
-    let entry = &cleanup.nodes[ENTRY];
-    let exit_node = &cleanup.nodes[EXIT];
+    let echo_port = common::echo_server().await?;
+    let entry = cluster.node(ENTRY);
+    let exit_node = cluster.node(EXIT);
     let exit_addr = exit_node
         .address
         .as_ref()
         .context("exit node address unresolved")?;
     let target = format!("127.0.0.1:{echo_port}");
 
-    for node in &cleanup.nodes {
+    for node in cluster.nodes() {
         tracing::info!(
             "node{} metrics: http://127.0.0.1:{}/metrics",
             node.id,
@@ -924,7 +822,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     let exit_metrics_before = NodeMetrics::scrape(&exit_node.api).await;
     let mut relays_metrics_before = Vec::with_capacity(RELAYS.len());
     for relay in RELAYS {
-        relays_metrics_before.push(NodeMetrics::scrape(&cleanup.nodes[relay].api).await);
+        relays_metrics_before.push(NodeMetrics::scrape(&cluster.node(relay).api).await);
     }
     assert_eq!(
         entry_before.node_hopr, float,
@@ -1053,7 +951,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         cycles = completed_cycles(recovered, per_cycle).unwrap_or(cycles);
         entry_metrics = NodeMetrics::scrape(&entry.api).await;
         exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
-        let relayed = relay_forwarded(&cleanup.nodes, &relays_metrics_before).await;
+        let relayed = relay_forwarded(cluster.nodes(), &relays_metrics_before).await;
 
         let sent_n = sent.load(Ordering::Acquire);
         let echoed_n = echoed.load(Ordering::Acquire);
@@ -1134,7 +1032,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     entry_metrics = NodeMetrics::try_scrape(&entry.api)
         .await
         .context("scraping entry metrics for the closing assertions")?;
-    let relayed = relay_forwarded(&cleanup.nodes, &relays_metrics_before).await;
+    let relayed = relay_forwarded(cluster.nodes(), &relays_metrics_before).await;
     let relay_split = relay_shares(&relayed);
 
     stop.store(true, Ordering::Release);
