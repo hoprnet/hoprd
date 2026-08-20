@@ -104,8 +104,9 @@ impl MetricsSnapshot {
         self.sum_where(name, "")
     }
 
-    /// Sum of `name` restricted to label sets containing `label_filter` verbatim,
-    /// e.g. `sum_where("hopr_packets_count", r#"type="sent""#)`.
+    /// Sum of `name` restricted to label sets carrying `label_filter` as a whole
+    /// `key="value"` pair, e.g. `sum_where("hopr_packets_count", r#"type="sent""#)`.
+    /// An empty filter matches every label set.
     ///
     /// Metric names are compared with any trailing `_total` segments removed on both
     /// sides: OpenTelemetry's Prometheus exporter appends `_total` to counters, and
@@ -116,7 +117,7 @@ impl MetricsSnapshot {
         self.samples
             .iter()
             .filter(|(sample, labels, _)| {
-                strip_total_suffixes(sample) == wanted && labels.contains(label_filter)
+                strip_total_suffixes(sample) == wanted && has_label(labels, label_filter)
             })
             .map(|(_, _, value)| value)
             .sum()
@@ -129,6 +130,40 @@ fn strip_total_suffixes(name: &str) -> &str {
         name = stripped;
     }
     name
+}
+
+/// Whether `labels` — a label block including its braces, or empty for an unlabelled series —
+/// carries `filter` as one whole `key="value"` pair.
+///
+/// Deliberately not `labels.contains(filter)`. A substring test is unanchored on the left, so
+/// `type="sent"` would also match a `packet_type="sent"` label, and the result is a silently
+/// doubled reading rather than an error. Both series read through this today carry exactly one
+/// label, so nothing collides yet — this is what keeps the next label from corrupting a number
+/// instead of failing a test.
+fn has_label(labels: &str, filter: &str) -> bool {
+    filter.is_empty() || split_labels(labels).any(|pair| pair == filter)
+}
+
+/// Split a label block into its `key="value"` pairs, honouring commas and escapes inside
+/// quoted values.
+fn split_labels(labels: &str) -> impl Iterator<Item = &str> {
+    let inner = labels.trim().trim_start_matches('{').trim_end_matches('}');
+    let mut pairs = Vec::new();
+    let (mut in_quotes, mut escaped, mut start) = (false, false, 0);
+    for (i, c) in inner.char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if in_quotes => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                pairs.push(inner[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    pairs.push(inner[start..].trim());
+    pairs.into_iter().filter(|pair| !pair.is_empty())
 }
 
 #[derive(Debug, Clone)]
@@ -655,5 +690,89 @@ pub async fn open_full_mesh_channels(
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Shaped like a real scrape: `_total` on the counters, one label on the series that
+    /// carry one, and a decoy whose label *name* ends in the one being filtered for.
+    const SCRAPE: &str = r#"
+# HELP hopr_packets_count Number of processed packets
+# TYPE hopr_packets_count counter
+hopr_packets_count_total{type="sent"} 12
+hopr_packets_count_total{type="received"} 7
+hopr_packets_count_total{packet_type="sent"} 1000
+hopr_strategy_pix_sweeps_total 3
+hopr_strategy_pix_deposit_tracking_total{outcome="confirmed"} 5 1699999999
+hopr_strategy_pix_deposit_tracking_total{outcome="timeout"} 2
+"#;
+
+    #[test]
+    fn sum_where_matches_a_whole_label_pair_and_not_a_suffix_of_one() {
+        let m = MetricsSnapshot::parse(SCRAPE);
+        // 1000, not 1012: `packet_type="sent"` is a different label.
+        assert_eq!(m.sum_where("hopr_packets_count", r#"type="sent""#), 12.0);
+        assert_eq!(
+            m.sum_where("hopr_packets_count", r#"packet_type="sent""#),
+            1000.0
+        );
+    }
+
+    #[test]
+    fn sum_adds_every_label_set_and_tolerates_a_trailing_timestamp() {
+        let m = MetricsSnapshot::parse(SCRAPE);
+        assert_eq!(m.sum("hopr_packets_count"), 1019.0);
+        assert_eq!(m.sum("hopr_strategy_pix_deposit_tracking_total"), 7.0);
+        assert_eq!(
+            m.sum_where(
+                "hopr_strategy_pix_deposit_tracking_total",
+                r#"outcome="confirmed""#
+            ),
+            5.0
+        );
+    }
+
+    #[test]
+    fn an_unlabelled_series_is_summed_but_never_matches_a_filter() {
+        let m = MetricsSnapshot::parse(SCRAPE);
+        assert_eq!(m.sum("hopr_strategy_pix_sweeps"), 3.0);
+        assert_eq!(
+            m.sum_where("hopr_strategy_pix_sweeps", r#"outcome="confirmed""#),
+            0.0
+        );
+    }
+
+    #[test]
+    fn an_absent_series_reads_zero_rather_than_failing() {
+        let m = MetricsSnapshot::parse(SCRAPE);
+        assert_eq!(m.sum("hopr_nothing_like_this"), 0.0);
+    }
+
+    #[test]
+    fn label_splitting_survives_commas_and_escaped_quotes_inside_values() {
+        let m = MetricsSnapshot::parse(r#"weird{a="x,y",b="say\"hi\"",c="z"} 4"#);
+        for filter in [r#"a="x,y""#, r#"b="say\"hi\"""#, r#"c="z""#] {
+            assert_eq!(m.sum_where("weird", filter), 4.0, "filter {filter}");
+        }
+        // The comma inside `a` is not a separator, so its tail is not a pair of its own.
+        assert_eq!(m.sum_where("weird", r#"y""#), 0.0);
+    }
+
+    /// Exercised directly rather than through [`MetricsSnapshot::parse`], which splits the
+    /// line on whitespace and so cannot deliver a label value containing a space in the
+    /// first place. Nothing hoprd exports has one; the splitter handles it regardless, and
+    /// this is the only way to say so.
+    #[test]
+    fn label_splitting_survives_whitespace_inside_values() {
+        let labels = r#"{a="x y",b="z"}"#;
+        assert_eq!(
+            split_labels(labels).collect::<Vec<_>>(),
+            vec![r#"a="x y""#, r#"b="z""#]
+        );
+        assert!(has_label(labels, r#"a="x y""#));
+        assert!(!has_label(labels, r#"a="x""#));
     }
 }
