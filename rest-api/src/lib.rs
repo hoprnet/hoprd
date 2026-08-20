@@ -511,6 +511,14 @@ pub(crate) struct ApiError {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 enum ApiErrorStatus {
     InvalidInput,
+    /// [`InvalidInput`](Self::InvalidInput) that can say *which* input and why.
+    ///
+    /// Same 400 and the same `INVALID_INPUT` status string on the wire, so neither the OpenAPI
+    /// schema nor the generated client changes — the detail travels in `ApiError::error`, which
+    /// is already optional. Exists because the two variants that carry a detail string map to 500
+    /// and 422; without this, preserving a validation message meant changing the status code.
+    #[strum(serialize = "INVALID_INPUT")]
+    InvalidInputDetail(String),
     InvalidChannelId,
     PeerNotFound,
     ChannelNotFound,
@@ -530,7 +538,9 @@ enum ApiErrorStatus {
 impl From<ApiErrorStatus> for ApiError {
     fn from(value: ApiErrorStatus) -> Self {
         let error = match &value {
-            ApiErrorStatus::UnknownFailure(e) | ApiErrorStatus::PingError(e) => Some(e.clone()),
+            ApiErrorStatus::UnknownFailure(e)
+            | ApiErrorStatus::PingError(e)
+            | ApiErrorStatus::InvalidInputDetail(e) => Some(e.clone()),
             _ => None,
         };
         Self {
@@ -543,15 +553,18 @@ impl From<ApiErrorStatus> for ApiError {
 impl IntoResponse for ApiErrorStatus {
     fn into_response(self) -> Response {
         let error_detail = match &self {
-            Self::UnknownFailure(e) | Self::PingError(e) => Some(e.as_str()),
+            Self::UnknownFailure(e) | Self::PingError(e) | Self::InvalidInputDetail(e) => {
+                Some(e.as_str())
+            }
             _ => None,
         };
 
         let status_code = match &self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
-            Self::InvalidInput | Self::InvalidChannelId | Self::InvalidSessionId => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::InvalidInput
+            | Self::InvalidInputDetail(_)
+            | Self::InvalidChannelId
+            | Self::InvalidSessionId => StatusCode::BAD_REQUEST,
             Self::PeerNotFound
             | Self::ChannelNotFound
             | Self::TicketsNotFound
@@ -631,6 +644,7 @@ mod tests {
     #[rstest]
     #[case(ApiErrorStatus::Unauthorized, StatusCode::UNAUTHORIZED)]
     #[case(ApiErrorStatus::InvalidInput, StatusCode::BAD_REQUEST)]
+    #[case(ApiErrorStatus::InvalidInputDetail("why".into()), StatusCode::BAD_REQUEST)]
     #[case(ApiErrorStatus::InvalidChannelId, StatusCode::BAD_REQUEST)]
     #[case(ApiErrorStatus::InvalidSessionId, StatusCode::BAD_REQUEST)]
     #[case(ApiErrorStatus::PeerNotFound, StatusCode::NOT_FOUND)]
@@ -654,5 +668,19 @@ mod tests {
     fn ping_error_message_surfaced_in_body() {
         let api_error = ApiError::from(ApiErrorStatus::PingError("connection refused".into()));
         assert_eq!(api_error.error.as_deref(), Some("connection refused"));
+    }
+
+    /// The whole point of the variant: a detail in the body without a new status string, so
+    /// existing clients keep matching on `INVALID_INPUT`.
+    #[test]
+    fn invalid_input_detail_keeps_the_plain_status_string() {
+        let api_error = ApiError::from(ApiErrorStatus::InvalidInputDetail(
+            "invalid pixSsaQuota [8, 4, 2]: shares exceed the generator".into(),
+        ));
+        assert_eq!(api_error.status, "INVALID_INPUT");
+        assert_eq!(
+            api_error.error.as_deref(),
+            Some("invalid pixSsaQuota [8, 4, 2]: shares exceed the generator")
+        );
     }
 }

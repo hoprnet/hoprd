@@ -297,6 +297,58 @@ pub(crate) struct SessionClientRequest {
     pub flow_control: Option<crate::config::SessionFlowControl>,
 }
 
+/// Maps the wire-form positional triple onto [`PixParams`] for this build's curve suite.
+///
+/// Shared by both session request types because the conversion carries the whole validation
+/// contract of `pixSsaQuota` — the node refuses any Session whose three dimensions disagree with
+/// its installed generator — and two hand-synchronised copies of that is one copy too many.
+///
+/// The error text is kept. It names which dimension is wrong and what the node expects, and it is
+/// the only thing standing between a caller who transposed `shares` and `surplus` and a bare
+/// `400 INVALID_INPUT`.
+fn pix_params_from_quota(
+    quota: Option<(u16, u8, u8)>,
+) -> Result<Option<PixParams>, ApiErrorStatus> {
+    quota
+        .map(|(polys, shares, surplus)| {
+            PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus).map_err(|e| {
+                ApiErrorStatus::InvalidInputDetail(format!(
+                    "invalid pixSsaQuota [{polys}, {shares}, {surplus}]: {e}"
+                ))
+            })
+        })
+        .transpose()
+}
+
+/// Rejects a `pixSsaQuota` and a `UsePIX` capability that do not arrive together.
+///
+/// Neither half is caught anywhere else, and both are silent failures rather than errors:
+///
+/// - Quota without the capability builds `PixParams` into a capability set that never advertises
+///   PIX. The Session opens, the Exit relays with no deposit expectation, and the caller believes
+///   it opened a paid Session.
+/// - The capability without a quota announces PIX with no negotiated parameters. What the Exit
+///   does with that is decided outside this crate, and either way it is a configuration error
+///   that should be reported here, where each field still has a name attached.
+fn check_pix_consistency(
+    capabilities: SessionCapabilities,
+    quota: Option<(u16, u8, u8)>,
+) -> Result<(), ApiErrorStatus> {
+    // The protocol capability, not this module's same-named API enum: `capabilities` is already
+    // the converted flag set.
+    let advertises_pix =
+        capabilities.contains(hopr_lib::exports::transport::SessionCapability::UsePIX);
+    if advertises_pix != quota.is_some() {
+        return Err(ApiErrorStatus::InvalidInputDetail(
+            "`pixSsaQuota` and the `UsePIX` capability must be supplied together: a quota without \
+             the capability opens an unpaid Session, and the capability without a quota \
+             advertises PIX with no negotiated parameters"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 impl SessionClientRequest {
     /// Converts the API client session request into protocol-level session configuration.
     pub(crate) async fn into_protocol_session_config(
@@ -305,38 +357,37 @@ impl SessionClientRequest {
         flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
+        let capabilities = self
+            .capabilities
+            .map(|vs| {
+                let mut caps = SessionCapabilities::empty();
+                caps.extend(vs.into_iter().map(SessionCapabilities::from));
+                caps
+            })
+            .unwrap_or_else(|| match target_protocol {
+                IpProtocol::TCP => {
+                    hopr_lib::exports::transport::SessionCapability::RetransmissionAck
+                        | hopr_lib::exports::transport::SessionCapability::RetransmissionNack
+                        | hopr_lib::exports::transport::SessionCapability::Segmentation
+                }
+                // Only Segmentation capability for UDP per default
+                _ => SessionCapability::Segmentation.into(),
+            });
+        check_pix_consistency(capabilities, self.pix_ssa_quota)?;
+
         Ok((
             self.destination,
             target_spec.into_target(target_protocol.into())?,
             HoprSessionClientConfig {
                 forward_path: self.forward_path.try_into()?,
                 return_path: self.return_path.try_into()?,
-                capabilities: self
-                    .capabilities
-                    .map(|vs| {
-                        let mut caps = SessionCapabilities::empty();
-                        caps.extend(vs.into_iter().map(SessionCapabilities::from));
-                        caps
-                    })
-                    .unwrap_or_else(|| match target_protocol {
-                        IpProtocol::TCP => {
-                            hopr_lib::exports::transport::SessionCapability::RetransmissionAck
-                                | hopr_lib::exports::transport::SessionCapability::RetransmissionNack
-                                | hopr_lib::exports::transport::SessionCapability::Segmentation
-                        }
-                        // Only Segmentation capability for UDP per default
-                        _ => SessionCapability::Segmentation.into(),
-                    }),
+                capabilities,
                 surb_management: SessionConfig {
                     response_buffer: self.response_buffer,
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
-                pix_ssa_quota: self
-                    .pix_ssa_quota
-                    .map(|(polys, shares, surplus)| PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus))
-                    .transpose()
-                    .map_err(|_| ApiErrorStatus::InvalidInput)?,
+                pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                 // Per-request profile overrides the node default when present.
                 flow_control: self
                     .flow_control
@@ -461,6 +512,7 @@ impl SessionClientExplicitPathRequest {
                 }
                 _ => SessionCapability::Segmentation.into(),
             });
+        check_pix_consistency(capabilities, self.pix_ssa_quota)?;
 
         Ok((
             self.destination,
@@ -476,13 +528,7 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
-                    pix_ssa_quota: self
-                        .pix_ssa_quota
-                        .map(|(polys, shares, surplus)| {
-                            PixParams::try_new_for::<HoprPixSpec>(polys, shares, surplus)
-                        })
-                        .transpose()
-                        .map_err(|_| ApiErrorStatus::InvalidInput)?,
+                    pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                     // The deprecated explicit-path endpoint has no per-request override, so it
                     // always uses the node default profile.
                     flow_control,
@@ -1390,6 +1436,47 @@ mod tests {
     fn use_pix_capability_maps_correctly() {
         let caps: SessionCapabilities = SessionCapability::UsePIX.into();
         assert!(caps.contains(hopr_lib::exports::transport::SessionCapability::UsePIX));
+    }
+
+    #[test]
+    fn pix_quota_and_capability_must_arrive_together() {
+        let with_pix: SessionCapabilities = SessionCapability::UsePIX.into();
+        let without_pix: SessionCapabilities = SessionCapability::Segmentation.into();
+
+        assert!(check_pix_consistency(with_pix, Some((8, 4, 2))).is_ok());
+        assert!(check_pix_consistency(without_pix, None).is_ok());
+
+        // A quota with no capability is the dangerous half: the Session would open and the Exit
+        // would relay with no deposit expectation.
+        let quota_alone = check_pix_consistency(without_pix, Some((8, 4, 2)));
+        assert!(matches!(
+            quota_alone,
+            Err(ApiErrorStatus::InvalidInputDetail(_))
+        ));
+
+        let capability_alone = check_pix_consistency(with_pix, None);
+        assert!(matches!(
+            capability_alone,
+            Err(ApiErrorStatus::InvalidInputDetail(_))
+        ));
+    }
+
+    /// A caller who transposes two dimensions has to be told which one, and the status code has
+    /// to stay 400 while that happens.
+    #[test]
+    fn pix_params_conversion_keeps_the_validation_message() {
+        assert!(matches!(pix_params_from_quota(None), Ok(None)));
+
+        // 0 polynomials cannot describe a generator, whichever spec this build installed.
+        match pix_params_from_quota(Some((0, 0, 0))) {
+            Err(ApiErrorStatus::InvalidInputDetail(detail)) => {
+                assert!(
+                    detail.starts_with("invalid pixSsaQuota [0, 0, 0]: "),
+                    "detail should name the offending triple, got {detail:?}"
+                );
+            }
+            other => panic!("expected a detailed InvalidInput, got {other:?}"),
+        }
     }
 
     #[test]
