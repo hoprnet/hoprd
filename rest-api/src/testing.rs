@@ -6,13 +6,17 @@
 //!
 //! [`StubChain`] is a lightweight in-memory chain connector that implements
 //! all 11 `HoprChainApi` sub-traits. Write operations return stub errors;
-//! read operations return sensible zero-values.
+//! read operations return sensible zero-values, except channel lookups, which
+//! are served from the channels planted with [`StubChain::with_channel`].
 //!
 //! [`MockChainNode`] composes `StubChain` with a `NodeOnchainIdentity` and
 //! implements `HasChainApi` so that REST API handlers bound on
 //! `HasChainApi<ChainError = HoprLibError>` can be tested.
 
-use std::{collections::HashSet, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use bimap::BiMap;
@@ -171,13 +175,18 @@ pub struct StubError(pub String);
 
 /// Stub chain connector satisfying all `HoprChainApi` sub-trait bounds.
 ///
-/// Read operations return sensible zero-values.
+/// Read operations return sensible zero-values, except channel lookups, which are served
+/// from the channels planted with [`StubChain::with_channel`].
 /// Write operations return [`StubError`].
 #[derive(Debug, Clone)]
 pub struct StubChain {
     me_addr: Address,
     keys: BiMap<Address, OffchainPublicKey>,
     mapper: StubKeyMapper,
+    /// Planted channels, keyed by their own id. A `BTreeMap` rather than a `HashMap` so
+    /// [`ChainReadChannelOperations::stream_channels`] yields a deterministic order and a
+    /// list assertion can be written against it.
+    channels: BTreeMap<ChannelId, ChannelEntry>,
 }
 
 impl StubChain {
@@ -189,7 +198,20 @@ impl StubChain {
             me_addr: addr,
             keys,
             mapper: StubKeyMapper,
+            channels: BTreeMap::new(),
         }
+    }
+
+    /// Plants a channel that channel lookups and channel streams will report.
+    ///
+    /// Keyed on the entry's own id, which `ChannelEntry` derives from its source and
+    /// destination with the same `generate_channel_id` that the default
+    /// [`ChainReadChannelOperations::channel_by_parties`] uses — so a channel planted here
+    /// is found both by id and by parties, in that direction only.
+    #[must_use]
+    pub fn with_channel(mut self, channel: ChannelEntry) -> Self {
+        self.channels.insert(*channel.get_id(), channel);
+        self
     }
 }
 
@@ -202,15 +224,25 @@ impl ChainReadChannelOperations for StubChain {
         &self.me_addr
     }
 
-    fn channel_by_id(&self, _channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::Error> {
-        Ok(None)
+    // `channel_by_parties` is deliberately left to the trait default, which hashes the two
+    // addresses into a channel id. Overriding it with a source/destination scan would bypass
+    // the id derivation that a handler resolving a counterparty depends on — which is exactly
+    // what a test asserting the *direction* of a lookup needs to exercise.
+    fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::Error> {
+        Ok(self.channels.get(channel_id).copied())
     }
 
     fn stream_channels<'a>(
         &'a self,
-        _selector: ChannelSelector,
+        selector: ChannelSelector,
     ) -> Result<BoxStream<'a, ChannelEntry>, Self::Error> {
-        Ok(Box::pin(stream::empty()))
+        let matching: Vec<ChannelEntry> = self
+            .channels
+            .values()
+            .filter(|channel| selector.satisfies(channel))
+            .copied()
+            .collect();
+        Ok(Box::pin(stream::iter(matching)))
     }
 }
 
