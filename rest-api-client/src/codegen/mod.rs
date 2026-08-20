@@ -2090,9 +2090,10 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ],
     ///      "items": {
     ///        "type": "integer",
-    ///        "format": "int32",
     ///        "minimum": 0.0
-    ///      }
+    ///      },
+    ///      "maxItems": 3,
+    ///      "minItems": 3
     ///    },
     ///    "responseBuffer": {
     ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
@@ -2199,7 +2200,7 @@ describe a generator this node does not have. It is supplied by
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub pix_ssa_quota: ::std::option::Option<::std::vec::Vec<i32>>,
+        pub pix_ssa_quota: ::std::option::Option<[u64; 3usize]>,
         /**The amount of response data the Session counterparty can deliver back to us,
 without us sending any SURBs to them.
 

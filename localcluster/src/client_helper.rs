@@ -359,8 +359,11 @@ impl HoprdApiClient {
             listen_host: None,
             max_client_sessions: None,
             max_surb_upstream,
+            // The generated client takes a fixed `[u64; 3]`, so only the widths are converted
+            // here; the arity is the array type's own business. The named triple stays on
+            // `OpenSessionRequest` — this is the one place it becomes positional.
             pix_ssa_quota: pix_ssa_quota.map(|(polys, shares, surplus)| {
-                vec![i32::from(polys), i32::from(shares), i32::from(surplus)]
+                [u64::from(polys), u64::from(shares), u64::from(surplus)]
             }),
             response_buffer,
             session_pool: None,
