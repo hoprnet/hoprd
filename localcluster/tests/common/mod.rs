@@ -50,18 +50,19 @@ use anyhow::{Context, Result};
 use hoprd_localcluster::{blokli_helper, client_helper};
 
 /// Environment-derived configuration for a test cluster run.
+///
+/// Read once by [`Cluster::start`]; no test constructs one.
 #[derive(Clone, Debug)]
-pub struct ClusterEnv {
-    pub hoprd_bin: PathBuf,
-    pub chain_url: Option<String>,
-    pub chain_image: Option<String>,
-    pub container_runtime: String,
-    pub wait_timeout: Duration,
+struct ClusterEnv {
+    hoprd_bin: PathBuf,
+    chain_url: Option<String>,
+    chain_image: Option<String>,
+    container_runtime: String,
 }
 
 impl ClusterEnv {
     /// Read configuration from environment variables, using sensible defaults.
-    pub fn from_env() -> Result<Self> {
+    fn from_env() -> Result<Self> {
         let chain_url = std::env::var("HOPRD_CHAIN_URL").ok();
         let chain_image = std::env::var("HOPRD_CHAIN_IMAGE").ok();
         anyhow::ensure!(
@@ -77,22 +78,21 @@ impl ClusterEnv {
             chain_image,
             container_runtime: std::env::var("HOPRD_CONTAINER_RUNTIME")
                 .unwrap_or_else(|_| "docker".to_string()),
-            wait_timeout: Duration::from_secs(120),
         })
     }
 }
 
-/// A temporary localcluster working directory.
-pub struct TempCluster {
+/// A temporary localcluster working directory. Owned by [`Cluster`].
+struct TempCluster {
     /// Kept alive for the lifetime of the cluster; dropped last to clean up
     /// the on-disk directory tree.
-    pub _temp_dir: tempfile::TempDir,
-    pub data_dir: PathBuf,
-    pub log_dir: PathBuf,
+    _temp_dir: tempfile::TempDir,
+    data_dir: PathBuf,
+    log_dir: PathBuf,
 }
 
 impl TempCluster {
-    pub fn new() -> Result<Self> {
+    fn new() -> Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let data_dir = temp_dir.path().to_path_buf();
         let log_dir = data_dir.join("logs");
@@ -107,9 +107,9 @@ impl TempCluster {
 
 /// Resources that must be cleaned up at the end of a test (chain container +
 /// spawned hoprd processes).
-pub struct ClusterCleanup {
-    pub chain: Option<blokli_helper::ChainHandle>,
-    pub nodes: Vec<client_helper::NodeProcess>,
+struct ClusterCleanup {
+    chain: Option<blokli_helper::ChainHandle>,
+    nodes: Vec<client_helper::NodeProcess>,
 }
 
 impl Drop for ClusterCleanup {
@@ -124,7 +124,7 @@ impl Drop for ClusterCleanup {
 }
 
 /// Start a chain container (or use an existing one), returning the Blokli URL.
-pub async fn start_chain(
+async fn start_chain(
     env: &ClusterEnv,
     log_dir: &std::path::Path,
     cleanup: &mut ClusterCleanup,
@@ -142,7 +142,7 @@ pub async fn start_chain(
 }
 
 /// Poll the Blokli `/readyz` endpoint until it returns success.
-pub async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
+async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()?;
