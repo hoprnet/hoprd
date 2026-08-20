@@ -231,6 +231,39 @@
             '';
           });
 
+          # Type-check the localcluster integration tests.
+          #
+          # `binary-hoprd-localcluster` builds only the binary, and the six integration test
+          # binaries under `localcluster/tests/` are `#[ignore]`d behind a chain container, so
+          # until this existed nothing in CI so much as compiled them — a rename in their
+          # shared `tests/common` module broke five files silently and stayed broken until
+          # somebody ran them by hand. Type-checking needs no container and no chain.
+          #
+          # Its own derivation rather than adding `--all-targets` to `qualityCargoExtraArgs`:
+          # that argument list carries hoprd's feature selection, which is not localcluster's,
+          # and widening it would also start linting test code in two other crates.
+          #
+          # `cargo check`, not Clippy — the point is to catch what does not compile. Promoting
+          # it is a separate decision, once the lint backlog in that test code is known.
+          localclusterTestCheckDerivation =
+            (rust-builder-local.callPackage nixLib.mkRustPackage (
+              localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+            )).overrideAttrs
+              (_: {
+                pname = "hoprd-localcluster-test-check";
+                # `cargo check` emits no binaries, so the install hook that would otherwise
+                # look for them in cargo's build log has nothing to find.
+                doNotPostBuildInstallCargoBinaries = true;
+                buildPhase = ''
+                  runHook preBuild
+                  cargo check -p hoprd-localcluster --all-targets
+                  runHook postBuild
+                '';
+                installPhase = ''
+                  mkdir -p "$out"
+                '';
+              });
+
           # Documentation uses the same feature set and dependency artifacts as
           # Clippy, while retaining strict rustdoc warnings.
           docsDerivation = clippyDerivation.overrideAttrs (_: {
@@ -727,6 +760,10 @@
               name = "shellcheck-localcluster-smoke";
               path = shellcheckLocalclusterSmoke;
             }
+            {
+              name = "localcluster-test-check";
+              path = localclusterTestCheckDerivation;
+            }
           ];
         in
         {
@@ -793,6 +830,7 @@
             inherit (hoprdPackages) check clippy;
             shellcheck-docker-entrypoint = shellcheckDockerEntrypoint;
             shellcheck-localcluster-smoke = shellcheckLocalclusterSmoke;
+            localcluster-test-check = localclusterTestCheckDerivation;
           };
 
           apps = {
