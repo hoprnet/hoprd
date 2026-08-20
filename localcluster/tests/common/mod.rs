@@ -264,6 +264,302 @@ impl Drop for NodeLogs {
     }
 }
 
+/// The P2P and API port bases one integration binary owns.
+#[derive(Clone, Copy, Debug)]
+pub struct PortBlock {
+    pub p2p: u16,
+    pub api: u16,
+}
+
+/// One block per integration binary. Node `i` of a suite binds `p2p + i` and `api + i`.
+///
+/// Stated here rather than in each test file because the invariant is a global one — no two
+/// suites may overlap — and it cannot be checked from inside a single test. The suites are not
+/// isolated from each other in any other way (see the serial-execution note in the module
+/// docs), so a collision is a corrupted run rather than a bind error.
+pub mod ports {
+    use super::PortBlock;
+
+    pub const SMOKE: PortBlock = PortBlock {
+        p2p: 19000,
+        api: 13000,
+    };
+    pub const ADDRESS_IDENTITY: PortBlock = PortBlock {
+        p2p: 19100,
+        api: 13100,
+    };
+    pub const CHANNEL_CLOSE: PortBlock = PortBlock {
+        p2p: 19200,
+        api: 13200,
+    };
+    pub const SESSION_UDP: PortBlock = PortBlock {
+        p2p: 19300,
+        api: 13300,
+    };
+    pub const SESSION_PIX: PortBlock = PortBlock {
+        p2p: 19400,
+        api: 13400,
+    };
+    /// Pinned. `scripts/pix-demo.sh` hard-codes `API_PORT_BASE=13500` and identifies every
+    /// node — to scrape it, and to `pkill` it — by `--apiPort $((API_PORT_BASE + i))`.
+    /// Moving this silently breaks the demo's dashboard and its teardown.
+    pub const SESSION_PIX_SOAK: PortBlock = PortBlock {
+        p2p: 19500,
+        api: 13500,
+    };
+
+    const ALL: [PortBlock; 6] = [
+        SMOKE,
+        ADDRESS_IDENTITY,
+        CHANNEL_CLOSE,
+        SESSION_UDP,
+        SESSION_PIX,
+        SESSION_PIX_SOAK,
+    ];
+
+    /// No two blocks may come within `MAX_NUM_NODES` of each other, in either dimension.
+    const _: () = {
+        const fn apart(a: u16, b: u16) -> bool {
+            let gap = if a > b { a - b } else { b - a };
+            gap as usize >= hoprd_localcluster::identity::MAX_NUM_NODES
+        }
+        let mut i = 0;
+        while i < ALL.len() {
+            let mut j = i + 1;
+            while j < ALL.len() {
+                assert!(apart(ALL[i].p2p, ALL[j].p2p), "P2P port blocks overlap");
+                assert!(apart(ALL[i].api, ALL[j].api), "API port blocks overlap");
+                j += 1;
+            }
+            i += 1;
+        }
+    };
+}
+
+/// Everything a test varies about cluster bring-up.
+///
+/// Construct with [`ClusterSpec::new`], which takes the one field that has no safe default,
+/// and override only what differs:
+///
+/// ```ignore
+/// Cluster::start(ClusterSpec {
+///     num_nodes: 4,
+///     pix: Some(pix_settings()?),
+///     ..ClusterSpec::new(ports::SESSION_PIX_SOAK)
+/// }).await?
+/// ```
+#[derive(Clone, Debug)]
+pub struct ClusterSpec {
+    pub ports: PortBlock,
+    pub num_nodes: usize,
+    pub random_identities: bool,
+    pub strategies: hoprd_localcluster::identity::StrategySet,
+    /// `None` leaves hoprd's own 60 s default, which is what a test relying on a strategy to
+    /// act *during* bring-up needs. A Session test that does not want strategies interfering
+    /// pushes it out instead.
+    pub strategy_execution_interval: Option<Duration>,
+    pub pix: Option<hoprd_localcluster::identity::PixSettings>,
+    /// Deadline for every node to report `HoprState::Running`.
+    pub start_timeout: Duration,
+    /// Where to copy the node logs when the cluster drops. `None` discards them along with
+    /// the temp directory.
+    pub logs_to: Option<&'static str>,
+}
+
+impl ClusterSpec {
+    /// Defaults matching the majority of the suites: three nodes, random identities,
+    /// AutoRedeeming on and ChannelLifecycle off, hoprd's own strategy interval, no PIX.
+    pub fn new(ports: PortBlock) -> Self {
+        Self {
+            ports,
+            num_nodes: 3,
+            random_identities: true,
+            strategies: hoprd_localcluster::identity::StrategySet::default(),
+            strategy_execution_interval: None,
+            pix: None,
+            start_timeout: Duration::from_secs(120),
+            logs_to: None,
+        }
+    }
+}
+
+/// A cluster that is up: chain running, identities generated, nodes spawned and started,
+/// every node's on-chain address resolved.
+///
+/// Nothing beyond that. Readiness, channels and peer reachability are separate steps because
+/// the suites want different ones in different orders — `smoke` checks reachability *before*
+/// channels because its strategy opens them, the Session suites check it after because they
+/// opened the channels themselves. A composite would hide that difference, and would grow a
+/// boolean the first time one suite needed to skip a step.
+#[must_use = "dropping the Cluster kills the nodes and stops the chain"]
+pub struct Cluster {
+    // Field order is drop order: the logs are copied out first, while the temp directory that
+    // holds them still exists, and `_temp` is deleted last.
+    _logs: Option<NodeLogs>,
+    cleanup: ClusterCleanup,
+    _temp: TempCluster,
+    /// The generated identities, for a test that checks a node against its own.
+    pub identities: hoprd_localcluster::identity::GenerationOutput,
+    log_dir: PathBuf,
+}
+
+impl Cluster {
+    /// Start the chain, generate identities and configs, spawn the nodes, wait for each to
+    /// reach `HoprState::Running`, and resolve every node's on-chain address.
+    pub async fn start(spec: ClusterSpec) -> Result<Self> {
+        use hoprd_localcluster::identity;
+
+        let env = ClusterEnv::from_env().context("reading cluster environment")?;
+        let temp = TempCluster::new().context("creating temp cluster")?;
+        let log_dir = temp.log_dir.clone();
+        // Armed before anything is started, so a failure during bring-up — the case the copy
+        // exists for — still leaves the node and chain logs behind.
+        let logs = spec.logs_to.map(|to| NodeLogs::new(log_dir.clone(), to));
+        let mut cleanup = ClusterCleanup {
+            chain: None,
+            nodes: vec![],
+        };
+        let t0 = std::time::Instant::now();
+
+        let blokli_url = start_chain(&env, &temp.log_dir, &mut cleanup)
+            .await
+            .context("starting chain")?;
+        wait_for_blokli_ready(&blokli_url, CHAIN_READY_TIMEOUT)
+            .await
+            .context("waiting for blokli")?;
+        tracing::info!("chain ready after {:?}", t0.elapsed());
+
+        let identities = identity::generate(&identity::GenerationConfig {
+            blokli_url,
+            num_nodes: spec.num_nodes,
+            config_home: temp.data_dir.clone(),
+            random_identities: spec.random_identities,
+            p2p_host: P2P_HOST.to_string(),
+            p2p_port_base: spec.ports.p2p,
+            strategies: spec.strategies,
+            strategy_execution_interval: spec.strategy_execution_interval,
+            pix: spec.pix,
+            ..Default::default()
+        })
+        .await
+        .context("generating identities")?;
+        tracing::info!("identities generated after {:?}", t0.elapsed());
+
+        // The ten fields are spelled out rather than defaulted, and that is deliberate:
+        // `NodeStartConfig` holds `&Path`s, which have no `Default`, and a hand-written one
+        // would turn "you forgot `api_port_base`" from a compile error into a silent
+        // collision with another suite's port block. This is the only construction site in
+        // the test tree, so the cost is paid once.
+        cleanup.nodes = client_helper::start_nodes(&client_helper::NodeStartConfig {
+            num_nodes: spec.num_nodes,
+            hoprd_bin: &env.hoprd_bin,
+            data_dir: &temp.data_dir,
+            log_dir: &temp.log_dir,
+            api_host: API_HOST,
+            api_port_base: spec.ports.api,
+            p2p_host: P2P_HOST,
+            p2p_port_base: spec.ports.p2p,
+            identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
+            api_token: None,
+        })
+        .await
+        .context("starting nodes")?;
+        tracing::info!("nodes started after {:?}", t0.elapsed());
+
+        futures::future::try_join_all(
+            cleanup
+                .nodes
+                .iter()
+                .map(|n| n.api.wait_started(spec.start_timeout)),
+        )
+        .await
+        .context("waiting for nodes to start")?;
+        for n in &mut cleanup.nodes {
+            n.address = Some(n.api.addresses().await.context("resolving node address")?);
+        }
+        tracing::info!("nodes started and addressed after {:?}", t0.elapsed());
+
+        Ok(Self {
+            _logs: logs,
+            cleanup,
+            _temp: temp,
+            identities,
+            log_dir,
+        })
+    }
+
+    pub fn nodes(&self) -> &[client_helper::NodeProcess] {
+        &self.cleanup.nodes
+    }
+
+    pub fn node(&self, id: usize) -> &client_helper::NodeProcess {
+        &self.cleanup.nodes[id]
+    }
+
+    /// The live log directory, inside the temp tree. Valid until the cluster drops.
+    pub fn log_dir(&self) -> &std::path::Path {
+        &self.log_dir
+    }
+
+    /// Wait for every node's `/readyz`.
+    pub async fn wait_ready(&self, timeout: Duration) -> Result<()> {
+        futures::future::try_join_all(self.nodes().iter().map(|n| n.api.wait_ready(timeout)))
+            .await
+            .context("waiting for nodes to become ready")?;
+        Ok(())
+    }
+
+    /// Open and fund an outgoing channel from every node to every other.
+    pub async fn open_channels(&self, stake: &str, timeout: Duration) -> Result<()> {
+        client_helper::open_full_mesh_channels(self.nodes(), stake, timeout)
+            .await
+            .context("opening channels")
+    }
+
+    /// Wait until every node has an `Open` outgoing channel to every other.
+    pub async fn wait_channels(&self, timeout: Duration) -> Result<()> {
+        client_helper::wait_full_mesh_channels(self.nodes(), timeout)
+            .await
+            .context("waiting for channels")
+    }
+
+    /// Wait until every node can reach every other.
+    pub async fn wait_reachable(&self, timeout: Duration) -> Result<()> {
+        client_helper::wait_full_mesh_reachable(self.nodes(), timeout)
+            .await
+            .context("waiting for peer reachability")
+    }
+}
+
+/// Loopback, for both the API and the P2P listeners. Not a knob: a localcluster is a
+/// single-host arrangement by construction.
+const API_HOST: &str = "127.0.0.1";
+const P2P_HOST: &str = "127.0.0.1";
+
+/// Every suite allowed blokli the same 120 s, so this is a constant rather than a spec field.
+const CHAIN_READY_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A UDP echo server that echoes each datagram back to its sender. Returns the bound port.
+///
+/// Exits its task if a receive fails, rather than looping on the error: a socket that cannot
+/// receive will not start doing so, and spinning on it burns a core inside tests whose subject
+/// is packet rate. A dead echo server shows up immediately as a receive timeout.
+pub async fn echo_server() -> Result<u16> {
+    let sock = tokio::net::UdpSocket::bind("127.0.0.1:0")
+        .await
+        .context("binding the echo server")?;
+    let port = sock.local_addr().context("echo server address")?.port();
+    tokio::spawn(async move {
+        let mut buf = vec![0u8; 65535];
+        while let Ok((n, src)) = sock.recv_from(&mut buf).await {
+            if sock.send_to(&buf[..n], src).await.is_err() {
+                break;
+            }
+        }
+    });
+    Ok(port)
+}
+
 /// Initialise a tracing subscriber with `RUST_LOG` (default: `"info"`).
 ///
 /// Safe to call multiple times — duplicate calls are silently ignored.
