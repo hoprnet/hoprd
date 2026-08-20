@@ -151,15 +151,19 @@ async fn main() -> Result<()> {
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,
-            strategies: match args.channel_management {
-                cli::ChannelManagement::Strategy | cli::ChannelManagement::Both => {
-                    identity::StrategySet {
-                        channel_lifecycle: true,
-                        ..Default::default()
-                    }
-                }
-                _ => identity::StrategySet::default(),
+            strategies: identity::StrategySet {
+                channel_lifecycle: matches!(
+                    args.channel_management,
+                    cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
+                ),
+                // Drives `HOPRD_ENABLE_PIX=1` on every node and the per-node wxHOPR top-up that
+                // pays for deposits; `pix` below writes the config sections it needs. Both are
+                // required — one without the other yields a node that either advertises PIX it
+                // cannot fund or is funded for PIX it never enables.
+                pix: args.enable_pix,
+                ..Default::default()
             },
+            pix: args.enable_pix.then(identity::PixSettings::default),
             latency: args.latency.clone(),
             ..Default::default()
         };
@@ -223,10 +227,22 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
-            pix: config
-                .strategies
-                .pix
-                .then(client_helper::PixStrategyEnv::default),
+            // Sized against `identity::PixSettings::default()` above, not
+            // `PixStrategyEnv::default()`. That default mirrors hoprd's own env-var fallbacks,
+            // and those are placeholders: at 1 wxHOPR/byte the demo geometry's ~33.2 kB quota
+            // prices one deposit at ~33 200 wxHOPR, well past the 100 wxHOPR ceiling, so every
+            // deposit would be refused. The tracking time matters for the same reason — its
+            // poll cadence is `/10`, which has to stay under the Exit's
+            // `max_deposit_wait + max_ssa_delivery_time` (60 s + 20 s here) or the kill switch
+            // fires before the second poll. Change these together with the geometry.
+            pix: args.enable_pix.then(|| client_helper::PixStrategyEnv {
+                // ~3.32 wxHOPR per SSA deposit against the default geometry, so the 1000 wxHOPR
+                // float in `PixSettings::default()` buys roughly 300 cycles.
+                price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
+                max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
+                max_deposit_tracking_time: Duration::from_secs(30),
+                gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
+            }),
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

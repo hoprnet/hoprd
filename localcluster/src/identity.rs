@@ -148,6 +148,40 @@ impl PixSettings {
     }
 }
 
+/// Demo-scale dimensions for `hoprd-localcluster --enable-pix`, where no caller sizes the
+/// geometry against a measured workload the way the integration tests do.
+///
+/// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
+/// cluster started this way completes a cycle in a handful of seconds rather than the minutes
+/// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
+/// `8 × (2 + 2) × 1038` ≈ 33.2 kB against a production window of ~130 MiB–519 MiB, so the
+/// production window would reject every Session.
+///
+/// Two deliberate departures from the tests:
+///
+/// - `enforce_on_nodes` is empty. The CLI advertises PIX on every node as both Entry and Exit
+///   and has no notion of which node terminates a Session, so enforcing anywhere would refuse
+///   the ordinary non-PIX Sessions the same cluster is used for. PIX is available here, not
+///   mandatory.
+/// - `node_deposit_float` is sized for a long interactive session rather than a fixed cycle
+///   count, since nothing bounds how long an operator leaves the cluster running. At the
+///   price `main.rs` pairs with these dimensions that is roughly 300 cycles per node.
+impl Default for PixSettings {
+    fn default() -> Self {
+        Self {
+            num_ssa_parts: 8,
+            ssa_part_size: 2,
+            additional_shares: 2,
+            quota_range_min: 0,
+            quota_range_max: 1024 * 1024,
+            max_ssa_delivery_time: std::time::Duration::from_secs(20),
+            max_deposit_wait: std::time::Duration::from_secs(60),
+            enforce_on_nodes: Vec::new(),
+            node_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
+        }
+    }
+}
+
 /// Exit-side admission policy for node `id`.
 ///
 /// Only nodes listed in [`PixSettings::enforce_on_nodes`] reject non-PIX Sessions; the
