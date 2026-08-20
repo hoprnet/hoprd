@@ -154,6 +154,95 @@ pub async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
     }
 }
 
+/// Copy every node log out of `from` and into `to` when the returned guard drops, so the
+/// logs outlive the [`TempCluster`] directory that is deleted on the way out.
+///
+/// Failures are reported rather than swallowed. This runs precisely when a test has failed
+/// and someone is about to go looking, and "the nodes logged nothing" and "the harness could
+/// not copy the logs" are indistinguishable from the destination directory. It cannot fail
+/// the test — the guard may be running during an unwind, where a panic would abort the
+/// process — so it warns and carries on.
+///
+/// `to` is a fixed per-suite path so the logs are findable without knowing where the temp
+/// directory was; the guard logs it on the way out. Nothing is cleared first, so same-named
+/// files are overwritten but a file left by a longer earlier run of the same suite survives
+/// alongside this one's.
+///
+/// A fixed path under a world-writable `/tmp` is somebody else's to create first, and
+/// `create_dir_all` succeeds happily against a directory that is already theirs. hoprd logs
+/// carry on-chain addresses, peer ids and Session detail, so the destination is made `0700`
+/// and its owner is checked against the owner of `from` — a [`tempfile::TempDir`] this
+/// process created, hence this user. A destination that fails the check is left untouched
+/// and the logs are simply not copied.
+#[allow(dead_code)] // Only the three tests that spawn a Session keep their logs.
+pub fn copy_logs_on_drop(from: PathBuf, to: &'static str) -> impl Drop {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+
+    scopeguard::guard(from, move |logs| {
+        let dest = std::path::Path::new(to);
+        let owner = match std::fs::metadata(&logs) {
+            Ok(meta) => meta.uid(),
+            Err(error) => {
+                tracing::warn!(dir = %logs.display(), %error, "cannot stat the node log directory");
+                return;
+            }
+        };
+        // A fresh directory is 0700 from the moment it exists, before anything is written to it.
+        if let Err(error) = std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dest)
+        {
+            tracing::warn!(dest = to, %error, "cannot create the log destination");
+            return;
+        }
+        match std::fs::symlink_metadata(dest) {
+            Ok(meta) if meta.is_dir() && meta.uid() == owner => {
+                // `recursive` above left an existing directory's mode alone, and earlier runs of
+                // this harness created it 0755. Tighten it now that it is known to be ours, so
+                // the guarantee holds for the second run and not only the first. The copies
+                // themselves keep the source's 0644; the directory is what gates access.
+                let mode = std::fs::Permissions::from_mode(0o700);
+                if let Err(error) = std::fs::set_permissions(dest, mode) {
+                    tracing::warn!(dest = to, %error, "cannot restrict the log destination");
+                }
+            }
+            Ok(_) => {
+                tracing::warn!(
+                    dest = to,
+                    "log destination is not a directory this user owns"
+                );
+                return;
+            }
+            Err(error) => {
+                tracing::warn!(dest = to, %error, "cannot stat the log destination");
+                return;
+            }
+        }
+        let entries = match std::fs::read_dir(&logs) {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(dir = %logs.display(), %error, "cannot read the node log directory");
+                return;
+            }
+        };
+        for entry in entries {
+            match entry {
+                Ok(entry) => {
+                    let (src, dst) = (entry.path(), dest.join(entry.file_name()));
+                    if let Err(error) = std::fs::copy(&src, &dst) {
+                        tracing::warn!(src = %src.display(), dst = %dst.display(), %error, "cannot copy a node log");
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(dir = %logs.display(), %error, "cannot read a log directory entry")
+                }
+            }
+        }
+        tracing::info!(dest = to, "node logs copied");
+    })
+}
+
 /// Initialise a tracing subscriber with `RUST_LOG` (default: `"info"`).
 ///
 /// Safe to call multiple times — duplicate calls are silently ignored.

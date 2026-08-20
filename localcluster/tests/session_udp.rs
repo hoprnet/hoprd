@@ -203,19 +203,7 @@ async fn go(payload_size: usize) {
     setup_cluster(&env, &cluster, &mut cleanup).await;
 
     let log_dir = cluster.log_dir.clone();
-    let _log_guard = {
-        let ld = log_dir.clone();
-        scopeguard::guard(ld, |logs| {
-            let dest = std::path::Path::new("/tmp/udp-session-logs");
-            let _ = std::fs::create_dir_all(dest);
-            if let Ok(entries) = std::fs::read_dir(&logs) {
-                for e in entries.flatten() {
-                    let dst = dest.join(e.file_name());
-                    let _ = std::fs::copy(&e.path(), &dst);
-                }
-            }
-        })
-    };
+    let _log_guard = common::copy_logs_on_drop(log_dir.clone(), "/tmp/udp-session-logs");
 
     let echo_port = start_echo_server().await.unwrap();
     let entry = &cleanup.nodes[0];

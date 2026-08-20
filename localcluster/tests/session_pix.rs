@@ -326,15 +326,7 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
     let t0 = std::time::Instant::now();
 
     let log_dir = cluster.log_dir.clone();
-    let _log_guard = scopeguard::guard(log_dir.clone(), |logs| {
-        let dest = std::path::Path::new("/tmp/pix-session-logs");
-        let _ = std::fs::create_dir_all(dest);
-        if let Ok(entries) = std::fs::read_dir(&logs) {
-            for e in entries.flatten() {
-                let _ = std::fs::copy(e.path(), dest.join(e.file_name()));
-            }
-        }
-    });
+    let _log_guard = common::copy_logs_on_drop(log_dir.clone(), "/tmp/pix-session-logs");
 
     setup_cluster(&env, &cluster, &mut cleanup).await?;
 

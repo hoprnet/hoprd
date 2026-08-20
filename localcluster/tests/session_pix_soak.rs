@@ -861,15 +861,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     let t0 = Instant::now();
 
     let log_dir = cluster.log_dir.clone();
-    let _log_guard = scopeguard::guard(log_dir.clone(), |logs| {
-        let dest = std::path::Path::new("/tmp/pix-soak-logs");
-        let _ = std::fs::create_dir_all(dest);
-        if let Ok(entries) = std::fs::read_dir(&logs) {
-            for e in entries.flatten() {
-                let _ = std::fs::copy(e.path(), dest.join(e.file_name()));
-            }
-        }
-    });
+    let _log_guard = common::copy_logs_on_drop(log_dir.clone(), "/tmp/pix-soak-logs");
 
     // `ssa_polys`/`ssa_shares` are deliberately not named `polys`/`shares`: `pix-demo.sh`
     // greps this banner for `<name>=<number>` and takes the first match in the whole log, so
