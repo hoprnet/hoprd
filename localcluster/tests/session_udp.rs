@@ -20,7 +20,7 @@
 //! pushing the 1 MB test past the 5-minute target:
 //!
 //! ```bash
-//! cargo build --release -p hoprd
+//! nix develop -c cargo build --release -p hoprd
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -28,13 +28,13 @@
 //!
 //! ```bash
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
-//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_udp \
 //!   -E 'test(localcluster_udp_session_pingpong_32b)' --run-ignored ignored-only -j 1
-//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_udp \
 //!   -E 'test(localcluster_udp_session_pingpong_200b)' --run-ignored ignored-only -j 1
-//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_udp \
 //!   -E 'test(localcluster_udp_session_pingpong_64kb)' --run-ignored ignored-only -j 1
-//! cargo nextest run -p hoprd-localcluster --test session_udp \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_udp \
 //!   -E 'test(localcluster_udp_session_pingpong_1mb)' --run-ignored ignored-only -j 1
 //! ```
 

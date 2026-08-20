@@ -19,7 +19,7 @@
 //! significant overhead that can push the test past the default timeout:
 //!
 //! ```bash
-//! cargo build --release -p hoprd
+//! nix develop -c cargo build --release -p hoprd
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 

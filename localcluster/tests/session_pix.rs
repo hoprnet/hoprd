@@ -35,7 +35,7 @@
 //! see [`session_pix_soak`](../session_pix_soak.rs) for why, and for the other pool.
 //!
 //! ```bash
-//! cargo build --release -p hoprd --features strategy-pix-secp256k1
+//! nix develop -c cargo build --release -p hoprd --features strategy-pix-secp256k1
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -43,7 +43,7 @@
 //!
 //! ```bash
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
-//! cargo nextest run -p hoprd-localcluster --test session_pix \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_pix \
 //!   --run-ignored ignored-only -j 1
 //! ```
 

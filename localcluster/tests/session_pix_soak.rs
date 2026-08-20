@@ -51,7 +51,7 @@
 //! To leave the cluster up for observation, fund it for longer:
 //!
 //! ```bash
-//! HOPRD_PIX_SOAK_FLOAT="2000 wxHOPR" cargo nextest run -p hoprd-localcluster \
+//! HOPRD_PIX_SOAK_FLOAT="2000 wxHOPR" nix develop -c cargo nextest run -p hoprd-localcluster \
 //!   --test session_pix_soak --run-ignored ignored-only -j 1 --no-capture
 //! ```
 //!
@@ -116,7 +116,7 @@
 //! It must also name a **deposit pool**, which no default supplies:
 //!
 //! ```bash
-//! cargo build --release -p hoprd --features strategy-pix-secp256k1
+//! nix develop -c cargo build --release -p hoprd --features strategy-pix-secp256k1
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -131,9 +131,11 @@
 //! | `strategy-pix-secp256k1` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
 //! | `strategy-pix-curvy` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
 //!
-//! They are mutually exclusive and `hopr-strategy` rejects both with a `compile_error!`, so
-//! *neither* is in hoprd's `default`: Cargo unifies features across a workspace build, and a
-//! default pairing would collide with the one this crate selects. A plain
+//! They are mutually exclusive and `hoprd::strategy` rejects both with a `compile_error!` —
+//! `hopr-strategy` itself compiles both pools and lets the call site choose, since features are
+//! additive and two consumers in one graph may each want a different one. *Neither* is in
+//! hoprd's `default`: Cargo unifies features across a workspace build, and a default pairing
+//! would collide with the one this crate selects. A plain
 //! `cargo build --release -p hoprd` therefore produces a binary with no PIX at all — one that
 //! refuses to start against a config carrying a `Pix` strategy stanza, rather than silently
 //! running without the strategy it was asked for.
@@ -151,7 +153,7 @@
 //!
 //! ```bash
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
-//! cargo nextest run -p hoprd-localcluster --test session_pix_soak \
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test session_pix_soak \
 //!   --run-ignored ignored-only -j 1
 //! ```
 

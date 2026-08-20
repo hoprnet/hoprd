@@ -7,7 +7,7 @@
 //! section.
 //!
 //! ```bash
-//! cargo build --release -p hoprd
+//! nix develop -c cargo build --release -p hoprd
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -29,7 +29,7 @@
 //! failures.
 //!
 //! ```bash
-//! cargo nextest run -p hoprd-localcluster --test smoke --run-ignored ignored-only -j 1
+//! nix develop -c cargo nextest run -p hoprd-localcluster --test smoke --run-ignored ignored-only -j 1
 //! ```
 //!
 //! Each test sets up a temporary directory, resolves the chain source (an
