@@ -178,12 +178,15 @@ pub struct PixConfig {
     pub pool: PoolConfig,
 }
 
-/// Stand-in for [`PixConfig`] in a binary built without a PIX deposit pool.
+/// Stand-in for `PixConfig` in a binary built without a PIX deposit pool.
 ///
-/// Exists only so a `Pix` stanza still *parses* there, which is what lets
-/// [`StrategyKind::validate`] answer with the two features that would fix it. Without the
-/// variant, serde rejects the stanza as an unknown one and lists the variants that do exist —
-/// true, but no help at all to someone who just wants to know why PIX is missing.
+/// (Not an intra-doc link: `PixConfig` needs the `pix` feature, and this type exists only when
+/// that feature is off, so the two are never in scope together.)
+///
+/// Exists only so a `Pix` stanza still *parses* here, which is what lets [`StrategyKind`]'s
+/// `Validate` impl answer with the two features that would fix it. Without the variant, serde
+/// rejects the stanza as an unknown one and lists the variants that do exist — true, but no
+/// help at all to someone who just wants to know why PIX is missing.
 ///
 /// No `deny_unknown_fields`, so it swallows whatever the stanza contained.
 #[cfg(not(feature = "pix"))]
