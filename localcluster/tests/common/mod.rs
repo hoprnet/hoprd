@@ -42,6 +42,8 @@
 // being reported.
 #![allow(dead_code)]
 
+pub mod pix;
+
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
@@ -320,8 +322,7 @@ pub mod ports {
     /// No two blocks may come within `MAX_NUM_NODES` of each other, in either dimension.
     const _: () = {
         const fn apart(a: u16, b: u16) -> bool {
-            let gap = if a > b { a - b } else { b - a };
-            gap as usize >= hoprd_localcluster::identity::MAX_NUM_NODES
+            a.abs_diff(b) as usize >= hoprd_localcluster::identity::MAX_NUM_NODES
         }
         let mut i = 0;
         while i < ALL.len() {

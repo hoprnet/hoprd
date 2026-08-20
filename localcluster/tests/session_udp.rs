@@ -44,7 +44,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use common::{ClusterCleanup, ClusterEnv, TempCluster};
+use anyhow::Context;
+use common::{Cluster, ClusterSpec, ports};
 use hoprd_localcluster::client_helper;
 use hoprd_localcluster::identity;
 use tokio::net::UdpSocket;
@@ -53,46 +54,30 @@ use tokio::net::UdpSocket;
 const CHUNK_SIZE: usize = 900;
 const TAG_SIZE: usize = 4;
 
-const P2P_HOST: &str = "127.0.0.1";
-const P2P_PORT_BASE: u16 = 19300;
 const TIMEOUT: Duration = Duration::from_secs(300);
 const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio::test]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
-async fn localcluster_udp_session_pingpong_32b() {
+async fn localcluster_udp_session_pingpong_32b() -> anyhow::Result<()> {
     go(32).await
 }
 #[tokio::test]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
-async fn localcluster_udp_session_pingpong_200b() {
+async fn localcluster_udp_session_pingpong_200b() -> anyhow::Result<()> {
     go(200).await
 }
 
 #[tokio::test]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
-async fn localcluster_udp_session_pingpong_64kb() {
+async fn localcluster_udp_session_pingpong_64kb() -> anyhow::Result<()> {
     go(65536).await
 }
 
 #[tokio::test]
 #[ignore = "requires external chain container and hoprd binary \u{2014} run explicitly, not in CI"]
-async fn localcluster_udp_session_pingpong_1mb() {
+async fn localcluster_udp_session_pingpong_1mb() -> anyhow::Result<()> {
     go(1048576).await
-}
-
-async fn start_echo_server() -> anyhow::Result<u16> {
-    let sock = UdpSocket::bind("127.0.0.1:0").await?;
-    let port = sock.local_addr()?.port();
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 65535];
-        loop {
-            if let Ok((n, src)) = sock.recv_from(&mut buf).await {
-                let _ = sock.send_to(&buf[..n], src).await;
-            }
-        }
-    });
-    Ok(port)
 }
 
 fn gen_payload(size: usize) -> Vec<u8> {
@@ -113,101 +98,40 @@ fn tag_chunk_end(idx: u32, data: &[u8]) -> Vec<u8> {
     v
 }
 
-async fn setup_cluster(env: &ClusterEnv, cluster: &TempCluster, cleanup: &mut ClusterCleanup) {
-    let t0 = std::time::Instant::now();
-    let blk = common::start_chain(env, &cluster.log_dir, cleanup)
-        .await
-        .unwrap();
-    common::wait_for_blokli_ready(&blk, WAIT_TIMEOUT)
-        .await
-        .unwrap();
-    tracing::info!("chain ready after {:?}", t0.elapsed());
-
-    identity::generate(&identity::GenerationConfig {
-        blokli_url: blk,
-        num_nodes: 3,
-        config_home: cluster.data_dir.clone(),
-        random_identities: true,
-        p2p_host: P2P_HOST.to_string(),
-        p2p_port_base: P2P_PORT_BASE,
-        strategies: identity::StrategySet {
-            auto_redeeming: false,
-            channel_lifecycle: false,
-        },
-        strategy_execution_interval: Some(Duration::from_secs(600)),
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-    tracing::info!("identities generated after {:?}", t0.elapsed());
-
-    cleanup.nodes = client_helper::start_nodes(&client_helper::NodeStartConfig {
-        num_nodes: 3,
-        hoprd_bin: &env.hoprd_bin,
-        data_dir: &cluster.data_dir,
-        log_dir: &cluster.log_dir,
-        api_host: "127.0.0.1",
-        api_port_base: 13300,
-        p2p_host: P2P_HOST,
-        p2p_port_base: P2P_PORT_BASE,
-        identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
-        api_token: None,
-    })
-    .await
-    .unwrap();
-    tracing::info!("nodes started after {:?}", t0.elapsed());
-
-    futures::future::try_join_all(
-        cleanup
-            .nodes
-            .iter()
-            .map(|n| n.api.wait_started(WAIT_TIMEOUT)),
-    )
-    .await
-    .unwrap();
-    for n in &mut cleanup.nodes {
-        n.address = Some(n.api.addresses().await.unwrap());
-    }
-    futures::future::try_join_all(cleanup.nodes.iter().map(|n| n.api.wait_ready(WAIT_TIMEOUT)))
-        .await
-        .unwrap();
-    tracing::info!("nodes ready after {:?}", t0.elapsed());
-
-    client_helper::open_full_mesh_channels(&cleanup.nodes, "10 wxHOPR", TIMEOUT)
-        .await
-        .unwrap();
-    client_helper::wait_full_mesh_channels(&cleanup.nodes, TIMEOUT)
-        .await
-        .unwrap();
-    client_helper::wait_full_mesh_reachable(&cleanup.nodes, TIMEOUT)
-        .await
-        .unwrap();
-    tracing::info!("channels ready after {:?}", t0.elapsed());
-}
-
 /// Open a cluster, start a UDP session, send `payload_size` bytes through
 /// the HOPR network in 900 B datagrams, and verify the echo response.
 ///
 /// The session uses NoDelay + Segmentation capabilities and a boosted SURB
 /// balancer to sustain ~4 300 datagrams/sec.
-async fn go(payload_size: usize) {
+async fn go(payload_size: usize) -> anyhow::Result<()> {
     common::init_tracing();
-    let env = ClusterEnv::from_env().unwrap();
-    let cluster = TempCluster::new().unwrap();
-    let mut cleanup = ClusterCleanup {
-        chain: None,
-        nodes: vec![],
-    };
     let t0 = std::time::Instant::now();
 
-    setup_cluster(&env, &cluster, &mut cleanup).await;
+    let cluster = Cluster::start(ClusterSpec {
+        // Both strategies off: nothing here needs channels opened or tickets redeemed on a
+        // timer, and a strategy waking mid-transfer only adds noise to the packet rate.
+        strategies: identity::StrategySet {
+            auto_redeeming: false,
+            channel_lifecycle: false,
+        },
+        strategy_execution_interval: Some(Duration::from_secs(600)),
+        logs_to: Some("/tmp/udp-session-logs"),
+        ..ClusterSpec::new(ports::SESSION_UDP)
+    })
+    .await?;
+    cluster.wait_ready(WAIT_TIMEOUT).await?;
+    cluster.open_channels("10 wxHOPR", TIMEOUT).await?;
+    cluster.wait_channels(TIMEOUT).await?;
+    cluster.wait_reachable(TIMEOUT).await?;
+    tracing::info!("channels ready after {:?}", t0.elapsed());
 
-    let log_dir = cluster.log_dir.clone();
-    let _log_guard = common::NodeLogs::new(log_dir.clone(), "/tmp/udp-session-logs");
-
-    let echo_port = start_echo_server().await.unwrap();
-    let entry = &cleanup.nodes[0];
-    let exit = cleanup.nodes[2].address.as_ref().unwrap();
+    let echo_port = common::echo_server().await?;
+    let entry = cluster.node(0);
+    let exit = cluster
+        .node(2)
+        .address
+        .as_deref()
+        .context("exit node address unresolved")?;
     let target = format!("127.0.0.1:{echo_port}");
 
     tracing::info!("entry=node{} exit={exit} target={target}", entry.id);
@@ -333,4 +257,5 @@ async fn go(payload_size: usize) {
     );
     entry.api.close_client(&ip, port).await.unwrap();
     tracing::info!("DONE {payload_size}B in {:?}", t0.elapsed());
+    Ok(())
 }
