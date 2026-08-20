@@ -310,8 +310,13 @@ impl HoprdApiClient {
 
     /// Return the channel status string for the outgoing channel to `destination`,
     /// or `None` if no such channel exists.
+    ///
+    /// `includingClosed` is on: without it the server filters `Closed` out of the listing
+    /// entirely, so a channel that finished closing is indistinguishable from one that was never
+    /// opened. A closure poll would then read `None` and report "no such channel" for the exact
+    /// outcome it was waiting for.
     pub async fn outgoing_channel_status(&self, destination: &str) -> Result<Option<String>> {
-        let resp = self.inner.list_channels(None, None).await?;
+        let resp = self.inner.list_channels(None, Some(true)).await?;
         let dest_lower = destination.to_lowercase();
         Ok(resp
             .into_inner()

@@ -275,7 +275,7 @@ async fn go(payload_size: usize) {
     let send_sock = sock.clone();
     let send_chunks = chunks.clone();
     let send_rem = n_remaining.clone();
-    let _send_h = tokio::spawn(async move {
+    let send_h = tokio::spawn(async move {
         while send_rem.load(Ordering::Acquire) > 0 {
             for chk in &send_chunks {
                 if send_rem.load(Ordering::Acquire) == 0 {
@@ -293,7 +293,7 @@ async fn go(payload_size: usize) {
     let recv_done = done.clone();
     let recv_rem = n_remaining.clone();
     let recv_chunks = chunks.clone();
-    let recv_h = tokio::spawn(async move {
+    let mut recv_h = tokio::spawn(async move {
         let mut buf = vec![0u8; 65536];
         while recv_rem.load(Ordering::Acquire) > 0 {
             let r = tokio::time::timeout(Duration::from_secs(60), recv_sock.recv(&mut buf)).await;
@@ -307,9 +307,15 @@ async fn go(payload_size: usize) {
             if tag >= nchunks {
                 continue;
             }
-            // Data portion (before tag) must match what was sent
-            if buf[..n - TAG_SIZE] != recv_chunks[tag][..n - TAG_SIZE] {
-                panic!("data mismatch at chunk {tag}");
+            // The whole datagram, tag included, must match what was sent. Comparing only
+            // `..n - TAG_SIZE` slices both sides to the *received* length, so a truncated
+            // response carrying the original trailing tag compares equal against its own prefix
+            // and is then counted as a complete chunk.
+            if buf[..n] != recv_chunks[tag][..] {
+                panic!(
+                    "data mismatch at chunk {tag}: received {n} B, expected {} B",
+                    recv_chunks[tag].len()
+                );
             }
             let mut g = recv_done.lock().unwrap();
             if !g[tag] {
@@ -319,7 +325,21 @@ async fn go(payload_size: usize) {
         }
     });
 
-    recv_h.await.unwrap();
+    // Bound the transfer. The receive loop treats its own 60 s read timeout as "try again", so
+    // if responses stop for good `recv_rem` never reaches zero — and because the sender shares
+    // that counter it keeps re-sending too, wedging the whole test rather than failing it. There
+    // is no outer deadline anywhere else: `TIMEOUT` is only applied during cluster bring-up.
+    let receive_result = tokio::time::timeout(TIMEOUT, &mut recv_h).await;
+    if receive_result.is_err() {
+        recv_h.abort();
+    }
+    // Stop the sender before closing the session, so nothing is still writing into a Session the
+    // next line is tearing down.
+    send_h.abort();
+    let _ = send_h.await;
+    receive_result
+        .expect("UDP session receive did not complete before TIMEOUT")
+        .expect("UDP session receive task failed");
 
     tracing::info!(
         "all {payload_size}B ({nchunks} chunks) done in {:?}",

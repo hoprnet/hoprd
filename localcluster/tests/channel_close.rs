@@ -65,11 +65,15 @@ async fn wait_full_mesh_status(
                 if let (Some(src_addr), Some(dst_addr)) = (&src.address, &dst.address)
                     && src_addr != dst_addr
                 {
-                    let status = src
-                        .api
-                        .outgoing_channel_status(dst_addr)
-                        .await?
-                        .unwrap_or_else(|| "<none>".to_string());
+                    // A failed read is a transient subscription drop, not a verdict. This is the
+                    // same flakiness the module doc above predicts and that `close_and_poll`
+                    // already tolerates on the write side; propagating it here would end the
+                    // whole test on one dropped GET, two seconds before the retry that would
+                    // have succeeded. Record it as a mismatch and let the timeout bound it.
+                    let status = match src.api.outgoing_channel_status(dst_addr).await {
+                        Ok(status) => status.unwrap_or_else(|| "<none>".to_string()),
+                        Err(error) => format!("<unreadable: {error}>"),
+                    };
                     if !acceptable.iter().any(|a| status == *a) {
                         mismatched.push((src.id, dst.id, status));
                     }
@@ -204,9 +208,13 @@ async fn run() -> anyhow::Result<()> {
 
     // ── Phase 2: Initiate closure ──────────────────────────────────────
 
+    // `Closed` is accepted alongside `PendingToClose`: what this phase asserts is that closure
+    // was initiated and observed, and a channel that got all the way to `Closed` between two
+    // polls satisfies that just as well. Excluding it would turn a faster-than-expected chain
+    // into a timeout.
     tracing::info!("initiating channel closure…");
-    close_and_poll(&cleanup.nodes, &["PendingToClose"], TIMEOUT).await?;
-    tracing::info!("all channels transitioned to PendingToClose");
+    close_and_poll(&cleanup.nodes, &["PendingToClose", "Closed"], TIMEOUT).await?;
+    tracing::info!("all channels transitioned to PendingToClose or Closed");
 
     Ok(())
 }
