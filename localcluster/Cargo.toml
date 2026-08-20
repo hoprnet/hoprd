@@ -58,7 +58,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
-humantime-serde = { workspace = true }
 scopeguard = "1.2.0"
 tempfile = { workspace = true }
 validator = { workspace = true }

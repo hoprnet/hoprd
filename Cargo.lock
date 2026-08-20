@@ -5852,7 +5852,6 @@ dependencies = [
  "hoprd",
  "hoprd-api",
  "hoprd-api-client",
- "humantime-serde",
  "nix 0.31.3",
  "rand 0.10.2",
  "reqwest",

@@ -15,12 +15,6 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# Mirrors hoprnet's declaration for the same reason as the crates.io block below: a divergence
-# would put two copies of `hopr-utilities` in the graph. `rest-api` declares it `optional` and no
-# feature enables it, and nothing anywhere names `hopr_utils::` — so it is currently inert and both
-# ignore lists say so — but it is a real `workspace = true` dependency, unlike `hopr-api`, so it
-# would start binding the moment anything switched it on.
-hopr-utils = { package = "hopr-utilities", version = "0.9.0" }
 # No PIX curve feature here on purpose. The curve is chosen by hoprd's `strategy-pix-*` pairing,
 # which bundles it with the matching deposit pool; pinning it at the workspace level would force
 # one curve on every build and make the other unreachable — which is exactly the state this
