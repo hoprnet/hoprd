@@ -27,8 +27,8 @@ mod common;
 
 use std::time::Duration;
 
-use common::{ClusterCleanup, ClusterEnv, TempCluster};
-use hoprd_localcluster::{client_helper, identity};
+use common::{Cluster, ClusterSpec, ports};
+use hoprd_localcluster::client_helper;
 
 /// Amount of wxHOPR to fund each channel with.
 const CHANNEL_AMOUNT: &str = "10 wxHOPR";
@@ -40,9 +40,6 @@ const TIMEOUT: Duration = Duration::from_secs(180);
 /// on-chain transaction went through.  We give the call a generous window
 /// and fall back to polling for the status change.
 const CLOSE_TX_TIMEOUT: Duration = Duration::from_secs(30);
-
-const P2P_HOST: &str = "127.0.0.1";
-const P2P_PORT_BASE: u16 = 19200;
 
 #[tokio::test]
 #[ignore = "requires external chain container and hoprd binary — run explicitly, not in CI"]
@@ -139,69 +136,20 @@ async fn close_and_poll(
 async fn run() -> anyhow::Result<()> {
     common::init_tracing();
 
-    let env = ClusterEnv::from_env()?;
-    let cluster = TempCluster::new()?;
-
-    let mut cleanup = ClusterCleanup {
-        chain: None,
-        nodes: vec![],
-    };
-
-    let blokli_url = common::start_chain(&env, &cluster.log_dir, &mut cleanup).await?;
-
-    // Wait for chain to be ready.
-    common::wait_for_blokli_ready(&blokli_url, env.wait_timeout).await?;
-
-    let num_nodes = 3;
-    let gen_cfg = identity::GenerationConfig {
-        blokli_url: blokli_url.clone(),
-        num_nodes,
-        config_home: cluster.data_dir.clone(),
-        random_identities: true,
-        p2p_host: P2P_HOST.to_string(),
-        p2p_port_base: P2P_PORT_BASE,
-        strategies: identity::StrategySet {
-            auto_redeeming: true,
-            channel_lifecycle: false,
-        },
-        ..Default::default()
-    };
-    identity::generate(&gen_cfg).await?;
-
-    // Spawn hoprd processes.
-    let start_cfg = client_helper::NodeStartConfig {
-        num_nodes,
-        hoprd_bin: &env.hoprd_bin,
-        data_dir: &cluster.data_dir,
-        log_dir: &cluster.log_dir,
-        api_host: "127.0.0.1",
-        api_port_base: 13200,
-        p2p_host: P2P_HOST,
-        p2p_port_base: P2P_PORT_BASE,
-        identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
-        api_token: None,
-    };
-    cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
-
-    // Wait for all nodes to be started.
-    futures::future::try_join_all(
-        cleanup
-            .nodes
-            .iter()
-            .map(|n| n.api.wait_started(env.wait_timeout)),
-    )
-    .await?;
-
-    // Fetch on-chain addresses so we can identify peers.
-    for node in &mut cleanup.nodes {
-        node.address = Some(node.api.addresses().await?);
-    }
+    // Bring-up defaults suffice; this suite opens its channels itself rather than leaving them
+    // to a strategy.
+    let cluster = Cluster::start(ClusterSpec::new(ports::CHANNEL_CLOSE)).await?;
 
     // ── Phase 1: Open full mesh ────────────────────────────────────────
 
+    // Neither `wait_ready` nor `wait_reachable` is called, deliberately. Opening a channel is
+    // an on-chain action that needs neither /readyz nor a converged peer graph, and
+    // `open_channels` re-checks and retries every 5 s until TIMEOUT, so a node still catching
+    // up is absorbed rather than raced. `wait_full_mesh_status` below is the real precondition
+    // check for phase 2, and it is status-generic where the shared waiter is not.
     tracing::info!("opening full-mesh channels…");
-    client_helper::open_full_mesh_channels(&cleanup.nodes, CHANNEL_AMOUNT, TIMEOUT).await?;
-    wait_full_mesh_status(&cleanup.nodes, &["Open"], TIMEOUT).await?;
+    cluster.open_channels(CHANNEL_AMOUNT, TIMEOUT).await?;
+    wait_full_mesh_status(cluster.nodes(), &["Open"], TIMEOUT).await?;
     tracing::info!("all channels are Open");
 
     // ── Phase 2: Initiate closure ──────────────────────────────────────
@@ -211,7 +159,7 @@ async fn run() -> anyhow::Result<()> {
     // polls satisfies that just as well. Excluding it would turn a faster-than-expected chain
     // into a timeout.
     tracing::info!("initiating channel closure…");
-    close_and_poll(&cleanup.nodes, &["PendingToClose", "Closed"], TIMEOUT).await?;
+    close_and_poll(cluster.nodes(), &["PendingToClose", "Closed"], TIMEOUT).await?;
     tracing::info!("all channels transitioned to PendingToClose or Closed");
 
     Ok(())
