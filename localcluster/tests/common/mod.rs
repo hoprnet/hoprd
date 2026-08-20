@@ -36,6 +36,12 @@
 //! existing Blokli URL or a Docker container launched from `HOPRD_CHAIN_IMAGE`),
 //! and tracks `Cleanup` to kill processes on drop.
 
+// Six integration binaries compile this module separately and each uses a different subset of
+// it, so anything not used by all six reads as dead code in the other five. One allow for the
+// module rather than an allow per item; the cost is that a helper nobody uses at all stops
+// being reported.
+#![allow(dead_code)]
+
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
@@ -48,7 +54,6 @@ pub struct ClusterEnv {
     pub chain_url: Option<String>,
     pub chain_image: Option<String>,
     pub container_runtime: String,
-    #[allow(dead_code)]
     pub wait_timeout: Duration,
 }
 
@@ -154,17 +159,22 @@ pub async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
     }
 }
 
-/// Copy every node log out of `from` and into `to` when the returned guard drops, so the
-/// logs outlive the [`TempCluster`] directory that is deleted on the way out.
+/// Copies every node log out of `from` and into `to` when it drops, so the logs outlive the
+/// [`TempCluster`] directory that is deleted on the way out.
+///
+/// A named struct rather than a closure guard so a [`Cluster`] can own one, which is what
+/// makes it impossible to arm the copy *after* bring-up — the ordering that used to discard
+/// the logs of exactly the failure the copy exists for. The chain container writes into the
+/// same directory, so its log is preserved too.
 ///
 /// Failures are reported rather than swallowed. This runs precisely when a test has failed
 /// and someone is about to go looking, and "the nodes logged nothing" and "the harness could
 /// not copy the logs" are indistinguishable from the destination directory. It cannot fail
-/// the test — the guard may be running during an unwind, where a panic would abort the
-/// process — so it warns and carries on.
+/// the test — it may be dropping during an unwind, where a panic would abort the process —
+/// so it warns and carries on.
 ///
 /// `to` is a fixed per-suite path so the logs are findable without knowing where the temp
-/// directory was; the guard logs it on the way out. Nothing is cleared first, so same-named
+/// directory was; the drop logs it on the way out. Nothing is cleared first, so same-named
 /// files are overwritten but a file left by a longer earlier run of the same suite survives
 /// alongside this one's.
 ///
@@ -174,13 +184,24 @@ pub async fn wait_for_blokli_ready(url: &str, timeout: Duration) -> Result<()> {
 /// and its owner is checked against the owner of `from` — a [`tempfile::TempDir`] this
 /// process created, hence this user. A destination that fails the check is left untouched
 /// and the logs are simply not copied.
-#[allow(dead_code)] // Only the three tests that spawn a Session keep their logs.
-pub fn copy_logs_on_drop(from: PathBuf, to: &'static str) -> impl Drop {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+pub struct NodeLogs {
+    from: PathBuf,
+    to: &'static str,
+}
 
-    scopeguard::guard(from, move |logs| {
+impl NodeLogs {
+    pub fn new(from: PathBuf, to: &'static str) -> Self {
+        Self { from, to }
+    }
+}
+
+impl Drop for NodeLogs {
+    fn drop(&mut self) {
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+
+        let (logs, to) = (&self.from, self.to);
         let dest = std::path::Path::new(to);
-        let owner = match std::fs::metadata(&logs) {
+        let owner = match std::fs::metadata(logs) {
             Ok(meta) => meta.uid(),
             Err(error) => {
                 tracing::warn!(dir = %logs.display(), %error, "cannot stat the node log directory");
@@ -219,7 +240,7 @@ pub fn copy_logs_on_drop(from: PathBuf, to: &'static str) -> impl Drop {
                 return;
             }
         }
-        let entries = match std::fs::read_dir(&logs) {
+        let entries = match std::fs::read_dir(logs) {
             Ok(entries) => entries,
             Err(error) => {
                 tracing::warn!(dir = %logs.display(), %error, "cannot read the node log directory");
@@ -240,7 +261,7 @@ pub fn copy_logs_on_drop(from: PathBuf, to: &'static str) -> impl Drop {
             }
         }
         tracing::info!(dest = to, "node logs copied");
-    })
+    }
 }
 
 /// Initialise a tracing subscriber with `RUST_LOG` (default: `"info"`).

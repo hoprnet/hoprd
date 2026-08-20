@@ -58,6 +58,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
-scopeguard = "1.2.0"
 tempfile = { workspace = true }
 validator = { workspace = true }

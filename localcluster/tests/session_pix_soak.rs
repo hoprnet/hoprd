@@ -861,7 +861,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     let t0 = Instant::now();
 
     let log_dir = cluster.log_dir.clone();
-    let _log_guard = common::copy_logs_on_drop(log_dir.clone(), "/tmp/pix-soak-logs");
+    let _log_guard = common::NodeLogs::new(log_dir.clone(), "/tmp/pix-soak-logs");
 
     // `ssa_polys`/`ssa_shares` are deliberately not named `polys`/`shares`: `pix-demo.sh`
     // greps this banner for `<name>=<number>` and takes the first match in the whole log, so
@@ -908,8 +908,8 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         std::env::var("HOPRD_OTLP_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:4318".to_string())
     );
-    // Interrupting a long run kills the process without unwinding, so the scopeguard that
-    // copies these out never runs — say where they are while the run is still live.
+    // Interrupting a long run kills the process without unwinding, so the guard that copies
+    // these out never drops — say where they are while the run is still live.
     tracing::info!("node logs: {}", log_dir.display());
 
     // Snapshot after channel funding, so the stakes are already out of the Safes and the

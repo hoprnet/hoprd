@@ -203,7 +203,7 @@ async fn go(payload_size: usize) {
     setup_cluster(&env, &cluster, &mut cleanup).await;
 
     let log_dir = cluster.log_dir.clone();
-    let _log_guard = common::copy_logs_on_drop(log_dir.clone(), "/tmp/udp-session-logs");
+    let _log_guard = common::NodeLogs::new(log_dir.clone(), "/tmp/udp-session-logs");
 
     let echo_port = start_echo_server().await.unwrap();
     let entry = &cleanup.nodes[0];
