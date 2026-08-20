@@ -11,6 +11,33 @@ use hopr_lib::api::{
     },
     tickets::TicketManagement,
 };
+// The two invariants the `strategy-pix-*` feature set relies on and Cargo cannot state. Both were
+// documented in prose in `Cargo.toml` and enforced by nothing; each produced a wrong binary or an
+// unrelated error cascade rather than a message naming the rule it broke.
+//
+// Features are additive, so a third crate in the graph turning on the other pairing is enough to
+// reach the first case — and it does not fail, it silently picks secp256k1 by the `cfg` precedence
+// every block below is written with. The pool decides which address type deposits settle to, so
+// the wrong one deposits into an address the Exit can never sweep.
+#[cfg(all(feature = "strategy-pix-curvy", feature = "strategy-pix-secp256k1"))]
+compile_error!(
+    "the `strategy-pix-curvy` and `strategy-pix-secp256k1` features are mutually exclusive: they \
+     select conflicting `hopr-lib/pix-*` features and `HoprPixSpec` has one deposit-address type. \
+     Enable exactly one."
+);
+// `pix` on its own selects no pool, so `hopr_strategy::pix` is not enabled and neither `POOL` nor
+// `pool_cfg` below exists. Without this the build fails with a handful of unresolved names that
+// say nothing about the feature that is missing.
+#[cfg(all(
+    feature = "pix",
+    not(any(feature = "strategy-pix-curvy", feature = "strategy-pix-secp256k1"))
+))]
+compile_error!(
+    "the `pix` feature selects no deposit pool on its own and is not meant to be enabled \
+     directly. Enable `strategy-pix-curvy` (production) or `strategy-pix-secp256k1` (tests and \
+     demo), each of which turns on `pix` as well."
+);
+
 // `hopr_strategy::pix` needs one of the `strategy-pix-*` pairings, which is now an independent
 // choice from `runtime-tokio` — so the imports and the build block gate on `pix` below rather
 // than on the runtime.
@@ -290,7 +317,6 @@ pub fn build_strategies<N>(
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
-        + PacketTransport
         + HasChainApi<
             ChainApi: ChainReadAccountOperations
                           + ChainReadChannelOperations
@@ -411,16 +437,20 @@ where
         let built = PixStrategy::new(pix_cfg)
             .build_curvy::<_, SpecDepositAddress>(Arc::clone(&node), pool_cfg);
 
-        match built {
-            Ok(pix) => {
-                multi = Box::new(MultiStrategy::new(vec![multi, pix]));
-                #[cfg(all(feature = "telemetry", not(test)))]
-                METRIC_ENABLED_STRATEGIES.set(&["pix"], 1_f64);
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "failed to build PixStrategy");
-            }
-        }
+        // Fatal, unlike the `pix_env_or` values above. `HOPRD_ENABLE_PIX=1` is not a tuning knob:
+        // it asks for the strategy whose whole purpose is making an Exit paid for what it
+        // delivers. Starting without it produces a node that passes every health check, binds its
+        // API, accepts Sessions and forwards packets with no deposit path — indistinguishable from
+        // a working one until someone notices the Safe balance has not moved.
+        let pix = built.map_err(|e| {
+            anyhow::anyhow!(
+                "HOPRD_ENABLE_PIX is set but the PIX strategy could not be built: {e}. Starting \
+                 without it would relay traffic with no deposit path."
+            )
+        })?;
+        multi = Box::new(MultiStrategy::new(vec![multi, pix]));
+        #[cfg(all(feature = "telemetry", not(test)))]
+        METRIC_ENABLED_STRATEGIES.set(&["pix"], 1_f64);
     }
 
     // Without a `strategy-pix-*` pairing there is no pool to build, so the block above is
@@ -447,7 +477,6 @@ fn build_strategies_inner<N>(
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
-        + PacketTransport
         + HasChainApi<
             ChainApi: ChainReadAccountOperations
                           + ChainReadChannelOperations
@@ -474,10 +503,15 @@ where
     // The `?` propagates that out through `build_strategies` to `hoprd::run`, so a strategy stanza
     // that cannot be honoured stops the node from starting rather than being silently dropped.
     //
-    // The PIX block in `build_strategies` deliberately does *not* do this. Its configuration comes
-    // from environment variables rather than the YAML strategy list, and the surrounding
-    // `pix_env_or` policy is already log-and-default; aborting startup over one malformed variable
-    // would be a different contract from the one that block's other values have.
+    // The PIX block in `build_strategies` propagates for the same reason. Its *values* come from
+    // environment variables under the `pix_env_or` log-and-default policy, but that policy has
+    // already substituted a default by the time the builder runs — so an `Err` from the builder is
+    // never "one malformed variable", it is the strategy failing to exist. There is nothing left to
+    // fall back to.
+    //
+    // The one place that still logs and continues is the `#[cfg(not(feature = "pix"))]` arm there:
+    // a binary built without a pool running without PIX is a documented outcome of the feature
+    // split, not a failure to honour a request this binary could have honoured.
     for strategy in cfg.strategies.iter() {
         match strategy {
             #[cfg(feature = "runtime-tokio")]
