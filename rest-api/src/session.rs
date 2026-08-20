@@ -285,8 +285,22 @@ pub(crate) struct SessionClientRequest {
     /// caller may pick: shares are produced under one curve and announcing another would
     /// describe a generator this node does not have. It is supplied by
     /// `PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.
+    //
+    // `min_items`/`max_items` publish the arity a positional triple has, which is otherwise
+    // invisible to every consumer of the spec — the generated Rust client would type this as
+    // an unbounded `Vec`, and a wrong-length array dies in axum's extractor as an untyped 422
+    // rather than reaching the 400 that names the offending dimension. `usize` rather than the
+    // exact widths so the schema carries `minimum: 0` and the generated client is unsigned;
+    // per-position widths would need utoipa's `non_strict_integers`, which would reformat every
+    // integer in the API. A `//` comment, not `///`: this is why the attribute reads as it does,
+    // and it would otherwise be copied into the generated client's public documentation.
     #[serde(default)]
-    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
+    #[schema(
+        value_type = Option<Vec<usize>>,
+        min_items = 3,
+        max_items = 3,
+        example = json!([8, 4, 2])
+    )]
     pub pix_ssa_quota: Option<(u16, u8, u8)>,
     /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
     ///
@@ -437,8 +451,17 @@ pub(crate) struct SessionClientExplicitPathRequest {
     ///
     /// Same meaning and same constraints as on
     /// [`SessionClientRequest`](SessionClientRequest::pix_ssa_quota).
+    //
+    // Including the published arity. This struct is absent from the client's spec but present
+    // in the one served at `/scalar` when explicit-path sessions are enabled, so leaving it
+    // unconstrained would document two different schemas for the same field.
     #[serde(default)]
-    #[schema(value_type = Option<Vec<u16>>, example = json!([8, 4, 2]))]
+    #[schema(
+        value_type = Option<Vec<usize>>,
+        min_items = 3,
+        max_items = 3,
+        example = json!([8, 4, 2])
+    )]
     pub pix_ssa_quota: Option<(u16, u8, u8)>,
 }
 
@@ -1500,5 +1523,33 @@ mod tests {
         let deserialized: SessionClientRequest =
             serde_json::from_value(serialized).expect("deserialize");
         assert_eq!(deserialized.pix_ssa_quota, Some((8, 4, 2)));
+    }
+
+    /// The published schema has to say a quota is exactly three non-negative integers.
+    ///
+    /// Asserted on the schema rather than on the generated client, which is where the effect
+    /// is visible (`Option<[u64; 3]>` instead of `Option<Vec<i32>>`): a test over generated
+    /// Rust would additionally fail on every progenitor or typify bump, and nothing
+    /// regenerates that file in CI anyway. Both request types are checked here because the
+    /// explicit-path one never reaches `ApiDoc::openapi()` — only the spec served when
+    /// `enable_explicit_path_sessions` is on — so a spec-level test could not see it.
+    #[test]
+    fn pix_ssa_quota_schema_is_a_fixed_length_triple() {
+        for (name, schema) in [
+            (
+                "SessionClientRequest",
+                <SessionClientRequest as utoipa::PartialSchema>::schema(),
+            ),
+            (
+                "SessionClientExplicitPathRequest",
+                <SessionClientExplicitPathRequest as utoipa::PartialSchema>::schema(),
+            ),
+        ] {
+            let value = serde_json::to_value(schema).expect("schema serializes");
+            let quota = &value["properties"]["pixSsaQuota"];
+            assert_eq!(quota["minItems"], 3, "{name} minItems");
+            assert_eq!(quota["maxItems"], 3, "{name} maxItems");
+            assert_eq!(quota["items"]["minimum"], 0, "{name} items.minimum");
+        }
     }
 }
