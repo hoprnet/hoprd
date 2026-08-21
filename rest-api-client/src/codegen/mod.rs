@@ -1800,6 +1800,78 @@ the absent case as `0.0` would be indistinguishable from a peer measured at zero
     pub struct PingResponse {
         pub latency: i64,
     }
+    /**The three SSA dimensions a PIX Session is priced against.
+
+Named fields rather than the positional triple this used to be, for the reason
+[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable
+to any type checker and are *not* interchangeable to the protocol, while their product —
+which is all the Exit compares — is identical either way. A transposed pair therefore
+announces valid-looking dimensions against a correct quota. Names are what close that, and
+they close it in every consumer of the spec, not just the Rust ones.
+
+The field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the
+packed protocol word.*/
+    ///
+    /// <details><summary>JSON schema</summary>
+    ///
+    /// ```json
+    ///{
+    ///  "description": "The three SSA dimensions a PIX Session is priced against.\n\nNamed fields rather than the positional triple this used to be, for the reason\n[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable\nto any type checker and are *not* interchangeable to the protocol, while their product —\nwhich is all the Exit compares — is identical either way. A transposed pair therefore\nannounces valid-looking dimensions against a correct quota. Names are what close that, and\nthey close it in every consumer of the spec, not just the Rust ones.\n\nThe field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the\npacked protocol word.",
+    ///  "examples": [
+    ///    {
+    ///      "polysPerSsa": 8,
+    ///      "sharesPerPoly": 4,
+    ///      "surplusShares": 2
+    ///    }
+    ///  ],
+    ///  "type": "object",
+    ///  "required": [
+    ///    "polysPerSsa",
+    ///    "sharesPerPoly",
+    ///    "surplusShares"
+    ///  ],
+    ///  "properties": {
+    ///    "polysPerSsa": {
+    ///      "description": "Polynomials per SSA.",
+    ///      "type": "integer",
+    ///      "maximum": 65535.0,
+    ///      "minimum": 0.0
+    ///    },
+    ///    "sharesPerPoly": {
+    ///      "description": "Shares per polynomial, i.e. the reconstruction threshold.",
+    ///      "type": "integer",
+    ///      "maximum": 255.0,
+    ///      "minimum": 0.0
+    ///    },
+    ///    "surplusShares": {
+    ///      "description": "Shares beyond the threshold.\n\nPriced like the other two: the per-SSA quota is\n`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that\ndisagreed with the Exit would size every deposit against a quota the node never\nagreed to.",
+    ///      "type": "integer",
+    ///      "maximum": 255.0,
+    ///      "minimum": 0.0
+    ///    }
+    ///  },
+    ///  "additionalProperties": false
+    ///}
+    /// ```
+    /// </details>
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[serde(deny_unknown_fields)]
+    pub struct PixSsaQuota {
+        ///Polynomials per SSA.
+        #[serde(rename = "polysPerSsa")]
+        pub polys_per_ssa: u16,
+        ///Shares per polynomial, i.e. the reconstruction threshold.
+        #[serde(rename = "sharesPerPoly")]
+        pub shares_per_poly: u8,
+        /**Shares beyond the threshold.
+
+Priced like the other two: the per-SSA quota is
+`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that
+disagreed with the Exit would size every deposit against a quota the node never
+agreed to.*/
+        #[serde(rename = "surplusShares")]
+        pub surplus_shares: u8,
+    }
     ///Request body for ticket redemption with optional fields.
     ///
     /// <details><summary>JSON schema</summary>
@@ -2076,24 +2148,7 @@ If omitted, tickets in all channels are redeemed.*/
     ///      ]
     ///    },
     ///    "pixSsaQuota": {
-    ///      "description": "PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.\n\nWhen set, the Session will use the PIX protocol with the given parameters. When\nnot set, PIX is not advertised to the Exit node.\n\nAll three have to match this node's own installed share generator, or the Session\nis refused at setup. The surplus is included because it is priced: the per-SSA\nquota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed\nwould size every deposit against a quota the node never agreed to.\n\nThe wire form is a positional triple, so the fields are transposable here; they\nstop being so at [`PixParams`], which this is mapped onto in\n[`into_protocol_session_config`](Self::into_protocol_session_config).\n\n[`PixParams`] is a quadruple — the fourth element is the curve suite, and it is\ndeliberately not here. The suite is a property of this build, fixed by the\n`pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API\ncaller may pick: shares are produced under one curve and announcing another would\ndescribe a generator this node does not have. It is supplied by\n`PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.",
-    ///      "examples": [
-    ///        [
-    ///          8,
-    ///          4,
-    ///          2
-    ///        ]
-    ///      ],
-    ///      "type": [
-    ///        "array",
-    ///        "null"
-    ///      ],
-    ///      "items": {
-    ///        "type": "integer",
-    ///        "minimum": 0.0
-    ///      },
-    ///      "maxItems": 3,
-    ///      "minItems": 3
+    ///      "$ref": "#/components/schemas/PixSsaQuota"
     ///    },
     ///    "responseBuffer": {
     ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
@@ -2175,32 +2230,12 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
-        /**PIX SSA parameters `[polys_per_ssa, shares_per_poly, surplus_shares]`.
-
-When set, the Session will use the PIX protocol with the given parameters. When
-not set, PIX is not advertised to the Exit node.
-
-All three have to match this node's own installed share generator, or the Session
-is refused at setup. The surplus is included because it is priced: the per-SSA
-quota is `polys × (shares + surplus) × PAYLOAD_SIZE`, so a surplus that disagreed
-would size every deposit against a quota the node never agreed to.
-
-The wire form is a positional triple, so the fields are transposable here; they
-stop being so at [`PixParams`], which this is mapped onto in
-[`into_protocol_session_config`](Self::into_protocol_session_config).
-
-[`PixParams`] is a quadruple — the fourth element is the curve suite, and it is
-deliberately not here. The suite is a property of this build, fixed by the
-`pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API
-caller may pick: shares are produced under one curve and announcing another would
-describe a generator this node does not have. It is supplied by
-`PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.*/
         #[serde(
             rename = "pixSsaQuota",
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub pix_ssa_quota: ::std::option::Option<[u64; 3usize]>,
+        pub pix_ssa_quota: ::std::option::Option<PixSsaQuota>,
         /**The amount of response data the Session counterparty can deliver back to us,
 without us sending any SURBs to them.
 
