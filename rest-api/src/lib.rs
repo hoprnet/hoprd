@@ -177,7 +177,7 @@ impl<H> Clone for InternalState<H> {
             network::AnnouncementOriginResponse,
             node::NodeInfoResponse, node::NodeVersionResponse, node::NodeStatusResponse, node::ComponentStatusesResponse, node::ComponentStatusInfo,
             peers::MultiaddressSource, peers::NodePeerInfoResponse, peers::PeerChannelInfo, peers::PeerQosInfo, peers::PingResponse,
-            session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
+            session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig, session::PixSsaQuota,
             tickets::NodeTicketStatisticsResponse, tickets::ChannelTicket, tickets::RedeemTicketsRequest,
         )
     ),
@@ -675,12 +675,12 @@ mod tests {
     #[test]
     fn invalid_input_detail_keeps_the_plain_status_string() {
         let api_error = ApiError::from(ApiErrorStatus::InvalidInputDetail(
-            "invalid pixSsaQuota [8, 4, 2]: shares exceed the generator".into(),
+            "invalid pixSsaQuota {polysPerSsa: 8, ...}: shares exceed the generator".into(),
         ));
         assert_eq!(api_error.status, "INVALID_INPUT");
         assert_eq!(
             api_error.error.as_deref(),
-            Some("invalid pixSsaQuota [8, 4, 2]: shares exceed the generator")
+            Some("invalid pixSsaQuota {polysPerSsa: 8, ...}: shares exceed the generator")
         );
     }
 }
