@@ -292,7 +292,11 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
             response_buffer: Some(RESPONSE_BUFFER.to_string()),
             max_surb_upstream: Some(MAX_SURB_UPSTREAM.to_string()),
             // Must match this node's own generator dimensions, or the Session is refused.
-            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES, PIX_ADDITIONAL_SHARES)),
+            pix_ssa_quota: Some(hoprd_api_client::types::PixSsaQuota {
+                polys_per_ssa: PIX_POLYS,
+                shares_per_poly: PIX_SHARES,
+                surplus_shares: PIX_ADDITIONAL_SHARES,
+            }),
         })
         .await
         .context("opening PIX session")?;

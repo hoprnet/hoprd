@@ -852,7 +852,11 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             response_buffer: Some(response_buffer()),
             max_surb_upstream: Some("50 Mb/s".to_string()),
             // Must match this node's own generator dimensions or the Session is refused.
-            pix_ssa_quota: Some((PIX_POLYS, PIX_SHARES, PIX_ADDITIONAL_SHARES)),
+            pix_ssa_quota: Some(hoprd_api_client::types::PixSsaQuota {
+                polys_per_ssa: PIX_POLYS,
+                shares_per_poly: PIX_SHARES,
+                surplus_shares: PIX_ADDITIONAL_SHARES,
+            }),
         })
         .await
         .context("opening PIX session")?;
