@@ -775,9 +775,7 @@ pub mod types {
     ///  "type": "object",
     ///  "required": [
     ///    "address",
-    ///    "lastUpdate",
-    ///    "probeRate",
-    ///    "score"
+    ///    "lastUpdate"
     ///  ],
     ///  "properties": {
     ///    "address": {
@@ -806,17 +804,25 @@ pub mod types {
     ///      "minimum": 0.0
     ///    },
     ///    "probeRate": {
+    ///      "description": "Average probe rate, if any probe has been measured.\n\nNullable for the same reason as `average_latency` below, which this field now matches:\nhopr-api 2.0 reports an unmeasured observation as absent rather than as zero. Serialising\nthe absent case as `0.0` would be indistinguishable from a peer measured at zero — a peer\nnothing has been learned about yet would read as one known to be failing.",
     ///      "examples": [
     ///        0.476
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    },
     ///    "score": {
+    ///      "description": "Edge score, if one has been computed. Nullable as `probe_rate` above.",
     ///      "examples": [
     ///        0.7
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    }
     ///  }
@@ -836,9 +842,21 @@ pub mod types {
         ///Epoch milliseconds of the last observation update.
         #[serde(rename = "lastUpdate")]
         pub last_update: u64,
-        #[serde(rename = "probeRate")]
-        pub probe_rate: f64,
-        pub score: f64,
+        /**Average probe rate, if any probe has been measured.
+
+Nullable for the same reason as `average_latency` below, which this field now matches:
+hopr-api 2.0 reports an unmeasured observation as absent rather than as zero. Serialising
+the absent case as `0.0` would be indistinguishable from a peer measured at zero — a peer
+nothing has been learned about yet would read as one known to be failing.*/
+        #[serde(
+            rename = "probeRate",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub probe_rate: ::std::option::Option<f64>,
+        ///Edge score, if one has been computed. Nullable as `probe_rate` above.
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub score: ::std::option::Option<f64>,
     }
     ///Specifies the amount of HOPR tokens to fund a channel with.
     ///
@@ -1674,9 +1692,7 @@ and indexer state.*/
     ///  ],
     ///  "type": "object",
     ///  "required": [
-    ///    "lastUpdate",
-    ///    "probeRate",
-    ///    "score"
+    ///    "lastUpdate"
     ///  ],
     ///  "properties": {
     ///    "averageLatency": {
@@ -1699,17 +1715,25 @@ and indexer state.*/
     ///      "minimum": 0.0
     ///    },
     ///    "probeRate": {
+    ///      "description": "Average probe rate, if any probe has been measured.\n\nNullable for the same reason as `average_latency` below, which this field now matches:\nhopr-api 2.0 reports an unmeasured observation as absent rather than as zero, and reporting\nthe absent case as `0.0` would be indistinguishable from a peer measured at zero.",
     ///      "examples": [
     ///        0.476
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    },
     ///    "score": {
+    ///      "description": "Edge score, if one has been computed. Nullable as `probe_rate` above.",
     ///      "examples": [
     ///        0.7
     ///      ],
-    ///      "type": "number",
+    ///      "type": [
+    ///        "number",
+    ///        "null"
+    ///      ],
     ///      "format": "double"
     ///    }
     ///  }
@@ -1728,9 +1752,20 @@ and indexer state.*/
         ///Epoch milliseconds of the last observation update.
         #[serde(rename = "lastUpdate")]
         pub last_update: u64,
-        #[serde(rename = "probeRate")]
-        pub probe_rate: f64,
-        pub score: f64,
+        /**Average probe rate, if any probe has been measured.
+
+Nullable for the same reason as `average_latency` below, which this field now matches:
+hopr-api 2.0 reports an unmeasured observation as absent rather than as zero, and reporting
+the absent case as `0.0` would be indistinguishable from a peer measured at zero.*/
+        #[serde(
+            rename = "probeRate",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub probe_rate: ::std::option::Option<f64>,
+        ///Edge score, if one has been computed. Nullable as `probe_rate` above.
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub score: ::std::option::Option<f64>,
     }
     ///Contains the latency and the reported version of a peer that has been pinged.
     ///
@@ -1764,6 +1799,78 @@ and indexer state.*/
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct PingResponse {
         pub latency: i64,
+    }
+    /**The three SSA dimensions a PIX Session is priced against.
+
+Named fields rather than the positional triple this used to be, for the reason
+[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable
+to any type checker and are *not* interchangeable to the protocol, while their product —
+which is all the Exit compares — is identical either way. A transposed pair therefore
+announces valid-looking dimensions against a correct quota. Names are what close that, and
+they close it in every consumer of the spec, not just the Rust ones.
+
+The field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the
+packed protocol word.*/
+    ///
+    /// <details><summary>JSON schema</summary>
+    ///
+    /// ```json
+    ///{
+    ///  "description": "The three SSA dimensions a PIX Session is priced against.\n\nNamed fields rather than the positional triple this used to be, for the reason\n[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable\nto any type checker and are *not* interchangeable to the protocol, while their product —\nwhich is all the Exit compares — is identical either way. A transposed pair therefore\nannounces valid-looking dimensions against a correct quota. Names are what close that, and\nthey close it in every consumer of the spec, not just the Rust ones.\n\nThe field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the\npacked protocol word.",
+    ///  "examples": [
+    ///    {
+    ///      "polysPerSsa": 8,
+    ///      "sharesPerPoly": 4,
+    ///      "surplusShares": 2
+    ///    }
+    ///  ],
+    ///  "type": "object",
+    ///  "required": [
+    ///    "polysPerSsa",
+    ///    "sharesPerPoly",
+    ///    "surplusShares"
+    ///  ],
+    ///  "properties": {
+    ///    "polysPerSsa": {
+    ///      "description": "Polynomials per SSA.",
+    ///      "type": "integer",
+    ///      "maximum": 65535.0,
+    ///      "minimum": 0.0
+    ///    },
+    ///    "sharesPerPoly": {
+    ///      "description": "Shares per polynomial, i.e. the reconstruction threshold.",
+    ///      "type": "integer",
+    ///      "maximum": 255.0,
+    ///      "minimum": 0.0
+    ///    },
+    ///    "surplusShares": {
+    ///      "description": "Shares beyond the threshold.\n\nPriced like the other two: the per-SSA quota is\n`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that\ndisagreed with the Exit would size every deposit against a quota the node never\nagreed to.",
+    ///      "type": "integer",
+    ///      "maximum": 255.0,
+    ///      "minimum": 0.0
+    ///    }
+    ///  },
+    ///  "additionalProperties": false
+    ///}
+    /// ```
+    /// </details>
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[serde(deny_unknown_fields)]
+    pub struct PixSsaQuota {
+        ///Polynomials per SSA.
+        #[serde(rename = "polysPerSsa")]
+        pub polys_per_ssa: u16,
+        ///Shares per polynomial, i.e. the reconstruction threshold.
+        #[serde(rename = "sharesPerPoly")]
+        pub shares_per_poly: u8,
+        /**Shares beyond the threshold.
+
+Priced like the other two: the per-SSA quota is
+`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that
+disagreed with the Exit would size every deposit against a quota the node never
+agreed to.*/
+        #[serde(rename = "surplusShares")]
+        pub surplus_shares: u8,
     }
     ///Request body for ticket redemption with optional fields.
     ///
@@ -1881,7 +1988,8 @@ If omitted, tickets in all channels are redeemed.*/
     ///    "Retransmission",
     ///    "RetransmissionAckOnly",
     ///    "NoDelay",
-    ///    "NoRateControl"
+    ///    "NoRateControl",
+    ///    "UsePIX"
     ///  ]
     ///}
     /// ```
@@ -1904,6 +2012,8 @@ If omitted, tickets in all channels are redeemed.*/
         RetransmissionAckOnly,
         NoDelay,
         NoRateControl,
+        #[serde(rename = "UsePIX")]
+        UsePix,
     }
     impl ::std::fmt::Display for SessionCapability {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -1913,6 +2023,7 @@ If omitted, tickets in all channels are redeemed.*/
                 Self::RetransmissionAckOnly => f.write_str("RetransmissionAckOnly"),
                 Self::NoDelay => f.write_str("NoDelay"),
                 Self::NoRateControl => f.write_str("NoRateControl"),
+                Self::UsePix => f.write_str("UsePIX"),
             }
         }
     }
@@ -1927,6 +2038,7 @@ If omitted, tickets in all channels are redeemed.*/
                 "RetransmissionAckOnly" => Ok(Self::RetransmissionAckOnly),
                 "NoDelay" => Ok(Self::NoDelay),
                 "NoRateControl" => Ok(Self::NoRateControl),
+                "UsePIX" => Ok(Self::UsePix),
                 _ => Err("invalid value".into()),
             }
         }
@@ -2035,6 +2147,9 @@ If omitted, tickets in all channels are redeemed.*/
     ///        "null"
     ///      ]
     ///    },
+    ///    "pixSsaQuota": {
+    ///      "$ref": "#/components/schemas/PixSsaQuota"
+    ///    },
     ///    "responseBuffer": {
     ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
     ///      "type": [
@@ -2115,6 +2230,12 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
+        #[serde(
+            rename = "pixSsaQuota",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub pix_ssa_quota: ::std::option::Option<PixSsaQuota>,
         /**The amount of response data the Session counterparty can deliver back to us,
 without us sending any SURBs to them.
 
@@ -3827,13 +3948,17 @@ Arguments:
     }
     /**Returns current complete statistics on tickets
 
-Returns current complete statistics on tickets.
+Returns current complete statistics on tickets. When a counterparty address is given, only the incoming channel from that counterparty is reported.
 
 Sends a `GET` request to `/api/v4/tickets/statistics`
 
+Arguments:
+- `address`: On-chain address of the counterparty whose incoming channel to report on.
+If omitted, statistics are aggregated across every channel.
 */
     pub async fn show_ticket_statistics<'a>(
         &'a self,
+        address: Option<&'a str>,
     ) -> Result<ResponseValue<types::NodeTicketStatisticsResponse>, Error<()>> {
         let url = format!("{}/api/v4/tickets/statistics", self.baseurl,);
         let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
@@ -3850,6 +3975,7 @@ Sends a `GET` request to `/api/v4/tickets/statistics`
                 ::reqwest::header::ACCEPT,
                 ::reqwest::header::HeaderValue::from_static("application/json"),
             )
+            .query(&progenitor_client::QueryParam::new("address", &address))
             .headers(header_map)
             .build()?;
         let info = OperationInfo {

@@ -1,6 +1,6 @@
 [package]
 name = "hoprd-localcluster"
-version = "0.2.5"
+version = "0.3.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,16 +14,26 @@ description = "Local HOPR cluster runner using external hoprd processes"
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
+# The PIX pool pairing has to match the one the *binary* under test was built with — see
+# `strategy-pix-secp256k1` in hoprd's Cargo.toml. It is stated in both places because these are
+# two different builds: this one produces the test harness, and `cargo build --release -p hoprd`
+# produces the nodes the harness launches from `HOPRD_BIN`. Nothing links them, so a mismatch is
+# only caught by the demo script's binary check and by the pool named in the node's startup log.
+#
+# secp256k1 because it is the only implemented pool: `strategy-pix-curvy` selects `CurvyDepositPool`,
+# whose methods panic. Switch both together when that lands.
 hoprd = { workspace = true, features = [
   "runtime-tokio",
   "telemetry",
   "transport-quic",
+  "strategy-pix-secp256k1",
 ] }
 hopr-chain-connector = { workspace = true }
 hopr-strategy = { workspace = true, features = [
   "runtime-tokio",
   "strategy-auto-redeeming",
   "strategy-channel-lifecycle",
+  "strategy-pix-secp256k1",
 ] }
 hopr-lib = { workspace = true }
 hopr-session-server-forwarder = { workspace = true }

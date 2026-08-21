@@ -11,6 +11,12 @@ license.workspace = true
 build = "build.rs"
 
 [features]
+# No `strategy-pix-*` pairing here, deliberately. Each one pins `HoprPixSpec` to a different
+# deposit-address type, and a spec has exactly one — so the choice is exclusive *at this level*
+# even though `hopr-strategy` now compiles both pools together. Cargo unifies features across a
+# workspace build, so a default pairing would collide with the one `hoprd-localcluster` selects
+# for the pool it tests. An exclusive choice cannot have a default; it has to be named by whoever
+# builds.
 default = [
   "runtime-tokio",
   "telemetry",
@@ -32,6 +38,55 @@ runtime-tokio = [
   "hopr-strategy/strategy-channel-lifecycle",
   "hopr-transport-p2p/runtime-tokio",
 ]
+# === PIX deposit pool: pick exactly one ===
+#
+# A deposit pool can only settle to the address type its keypair produces, and which address type
+# `HoprPixSpec` produces is chosen by a feature on `hopr-crypto-packet`, three crates away.
+# Cargo cannot express "these two must agree" across crates, but it can express "these two are
+# one feature" — so each pool is bundled with the spec feature that makes it settleable, and
+# `src/strategy.rs` passes the resulting spec address type to the pool's builder as the backstop.
+#
+# `hopr-strategy` no longer rejects both with a `compile_error!` — it compiles both pools and lets
+# the call site choose, because features are additive and two unrelated consumers in one graph may
+# each want a different pool. Here the exclusion is still real: the two select conflicting
+# `hopr-lib/pix-*` features, and `HoprPixSpec` has one deposit-address type. Nothing enforces it
+# mechanically, so the secp256k1 arm wins by `cfg` precedence if both are somehow on.
+#
+# Neither is in `default` — see the note there. Enabling neither is also valid and yields a
+# binary without PIX, which refuses to start against a config carrying a `Pix` strategy stanza
+# rather than quietly running without the strategy it was handed.
+#
+# Deliberately *not* implied by `runtime-tokio`. `strategy-pix` used to be, which meant every
+# hoprd build forced secp256k1 and a Baby JubJub build was not expressible at all.
+#
+#     production:      cargo build --release -p hoprd --features strategy-pix-curvy
+#     tests and demo:  cargo build --release -p hoprd --features strategy-pix-secp256k1
+#
+# Baby JubJub deposit addresses — production. `hopr-lib`'s default is already `pix-bjj`, so this
+# adds only the pool.
+#
+# NOTE: `CurvyDepositPool` is currently a stub whose methods panic. A build with this feature
+# starts and serves normally; it panics on the first PIX deposit, which only happens once a
+# `Pix` strategy stanza is in the config.
+strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
+# Ethereum deposit addresses — what the localcluster tests and the PIX demo run against, and
+# currently the only pool that is implemented.
+#
+# `hopr-lib/pix-secp256k1` is stated positively rather than left to `default-features = false`,
+# because that opt-out only holds while every crate in the graph agrees to it — `hopr-utils-session`
+# pulling `hopr-lib` with defaults was enough to undo it, silently.
+strategy-pix-secp256k1 = [
+  "pix",
+  "hopr-strategy/strategy-pix-secp256k1",
+  "hopr-lib/pix-secp256k1",
+]
+# "some PIX pool is selected", so the code that does not care which can gate on one name.
+# Pulls `runtime-tokio` because the PIX strategy needs the tokio runtime; enabling a pairing
+# without it would compile to a binary that silently has no PIX.
+#
+# Not meant to be enabled directly — on its own it selects no pool and `hopr_strategy::pix`
+# will not resolve.
+pix = ["runtime-tokio"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",

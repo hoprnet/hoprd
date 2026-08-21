@@ -25,10 +25,16 @@ use hopr_strategy::{
     channel_lifecycle::{
         CapacitySizingMode, ChannelLifecycleConfig, FundingConfig, PopulationConfig,
     },
+    // The pool matching this crate's `strategy-pix-secp256k1` on `hoprd`; `hoprd::strategy`
+    // selects the same one, so this is the type its `PixConfig::pool` field expects.
+    pix::{secp256k1::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
 };
 use hoprd::{
-    config::{Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig},
-    strategy::{MultiStrategyConfig, StrategyKind},
+    config::{
+        Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig,
+        UserIncomingSessionPixConfig, UserPixGlobalConfig,
+    },
+    strategy::{MultiStrategyConfig, PixConfig, StrategyKind},
 };
 use hoprd_api::config::{Api, Auth};
 use tracing::{debug, info};
@@ -53,6 +59,178 @@ pub const DEFAULT_LATENCY_PORT_BASE: u16 = 9100;
 /// per-run configuration. Not a secret — this is a local-dev cluster only.
 pub const EXTRA_IDENTITY_PASSWORD: &str = "local-cluster";
 
+/// Which strategies to include in generated hoprd configs.
+///
+/// PIX is not here. It used to be, as a `bool` driving `HOPRD_ENABLE_PIX`, back when the
+/// strategy could not be expressed in YAML; now the whole thing — protocol dimensions,
+/// admission policy and settlement knobs alike — lives in [`GenerationConfig::pix`], and
+/// `Some` is what enables it. One flag rather than two that have to agree.
+#[derive(Clone, Copy, Debug)]
+pub struct StrategySet {
+    /// Include AutoRedeeming strategy (ticket auto-redeem).
+    pub auto_redeeming: bool,
+    /// Include ChannelLifecycle strategy (opens full-mesh channels automatically).
+    /// Implies `auto_redeeming` when constructing the strategy list.
+    pub channel_lifecycle: bool,
+}
+
+impl Default for StrategySet {
+    fn default() -> Self {
+        Self {
+            auto_redeeming: true,
+            channel_lifecycle: false,
+        }
+    }
+}
+
+/// PIX settings written into the generated hoprd configs.
+///
+/// Covers all three halves of PIX now that the strategy is YAML-configurable: the Entry-side
+/// share generator dimensions (`network.pix`), the Exit-side admission policy
+/// (`network.incoming_session_pix`), and the settlement strategy itself (a `Pix` stanza in
+/// the strategy list).
+///
+/// The dimensions are shared by every node so that any node can act as Entry; only
+/// `enforce_on_nodes` differentiates roles.
+#[derive(Clone, Debug)]
+pub struct PixSettings {
+    /// Number of polynomials an SSA is split into (`num_ssa_parts`). Minimum 8.
+    pub num_ssa_parts: usize,
+    /// Shares required to reconstruct one SSA part (`ssa_part_size`). Minimum 2.
+    pub ssa_part_size: usize,
+    /// Shares emitted beyond `ssa_part_size`. Counted in the quota like any other emitted
+    /// share, so raising it raises the deposit in proportion.
+    pub additional_shares: usize,
+    /// Lower bound of the per-SSA data quota the Exit will accept, in bytes.
+    pub quota_range_min: u64,
+    /// Upper bound of the per-SSA data quota the Exit will accept, in bytes.
+    ///
+    /// An Entry offering `num_ssa_parts × (ssa_part_size + additional_shares) ×
+    /// HoprPacket::PAYLOAD_SIZE` outside this range is rejected with
+    /// `UnacceptablePixParams`.
+    pub quota_range_max: u64,
+    /// Exit's deadline for the SSA commitment to arrive.
+    pub max_ssa_delivery_time: std::time::Duration,
+    /// Exit's deadline for the deposit to land. Together with `max_ssa_delivery_time`
+    /// this forms the PIX kill switch: the Session is closed with
+    /// `ClosureReason::UnrealizedDeposit` once it elapses without a deposit.
+    pub max_deposit_wait: std::time::Duration,
+    /// Node ids that reject incoming Sessions which do not opt into PIX.
+    ///
+    /// Typically just the Exit — a relay never terminates a Session, so enforcement
+    /// there has no effect.
+    pub enforce_on_nodes: Vec<usize>,
+    /// wxHOPR left in each node's *own* account to pay for SSA deposits.
+    ///
+    /// Separate from the Safe's stake because deposits do not go through the Safe: see
+    /// the comment at the funding site. Sized by the caller against
+    /// `price_per_byte × quota_per_ssa × expected cycles` — a run that outlives this
+    /// float stops depositing, and the Exit's kill switch closes the Session.
+    pub node_deposit_float: HoprBalance,
+
+    // ── Settlement strategy, written as a `Pix` stanza in the node's strategy list ──
+    /// Charged per byte of the agreed per-SSA quota; one SSA deposit is
+    /// `price_per_byte × quota_per_ssa()`.
+    pub price_per_byte: HoprBalance,
+    /// Ceiling on a single SSA deposit. A larger computed deposit is refused outright,
+    /// which starves the Session and lets the Exit's kill switch close it.
+    pub max_ssa_allocation: HoprBalance,
+    /// How long the Exit keeps polling for the deposit.
+    ///
+    /// This also sets the poll cadence (`/10`), which must stay comfortably below this
+    /// node's own `max_deposit_wait + max_ssa_delivery_time` deadline — otherwise only the
+    /// single immediate balance check happens before the kill switch fires.
+    pub max_deposit_tracking_time: std::time::Duration,
+    /// xDai moved from the Safe to a recovered stealth address so it can pay gas for
+    /// its own sweep. Zero disables the sweep's gas funding entirely.
+    pub gas_xdai_per_sweep: XDaiBalance,
+}
+
+impl PixSettings {
+    /// Per-SSA data quota in bytes implied by these dimensions, matching the Exit's own
+    /// `polys × (shares + surplus) × HoprPacket::PAYLOAD_SIZE` computation.
+    ///
+    /// The surplus is in the product because it is delivered in every cycle whether or not
+    /// a share is lost — a polynomial leaves the generator's queue only once it has emitted
+    /// `shares + surplus` — so it is service the Exit always performs, and is charged for on
+    /// purchase rather than on claim.
+    ///
+    /// Useful to callers sizing [`quota_range_min`](Self::quota_range_min) /
+    /// [`quota_range_max`](Self::quota_range_max), and to tests converting a number of
+    /// SSA cycles into an expected deposit total.
+    pub fn quota_per_ssa(&self) -> u64 {
+        self.num_ssa_parts as u64
+            * (self.ssa_part_size + self.additional_shares) as u64
+            * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
+    }
+}
+
+/// Demo-scale dimensions for `hoprd-localcluster --enable-pix`, where no caller sizes the
+/// geometry against a measured workload the way the integration tests do.
+///
+/// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
+/// cluster started this way completes a cycle in a handful of seconds rather than the minutes
+/// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
+/// `8 × (2 + 2) × 1038` ≈ 33.2 kB against a production window of ~130 MiB–519 MiB, so the
+/// production window would reject every Session.
+///
+/// Two deliberate departures from the tests:
+///
+/// - `enforce_on_nodes` is empty. The CLI advertises PIX on every node as both Entry and Exit
+///   and has no notion of which node terminates a Session, so enforcing anywhere would refuse
+///   the ordinary non-PIX Sessions the same cluster is used for. PIX is available here, not
+///   mandatory.
+/// - `node_deposit_float` is sized for a long interactive session rather than a fixed cycle
+///   count, since nothing bounds how long an operator leaves the cluster running. At the
+///   price below that is roughly 300 cycles per node.
+///
+/// The settlement values are sized against those dimensions, not left at hoprd's own defaults:
+/// at the upstream `1 wxHOPR`/byte a ~33.2 kB quota prices one deposit at ~33 200 wxHOPR, well
+/// past any sane ceiling, so every deposit would be refused. `max_deposit_tracking_time` is
+/// likewise sized against the 80 s kill-switch fuse the two deadlines above imply, since its
+/// poll cadence is a tenth of it.
+impl Default for PixSettings {
+    fn default() -> Self {
+        Self {
+            num_ssa_parts: 8,
+            ssa_part_size: 2,
+            additional_shares: 2,
+            quota_range_min: 0,
+            quota_range_max: 1024 * 1024,
+            max_ssa_delivery_time: std::time::Duration::from_secs(20),
+            max_deposit_wait: std::time::Duration::from_secs(60),
+            enforce_on_nodes: Vec::new(),
+            node_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
+            // ~3.32 wxHOPR per SSA deposit against the dimensions above.
+            price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
+            max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
+            max_deposit_tracking_time: std::time::Duration::from_secs(30),
+            gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
+        }
+    }
+}
+
+/// Exit-side admission policy for node `id`.
+///
+/// Only nodes listed in [`PixSettings::enforce_on_nodes`] reject non-PIX Sessions; the
+/// quota window and deadlines are the same everywhere so any node can serve as Exit.
+fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSessionPixConfig {
+    match pix {
+        Some(pix) => UserIncomingSessionPixConfig {
+            enforce_pix: pix.enforce_on_nodes.contains(&id),
+            quota_range_min: pix.quota_range_min,
+            quota_range_max: pix.quota_range_max,
+            max_ssa_delivery_time: pix.max_ssa_delivery_time,
+            max_deposit_wait: pix.max_deposit_wait,
+            // `ssas_per_request` is left at its default of 1 (unbatched). Batching multiplies the
+            // kill-switch window and the number of cycles in flight, so a test that wants it should
+            // add it to `PixSettings` deliberately rather than inherit it here.
+            ..Default::default()
+        },
+        None => UserIncomingSessionPixConfig::default(),
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct GenerationConfig {
     pub blokli_url: String,
@@ -68,11 +246,15 @@ pub struct GenerationConfig {
     pub p2p_host: String,
     /// Base P2P port; node `i` listens on `p2p_port_base + i`.
     pub p2p_port_base: u16,
-    /// Enables channel lifecycle strategy in generated hoprd configs.
-    pub enable_channel_strategy: bool,
+    /// Strategy set to include in the generated hoprd configs.
+    pub strategies: StrategySet,
     /// When set, each node announces its latency-relay port instead of its real
     /// listen port and disables its own on-chain announce, so peers dial the relay.
     pub latency: Option<crate::cli::Latency>,
+    /// Override the strategy execution interval. When None, the default (60s) is used.
+    pub strategy_execution_interval: Option<std::time::Duration>,
+    /// PIX protocol settings. When None, the hoprd defaults are left in place.
+    pub pix: Option<PixSettings>,
 }
 
 impl Default for GenerationConfig {
@@ -87,8 +269,10 @@ impl Default for GenerationConfig {
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
-            enable_channel_strategy: false,
+            strategies: StrategySet::default(),
             latency: None,
+            strategy_execution_interval: None,
+            pix: None,
         }
     }
 }
@@ -208,6 +392,11 @@ fn node_config(
     safe: SafeModule,
     node_strategy: &MultiStrategyConfig,
     id_file: &str,
+    // Derived once in `generate` rather than here: the share-generator dimensions are identical
+    // on every node so that any of them can act as Entry, so recomputing them per node would be
+    // restating one decision N times. The Entry/Exit split lives in `incoming_pix_config`, which
+    // *is* per-node because it keys off `id`.
+    pix_global: &Option<UserPixGlobalConfig>,
 ) -> anyhow::Result<HoprdConfig> {
     Ok(HoprdConfig {
         hopr: UserHoprLibConfig {
@@ -220,6 +409,8 @@ fn node_config(
                 prefer_local_addresses: true,
                 probe_recheck_threshold: std::time::Duration::from_secs(3),
                 probe_interval: std::time::Duration::from_secs(3),
+                pix: pix_global.clone().unwrap_or_default(),
+                incoming_session_pix: incoming_pix_config(config.pix.as_ref(), id),
                 ..Default::default()
             },
             safe_module: safe,
@@ -296,6 +487,20 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
+    // `deploy_safe` sweeps the node's whole wxHOPR balance into the Safe, but
+    // `SafePayloadGenerator::transfer` builds a *direct* `HoprToken.transfer` signed by
+    // the node key rather than routing through the module the way `announce` does — so
+    // PIX deposits are paid out of the node's own account, which is left at zero.
+    // Re-fund the node so it can make them.
+    let initial_pix_deposit_balance: HoprBalance = config
+        .pix
+        .as_ref()
+        .map(|pix| pix.node_deposit_float)
+        .unwrap_or_default();
+    // `fund_sweep_gas_impl` gates on the *Safe's* xDai balance before topping a
+    // recovered stealth address up for gas, so the Safe needs native funds even though
+    // the transfer itself is signed by the node.
+    let initial_safe_native_balance: XDaiBalance = "1 xDai".parse()?;
     let p2p_host = &config.p2p_host;
     debug!(
         token_balance = %initial_token_balance,
@@ -309,11 +514,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         effective = %effective_num_nodes,
         "resolved node count",
     );
-    let mut strategies = vec![StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
-        redeem_on_winning: true,
-        ..Default::default()
-    })];
-    if config.enable_channel_strategy {
+    let mut strategies = vec![];
+    if config.strategies.auto_redeeming || config.strategies.channel_lifecycle {
+        strategies.push(StrategyKind::AutoRedeeming(AutoRedeemingStrategyConfig {
+            redeem_on_winning: true,
+            ..Default::default()
+        }));
+    }
+    if config.strategies.channel_lifecycle {
         let mesh_target = effective_num_nodes.saturating_sub(1);
         debug!(
             num_nodes = %effective_num_nodes,
@@ -340,12 +548,51 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             },
         )));
     }
+    // PIX settles per Session rather than on the strategy tick, so it is unaffected by
+    // `execution_interval` — it is in this list because that is where hoprd reads strategy
+    // config from, not because it is polled.
+    if let Some(pix) = &config.pix {
+        debug!(
+            price_per_byte = %pix.price_per_byte,
+            max_ssa_allocation = %pix.max_ssa_allocation,
+            "enabling PIX settlement strategy",
+        );
+        strategies.push(StrategyKind::Pix(PixConfig {
+            strategy: PixStrategyConfig {
+                price_per_byte: pix.price_per_byte,
+                max_ssa_allocation: pix.max_ssa_allocation,
+                ..Default::default()
+            },
+            pool: PixPoolConfig {
+                max_deposit_tracking_time: pix.max_deposit_tracking_time,
+                gas_xdai_per_sweep: pix.gas_xdai_per_sweep,
+                ..Default::default()
+            },
+        }));
+    }
+    let strategy_interval = config
+        .strategy_execution_interval
+        .unwrap_or(std::time::Duration::from_secs(60));
     let node_strategy = MultiStrategyConfig {
         allow_recursive: false,
-        execution_interval: std::time::Duration::from_secs(60),
+        execution_interval: strategy_interval,
         strategies,
     };
     debug!(strategy = ?node_strategy, "node strategy");
+
+    // Share generator dimensions are identical on every node so that any of them can act
+    // as Entry; the Entry/Exit split is expressed only by `enforce_on_nodes` below.
+    let pix_global_config = config.pix.as_ref().map(|pix| UserPixGlobalConfig {
+        num_ssa_parts: pix.num_ssa_parts,
+        ssa_part_size: pix.ssa_part_size,
+        // `Some` rather than left to the derivation: the harness computes the expected per-SSA
+        // quota from this exact number (see `PixSettings::ssa_quota`), so the surplus it asserts
+        // against and the surplus the node emits have to be the same one.
+        additional_shares: Some(pix.additional_shares),
+        // Entry-side batch cap, left at its default of 2. It only needs raising in step with an
+        // Exit's `ssas_per_request`, which `incoming_pix_config` also leaves at the default.
+        ..Default::default()
+    });
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
     info!(
@@ -465,6 +712,49 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             poll_handle.await??
         };
 
+        // Only PIX needs these top-ups, and each is an extra transaction per node — skip
+        // them when the strategy is off so other clusters bootstrap as fast as before.
+        if config.pix.is_some() {
+            let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
+            if node_token_balance < initial_pix_deposit_balance {
+                let top_up = initial_pix_deposit_balance - node_token_balance;
+                if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
+                    return Err(anyhow::anyhow!(
+                        "Account {} must have at least {top_up}.",
+                        anvil_connector.me()
+                    ));
+                }
+
+                anvil_connector
+                    .withdraw(top_up, &node_address)
+                    .await?
+                    .await?;
+                eprint!(
+                    "\x1b[2K\rNode {id}: {top_up} transferred to {node_address} for PIX deposits"
+                );
+            }
+
+            let safe_native_balance: XDaiBalance = node_connector.balance(safe.address).await?;
+            if safe_native_balance < initial_safe_native_balance {
+                let top_up = initial_safe_native_balance - safe_native_balance;
+                if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
+                    return Err(anyhow::anyhow!(
+                        "Account {} must have at least {top_up}.",
+                        anvil_connector.me()
+                    ));
+                }
+
+                anvil_connector
+                    .withdraw(top_up, &safe.address)
+                    .await?
+                    .await?;
+                eprint!(
+                    "\x1b[2K\rNode {id}: {top_up} transferred to Safe {} for PIX sweep gas",
+                    safe.address
+                );
+            }
+        }
+
         // Pre-announce the node's KeyBinding + multiaddr before hoprd starts.
         //
         // Blokli's live-phase filter does not include the announcements contract, so
@@ -542,6 +832,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             },
             &node_strategy,
             &id_file_str,
+            &pix_global_config,
         )?;
 
         let cfg_file = home_path
@@ -854,6 +1145,7 @@ mod tests {
             safe.clone(),
             &strategy,
             "/tmp/localcluster-test/id_0.id",
+            &None,
         )?;
         let yaml = serde_saphyr::to_string(&built)?;
         let parsed: HoprdConfig =
@@ -885,6 +1177,7 @@ mod tests {
             safe,
             &strategy,
             "/tmp/localcluster-test/id_0.id",
+            &None,
         )?;
         assert!(!built.hopr.announce);
 
