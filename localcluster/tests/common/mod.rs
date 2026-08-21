@@ -116,6 +116,9 @@ impl Drop for ClusterCleanup {
     fn drop(&mut self) {
         for n in &mut self.nodes {
             let _ = n.child.kill();
+            // `kill` only sends the signal. Wait for process termination so the log-copy
+            // guard below cannot race final writes into the node log files.
+            let _ = n.child.wait();
         }
         if let Some(c) = &mut self.chain {
             c.stop();
@@ -394,13 +397,14 @@ impl ClusterSpec {
 /// boolean the first time one suite needed to skip a step.
 #[must_use = "dropping the Cluster kills the nodes and stops the chain"]
 pub struct Cluster {
-    // Field order is drop order: the logs are copied out first, while the temp directory that
-    // holds them still exists, and `_temp` is deleted last.
-    _logs: Option<NodeLogs>,
+    // Field order is drop order: stop all writers first, copy their finalized logs second,
+    // and delete the temporary tree last.
     cleanup: ClusterCleanup,
+    _logs: Option<NodeLogs>,
     _temp: TempCluster,
     /// The generated identities, for a test that checks a node against its own.
     pub identities: hoprd_localcluster::identity::GenerationOutput,
+    blokli_url: String,
     log_dir: PathBuf,
 }
 
@@ -412,6 +416,7 @@ impl Cluster {
 
         let env = ClusterEnv::from_env().context("reading cluster environment")?;
         let temp = TempCluster::new().context("creating temp cluster")?;
+        let use_curvy_operator = cfg!(feature = "strategy-pix-curvy") && spec.pix.is_some();
         let log_dir = temp.log_dir.clone();
         // Armed before anything is started, so a failure during bring-up — the case the copy
         // exists for — still leaves the node and chain logs behind.
@@ -431,7 +436,7 @@ impl Cluster {
         tracing::info!("chain ready after {:?}", t0.elapsed());
 
         let identities = identity::generate(&identity::GenerationConfig {
-            blokli_url,
+            blokli_url: blokli_url.clone(),
             num_nodes: spec.num_nodes,
             config_home: temp.data_dir.clone(),
             random_identities: spec.random_identities,
@@ -462,6 +467,7 @@ impl Cluster {
             p2p_port_base: spec.ports.p2p,
             identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
             api_token: None,
+            curvy_operator_private_key: use_curvy_operator.then_some(identity::DEFAULT_PRIVATE_KEY),
         })
         .await
         .context("starting nodes")?;
@@ -481,10 +487,11 @@ impl Cluster {
         tracing::info!("nodes started and addressed after {:?}", t0.elapsed());
 
         Ok(Self {
-            _logs: logs,
             cleanup,
+            _logs: logs,
             _temp: temp,
             identities,
+            blokli_url,
             log_dir,
         })
     }
@@ -500,6 +507,11 @@ impl Cluster {
     /// The live log directory, inside the temp tree. Valid until the cluster drops.
     pub fn log_dir(&self) -> &std::path::Path {
         &self.log_dir
+    }
+
+    /// URL of the Blokli instance backing this cluster.
+    pub fn blokli_url(&self) -> &str {
+        &self.blokli_url
     }
 
     /// Wait for every node's `/readyz`.

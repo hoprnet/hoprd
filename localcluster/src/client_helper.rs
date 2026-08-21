@@ -488,6 +488,9 @@ pub struct NodeStartConfig<'a> {
     pub p2p_port_base: u16,
     pub identity_password: &'a str,
     pub api_token: Option<String>,
+    /// Development-only Curvy operator key. When present, nodes are started one at a
+    /// time so their independent SDK clients cannot race on the shared EVM nonce.
+    pub curvy_operator_private_key: Option<&'a str>,
 }
 
 /// Spawn `config.num_nodes` hoprd processes and return their handles.
@@ -557,11 +560,34 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
+        if let Some(operator_private_key) = config.curvy_operator_private_key {
+            cmd.env("HOPRD_CURVY_OPERATOR_PRIVATE_KEY", operator_private_key);
+            // Proof timings are also persisted independently of tracing. Each node owns a
+            // separate JSONL sink, so blocking prover threads cannot interleave records and the
+            // acceptance report remains complete even when hoprd is terminated immediately
+            // after the target settlement.
+            cmd.env(
+                "CURVY_PROOF_TIMINGS_PATH",
+                config
+                    .log_dir
+                    .join(format!("curvy_proof_timings_{id}.jsonl")),
+            );
+            // The full-system Curvy scenario consumes these events to produce its proof-phase
+            // report. Preserve any caller-supplied filter, but make the instrumentation target
+            // explicit so a filter such as `hopr=info` cannot silently produce empty metrics.
+            let rust_log = std::env::var("RUST_LOG")
+                .ok()
+                .filter(|filter| !filter.trim().is_empty())
+                .unwrap_or_else(|| "info".to_string());
+            cmd.env("RUST_LOG", format!("{rust_log},curvy_witnesscalc=info"));
+        }
+
         if let Some(token) = &config.api_token {
             cmd.arg("--apiToken").arg(token);
         }
 
-        debug!("starting hoprd node {} with command: {:?}", id, cmd);
+        // Do not debug-print `cmd`: its environment may contain the Curvy operator key.
+        debug!(node_id = id, config = %cfg_file.display(), "starting hoprd node");
         let child = cmd.spawn().context("failed to start hoprd")?;
         let api = HoprdApiClient::new(
             format!("http://{}:{}", api_client_host, api_port),
@@ -576,6 +602,16 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             child,
             address: None,
         });
+
+        if config.curvy_operator_private_key.is_some() {
+            nodes
+                .last()
+                .expect("node was just appended")
+                .api
+                .wait_started(std::time::Duration::from_secs(120))
+                .await
+                .with_context(|| format!("waiting for Curvy node {id} startup"))?;
+        }
     }
 
     Ok(nodes)

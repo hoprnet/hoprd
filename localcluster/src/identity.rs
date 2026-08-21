@@ -20,15 +20,17 @@ use hopr_lib::{
     config::SafeModule,
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
+#[cfg(feature = "strategy-pix-secp256k1")]
+use hopr_strategy::pix::secp256k1::PoolConfig as PixPoolConfig;
 use hopr_strategy::{
     auto_redeeming::AutoRedeemingStrategyConfig,
     channel_lifecycle::{
         CapacitySizingMode, ChannelLifecycleConfig, FundingConfig, PopulationConfig,
     },
-    // The pool matching this crate's `strategy-pix-secp256k1` on `hoprd`; `hoprd::strategy`
-    // selects the same one, so this is the type its `PixConfig::pool` field expects.
-    pix::{secp256k1::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
+    pix::strategy::PixStrategyConfig,
 };
+#[cfg(feature = "strategy-pix-curvy")]
+use hoprd::strategy::CurvyPoolConfig as PixPoolConfig;
 use hoprd::{
     config::{
         Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig,
@@ -143,6 +145,7 @@ pub struct PixSettings {
     pub max_deposit_tracking_time: std::time::Duration,
     /// xDai moved from the Safe to a recovered stealth address so it can pay gas for
     /// its own sweep. Zero disables the sweep's gas funding entirely.
+    #[cfg(feature = "strategy-pix-secp256k1")]
     pub gas_xdai_per_sweep: XDaiBalance,
 }
 
@@ -205,6 +208,7 @@ impl Default for PixSettings {
             price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
             max_deposit_tracking_time: std::time::Duration::from_secs(30),
+            #[cfg(feature = "strategy-pix-secp256k1")]
             gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
         }
     }
@@ -565,7 +569,10 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             },
             pool: PixPoolConfig {
                 max_deposit_tracking_time: pix.max_deposit_tracking_time,
+                #[cfg(feature = "strategy-pix-secp256k1")]
                 gas_xdai_per_sweep: pix.gas_xdai_per_sweep,
+                #[cfg(feature = "strategy-pix-curvy")]
+                initial_funding: pix.node_deposit_float,
                 ..Default::default()
             },
         }));

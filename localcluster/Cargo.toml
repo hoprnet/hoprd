@@ -10,6 +10,18 @@ repository.workspace = true
 
 description = "Local HOPR cluster runner using external hoprd processes"
 
+[features]
+default = ["strategy-pix-secp256k1"]
+strategy-pix-secp256k1 = [
+  "hoprd/strategy-pix-secp256k1",
+  "hopr-strategy/strategy-pix-secp256k1",
+]
+strategy-pix-curvy = [
+  "hoprd/strategy-pix-curvy",
+  "hopr-strategy/strategy-pix-curvy",
+  "hopr-chain-connector/pix-curvy-sdk",
+]
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -26,14 +38,12 @@ hoprd = { workspace = true, features = [
   "runtime-tokio",
   "telemetry",
   "transport-quic",
-  "strategy-pix-secp256k1",
 ] }
 hopr-chain-connector = { workspace = true }
 hopr-strategy = { workspace = true, features = [
   "runtime-tokio",
   "strategy-auto-redeeming",
   "strategy-channel-lifecycle",
-  "strategy-pix-secp256k1",
 ] }
 hopr-lib = { workspace = true }
 hopr-session-server-forwarder = { workspace = true }
@@ -60,3 +70,15 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 validator = { workspace = true }
+
+[[test]]
+name = "session_pix"
+required-features = ["strategy-pix-secp256k1"]
+
+[[test]]
+name = "session_pix_soak"
+required-features = ["strategy-pix-secp256k1"]
+
+[[test]]
+name = "session_pix_curvy"
+required-features = ["strategy-pix-curvy"]
