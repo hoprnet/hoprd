@@ -65,10 +65,14 @@ runtime-tokio = [
 # Baby JubJub deposit addresses — production. `hopr-lib`'s default is already `pix-bjj`, so this
 # adds only the pool.
 #
-# NOTE: `CurvyDepositPool` is currently a stub whose methods panic. A build with this feature
-# starts and serves normally; it panics on the first PIX deposit, which only happens once a
-# `Pix` strategy stanza is in the config.
-strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
+# The runtime composes the connector-owned Curvy pool and the rs-sdk bridge, so
+# this feature must enable both the strategy interface and connector adapter.
+strategy-pix-curvy = [
+  "pix",
+  "dep:const-hex",
+  "hopr-strategy/strategy-pix-curvy",
+  "hopr-chain-connector/pix-curvy-sdk",
+]
 # Ethereum deposit addresses — what the localcluster tests and the PIX demo run against, and
 # currently the only pool that is implemented.
 #
@@ -81,12 +85,14 @@ strategy-pix-secp256k1 = [
   "hopr-lib/pix-secp256k1",
 ]
 # "some PIX pool is selected", so the code that does not care which can gate on one name.
-# Pulls `runtime-tokio` because the PIX strategy needs the tokio runtime; enabling a pairing
-# without it would compile to a binary that silently has no PIX.
+# Pulls `runtime-tokio` because the PIX strategy needs the tokio runtime and `session-server`
+# because an Exit must retain the receiver for incoming PIX sessions. Without the latter a
+# no-default-features full-node build accepts Start messages but cannot deliver the resulting
+# session to the forwarding reactor.
 #
 # Not meant to be enabled directly — on its own it selects no pool and `hopr_strategy::pix`
 # will not resolve.
-pix = ["runtime-tokio"]
+pix = ["runtime-tokio", "session-server"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",
@@ -130,6 +136,7 @@ session-server = ["hopr-lib/session-server"]
 
 [dependencies]
 anyhow = { workspace = true }
+const-hex = { workspace = true, optional = true }
 async-signal = { workspace = true }
 clap = { workspace = true }
 lazy_static = { workspace = true }

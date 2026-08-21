@@ -225,6 +225,8 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
+            curvy_operator_private_key: (cfg!(feature = "strategy-pix-curvy") && args.enable_pix)
+                .then_some(config.private_key.as_str()),
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

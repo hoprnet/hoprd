@@ -41,20 +41,24 @@ compile_error!(
 // `hopr_strategy::pix` needs one of the `strategy-pix-*` pairings, which is now an independent
 // choice from `runtime-tokio` — so the imports and the build block gate on `pix` below rather
 // than on the runtime.
+#[cfg(feature = "strategy-pix-secp256k1")]
+use hopr_strategy::pix::secp256k1::PoolConfig;
 #[cfg(feature = "pix")]
 use hopr_strategy::pix::strategy::{PixStrategy, PixStrategyConfig};
-// `PoolConfig` is per-pool: each pool module exports its own under that name, and the two share no
-// fields. Importing the selected one under a single name is what lets the two build blocks below
-// differ only in the fields they set.
+use hopr_strategy::strategy::{MultiStrategy, Strategy};
+use serde::{Deserialize, Serialize};
 #[cfg(all(
     feature = "strategy-pix-curvy",
     not(feature = "strategy-pix-secp256k1")
 ))]
-use hopr_strategy::pix::curvy::PoolConfig;
-#[cfg(feature = "strategy-pix-secp256k1")]
-use hopr_strategy::pix::secp256k1::PoolConfig;
-use hopr_strategy::strategy::{MultiStrategy, Strategy};
-use serde::{Deserialize, Serialize};
+use {
+    hopr_chain_connector::{
+        blokli_client::BlokliClient,
+        pix::{CurvyDepositPool, RedbCurvyDepositState},
+        pix_sdk::RsSdkCurvyAdapter,
+    },
+    hopr_lib::api::types::primitive::prelude::HoprBalance,
+};
 
 use smart_default::SmartDefault;
 use strum::{Display as StrumDisplay, VariantNames};
@@ -129,6 +133,61 @@ fn empty_strategies() -> Vec<StrategyKind> {
     vec![]
 }
 
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+fn default_curvy_token() -> u64 {
+    3
+}
+
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+fn default_curvy_funding() -> HoprBalance {
+    "100 wxHOPR".parse().expect("static Curvy funding is valid")
+}
+
+/// Runtime-owned Curvy pool configuration.
+///
+/// Token id 3 is the HOPR token in Blokli's local Curvy deployment (native and
+/// the Curvy mock token occupy ids 1 and 2). Production deployments may assign
+/// another id and must override it in the node configuration.
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Validate)]
+#[serde(default, deny_unknown_fields)]
+pub struct CurvyPoolConfig {
+    #[serde(with = "humantime_serde")]
+    pub max_deposit_tracking_time: Duration,
+    pub token: u64,
+    pub initial_funding: HoprBalance,
+}
+
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+impl Default for CurvyPoolConfig {
+    fn default() -> Self {
+        Self {
+            max_deposit_tracking_time: Duration::from_secs(60 * 60),
+            token: default_curvy_token(),
+            initial_funding: default_curvy_funding(),
+        }
+    }
+}
+
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+pub type HoprdCurvyPool =
+    Arc<CurvyDepositPool<BlokliClient, RsSdkCurvyAdapter, RedbCurvyDepositState>>;
+
 fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), ValidationError> {
     if interval < &Duration::from_secs(10) {
         Err(ValidationError::new(
@@ -160,11 +219,10 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 ///           gas_xdai_per_sweep: "0.01 xDai"
 /// ```
 ///
-/// Both sections may be omitted; each falls back to the upstream defaults documented on the
-/// respective type. Note that the accepted keys under `pool` follow the build: a
-/// `strategy-pix-curvy` binary has only `max_deposit_tracking_time`, and — because
-/// `CurvyDepositPoolConfig` does not set `deny_unknown_fields` — it *ignores* the secp256k1
-/// keys rather than rejecting them.
+/// Both sections may be omitted. The accepted keys under `pool` follow the build. A Curvy
+/// binary accepts `max_deposit_tracking_time`, the Curvy vault `token` id, and
+/// `initial_funding`; a secp256k1 binary accepts its gas-funding setting instead. Both config
+/// variants reject keys belonging to the other pool.
 #[cfg(feature = "pix")]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Validate)]
 #[serde(default, deny_unknown_fields)]
@@ -175,7 +233,13 @@ pub struct PixConfig {
     pub strategy: PixStrategyConfig,
     /// The selected deposit pool's own knobs.
     #[validate(nested)]
+    #[cfg(feature = "strategy-pix-secp256k1")]
     pub pool: PoolConfig,
+    #[cfg(all(
+        feature = "strategy-pix-curvy",
+        not(feature = "strategy-pix-secp256k1")
+    ))]
+    pub pool: CurvyPoolConfig,
 }
 
 /// Stand-in for `PixConfig` in a binary built without a PIX deposit pool.
@@ -345,6 +409,11 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 pub fn build_strategies<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
+    #[cfg(all(
+        feature = "strategy-pix-curvy",
+        not(feature = "strategy-pix-secp256k1")
+    ))]
+    curvy_pool: Option<HoprdCurvyPool>,
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
@@ -375,12 +444,31 @@ where
         .iter()
         .for_each(|s| METRIC_ENABLED_STRATEGIES.set(&[*s], 0_f64));
 
-    build_strategies_inner(cfg, node)
+    #[cfg(all(
+        feature = "strategy-pix-curvy",
+        not(feature = "strategy-pix-secp256k1")
+    ))]
+    let mut curvy_pool = curvy_pool;
+
+    build_strategies_inner(
+        cfg,
+        node,
+        #[cfg(all(
+            feature = "strategy-pix-curvy",
+            not(feature = "strategy-pix-secp256k1")
+        ))]
+        &mut curvy_pool,
+    )
 }
 
 fn build_strategies_inner<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
+    #[cfg(all(
+        feature = "strategy-pix-curvy",
+        not(feature = "strategy-pix-secp256k1")
+    ))]
+    curvy_pool: &mut Option<HoprdCurvyPool>,
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
@@ -468,9 +556,13 @@ where
                     not(feature = "strategy-pix-secp256k1")
                 ))]
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
-                    .build_curvy::<_, SpecDepositAddress>(
+                    .build_curvy_with_pool::<_, _, SpecDepositAddress>(
+                        curvy_pool.take().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Curvy PIX runtime pool is unavailable or more than one Pix strategy was configured"
+                            )
+                        })?,
                         Arc::clone(&node),
-                        sub_cfg.pool.clone(),
                     )?;
                 strategies.push(built);
             }
@@ -493,7 +585,15 @@ where
                 if cfg.allow_recursive {
                     let mut sub = sub_cfg.clone();
                     sub.allow_recursive = false;
-                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node))?);
+                    strategies.push(build_strategies_inner(
+                        &sub,
+                        Arc::clone(&node),
+                        #[cfg(all(
+                            feature = "strategy-pix-curvy",
+                            not(feature = "strategy-pix-secp256k1")
+                        ))]
+                        curvy_pool,
+                    )?);
                 } else {
                     tracing::error!("recursive multi-strategy not allowed and skipped");
                     continue; // skip the telemetry update: nothing was actually built

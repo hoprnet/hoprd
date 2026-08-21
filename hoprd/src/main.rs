@@ -153,7 +153,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         })
         .unwrap_or_else(|error| {
-            tracing::error!(%error, backtrace = ?error.backtrace(), "hoprd exited with an error");
+            tracing::error!(
+                error = %format_args!("{error:#}"),
+                backtrace = ?error.backtrace(),
+                "hoprd exited with an error"
+            );
             ExitCode::FAILURE
         })
 }

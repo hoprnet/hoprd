@@ -20,20 +20,13 @@ hoprd-api-client = { path = "rest-api-client" }
 # one curve on every build and make the other unreachable — which is exactly the state this
 # workspace was in before the split.
 #
-# Both are pinned to a `rev` rather than tracked on a branch. PIX landed on `master` as #8095 and
-# `lukas/pix` was deleted, so there is no branch left to follow — and a `branch` ref would be the
-# wrong replacement anyway: `master` moves, and every unrelated commit on it would arrive here
-# silently between one `cargo update` and the next. The `rev` is what makes a rebuild
-# reproducible, and moving it is a reviewable change.
-#
-# The PR squash-merged, so the rev is not an ancestor of the branch head it replaces and
-# `git merge-base` will not show the relationship; `2436e5d4` was verified byte-identical to
-# `66dee7c5` by content diff instead, and `7b46149b` moves only `.cargo/audit.toml` on top of it.
+# Both are pinned to the reviewed Curvy PIX integration commit rather than a moving branch.
+# The rev makes the cross-repository build reproducible and every dependency update reviewable.
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "0334442925766571dfe1ca9b247da8b33926a617", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "0334442925766571dfe1ca9b247da8b33926a617", default-features = false }
 
 # crates.io HOPR deps
 #
@@ -56,7 +49,7 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "7b4614
 # why the PIX deposit-address assertion still holds either way and does not catch this. When
 # `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
 # hoprnet followed; this line is where that agreement is written down.
-hopr-api = { version = "=2.0.0" }
+hopr-api = { version = "=2.0.1" }
 hopr-chain-connector = "0.22.2"
 hopr-ct-full-network = { version = "0.4.0", default-features = false }
 hopr-network-graph = { version = "0.5.0", default-features = false }
@@ -104,6 +97,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
 ] }
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
+const-hex = "1.19.1"
 console-subscriber = "0.5.0"
 flagset = "0.4.7"
 futures = { version = "0.3.33", default-features = false, features = [
@@ -238,3 +232,17 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# Temporary exact pins for the cross-repository Curvy PIX integration. Cargo only applies patches
+# from the top-level workspace, so the equivalent tables in git dependencies are not inherited.
+[patch.crates-io]
+blokli-client = { git = "https://github.com/hoprnet/blokli-client", rev = "98a890c7c6609c9467e02072702a743c29e1fa6a" }
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "683c13a710ca6d8ac22455bc104e2dfe876f9d86" }
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", rev = "19c6eec0357f75ac544536ae435ffc10da7b222f" }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", rev = "7955626cafacaca7d3b23b2e0cb74b9ca0c21544" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }
+hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hopr-impls", rev = "bb32c420b67dfe0d9a68eb8fe931c5f6e2f9d50e" }

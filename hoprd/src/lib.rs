@@ -28,6 +28,17 @@ use hopr_chain_connector::{
     BlockchainConnectorConfig, blokli_client, create_trustful_hopr_blokli_connector,
 };
 use hopr_chain_connector::{HoprBlockchainSafeConnector, blokli_client::BlokliClient};
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+use hopr_chain_connector::{
+    blokli_client::BlokliQueryClient,
+    pix::{
+        CurvyDepositPool, CurvyDepositPoolConfig, RedbCurvyDepositState, RsCoreCurvyNoteDetector,
+    },
+    pix_sdk::{Account, RsSdkCurvyAdapter, RsSdkCurvyAdapterConfig, blokli_curvy_client},
+};
 use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
@@ -52,6 +63,117 @@ enum HoprdProcess {
     Strategies,
     #[strum(to_string = "REST API process")]
     RestApi,
+}
+
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+fn configured_curvy_pool(
+    cfg: &crate::strategy::MultiStrategyConfig,
+) -> anyhow::Result<Option<crate::strategy::CurvyPoolConfig>> {
+    fn collect(
+        cfg: &crate::strategy::MultiStrategyConfig,
+        found: &mut Vec<crate::strategy::CurvyPoolConfig>,
+    ) {
+        for strategy in &cfg.strategies {
+            match strategy {
+                crate::strategy::StrategyKind::Pix(pix) => found.push(pix.pool.clone()),
+                crate::strategy::StrategyKind::Multi(nested) => collect(nested, found),
+                _ => {}
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    collect(cfg, &mut found);
+    anyhow::ensure!(
+        found.len() <= 1,
+        "only one Pix strategy may be configured because it owns the node's Curvy private pool"
+    );
+    Ok(found.pop())
+}
+
+#[cfg(all(
+    feature = "strategy-pix-curvy",
+    not(feature = "strategy-pix-secp256k1")
+))]
+async fn build_curvy_pool(
+    cfg: &HoprdConfig,
+    hopr_keys: &HoprKeys,
+    blokli_client: Arc<BlokliClient>,
+    safe_address: hopr_lib::api::types::primitive::prelude::Address,
+) -> anyhow::Result<Option<crate::strategy::HoprdCurvyPool>> {
+    use hopr_lib::api::types::primitive::traits::ToHex as _;
+
+    let Some(pool_cfg) = configured_curvy_pool(&cfg.strategy)? else {
+        return Ok(None);
+    };
+    anyhow::ensure!(pool_cfg.token != 0, "Curvy token id 0 is not registered");
+
+    let chain_info = blokli_client
+        .query_chain_info()
+        .await
+        .context("querying Blokli chain info for Curvy PIX")?;
+    let contracts: std::collections::HashMap<String, String> =
+        serde_json::from_str(&chain_info.contract_addresses.0)
+            .context("decoding Blokli contract addresses for Curvy PIX")?;
+    let contract = |name: &str| {
+        contracts
+            .get(name)
+            .cloned()
+            .with_context(|| format!("Blokli did not report the required {name} contract"))
+    };
+    let aggregator = contract("curvy_aggregator")?;
+    let portal_factory = contract("curvy_portal_factory")?;
+    let hopr_token = contract("token")?;
+    let chain_id =
+        u64::try_from(chain_info.chain_id).context("Blokli returned a negative chain id")?;
+
+    let raw_key = format!(
+        "0x{}",
+        const_hex::encode(hopr_keys.chain_key.secret().as_ref())
+    );
+    let operator_key = std::env::var("HOPRD_CURVY_OPERATOR_PRIVATE_KEY").context(
+        "HOPRD_CURVY_OPERATOR_PRIVATE_KEY is required for Curvy PIX: it must belong to a Curvy relayer holding PortalFactory OPERATOR_ROLE",
+    )?;
+    let spender = Account::from_poc_raw_private_key(&raw_key)
+        .context("deriving the node's Curvy private-pool account")?;
+    let state_path = std::path::Path::new(&cfg.db.data).join("curvy-pix.redb");
+    let state = RedbCurvyDepositState::open(&state_path)
+        .with_context(|| format!("opening Curvy PIX state at {}", state_path.display()))?;
+    let client = blokli_curvy_client(cfg.blokli_url.clone(), aggregator, portal_factory, chain_id);
+    let adapter_cfg = RsSdkCurvyAdapterConfig::new(spender, raw_key, operator_key, pool_cfg.token)
+        .with_erc20_funding(hopr_token);
+    let adapter = RsSdkCurvyAdapter::new(client, adapter_cfg, &state)
+        .context("opening the Curvy SDK private-pool state")?;
+    let initial_funding: u128 = pool_cfg
+        .initial_funding
+        .amount()
+        .try_into()
+        .map_err(|error| anyhow::anyhow!("Curvy initial funding does not fit u128: {error}"))?;
+    if initial_funding > 0 {
+        let ledger = adapter
+            .ensure_funded(initial_funding, &safe_address.to_hex())
+            .await
+            .context("shielding the node's initial Curvy PIX funding")?;
+        tracing::info!(
+            token_id = pool_cfg.token,
+            amount = %pool_cfg.initial_funding,
+            transactions = ledger.len(),
+            "Curvy PIX private pool is funded"
+        );
+    }
+
+    Ok(Some(Arc::new(CurvyDepositPool::new_with_config(
+        blokli_client,
+        adapter,
+        RsCoreCurvyNoteDetector::for_token(pool_cfg.token),
+        state,
+        CurvyDepositPoolConfig {
+            max_deposit_tracking_time: pool_cfg.max_deposit_tracking_time,
+        },
+    ))))
 }
 
 #[cfg(feature = "runtime-tokio")]
@@ -96,6 +218,15 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
+    let blokli_client = BlokliClient::new(
+        cfg.blokli_url.parse()?,
+        blokli_client::BlokliClientConfig {
+            timeout: std::time::Duration::from_secs(30),
+            stream_reconnect_timeout: std::time::Duration::from_secs(30),
+            subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
+            ..Default::default()
+        },
+    );
     let mut chain_connector = create_trustful_hopr_blokli_connector(
         &hopr_keys.chain_key,
         BlockchainConnectorConfig {
@@ -110,15 +241,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 })
                 .unwrap_or_else(|| BlockchainConnectorConfig::default().tx_timeout_multiplier),
         },
-        BlokliClient::new(
-            cfg.blokli_url.parse()?,
-            blokli_client::BlokliClientConfig {
-                timeout: std::time::Duration::from_secs(30),
-                stream_reconnect_timeout: std::time::Duration::from_secs(30),
-                subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
-                ..Default::default()
-            },
-        ),
+        blokli_client.clone(),
         cfg.hopr.safe_module.module_address,
     )
     .await?;
@@ -200,13 +323,28 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
+    #[cfg(all(
+        feature = "strategy-pix-curvy",
+        not(feature = "strategy-pix-secp256k1")
+    ))]
+    let curvy_pool =
+        build_curvy_pool(&cfg, &hopr_keys, Arc::new(blokli_client), safe_address).await?;
+
     if cfg.api.enable {
         let list = init_rest_api(&cfg, node.clone()).await?;
         processes.extend_from(list);
     }
 
     tracing::debug!("initializing strategies");
-    let mut multi_strategy = crate::strategy::build_strategies(&cfg.strategy, Arc::clone(&node))?;
+    let mut multi_strategy = crate::strategy::build_strategies(
+        &cfg.strategy,
+        Arc::clone(&node),
+        #[cfg(all(
+            feature = "strategy-pix-curvy",
+            not(feature = "strategy-pix-secp256k1")
+        ))]
+        curvy_pool,
+    )?;
     tracing::debug!(strategy = %multi_strategy, "initialized strategies");
 
     tracing::debug!("starting up strategies");
