@@ -5687,7 +5687,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "4.1.0"
+version = "5.0.0-rc.1"
 dependencies = [
  "anyhow",
  "async-signal",
