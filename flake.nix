@@ -292,6 +292,14 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
               }
             );
+            binary-hoprd-pix-secp256k1-x86_64-linux =
+              rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage
+                (
+                  projectBuildArgs
+                  // {
+                    cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-secp256k1";
+                  }
+                );
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
@@ -476,6 +484,32 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
+                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                pkgs.cacert
+                pkgs.curl
+              ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
+              Cmd = [ "hoprd" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
+            };
+            docker-hoprd-pix-secp256k1-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd-pix-secp256k1";
+              pathsToLink = [
+                "/bin"
+              ];
+              extraContents = [
+                dockerHoprdEntrypoint
+                pkgs.tini
+                hoprdPackages.binary-hoprd-pix-secp256k1-x86_64-linux
                 hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
