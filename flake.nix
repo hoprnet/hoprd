@@ -7,7 +7,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
-    crane.url = "github:ipetkov/crane/v0.23.4";
+    crane.url = "github:ipetkov/crane/v0.24.0";
     nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
     hoprnet.url = "github:hoprnet/hoprnet/a511b8a88b297f47a15986573bf6db3ef7b95937";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
