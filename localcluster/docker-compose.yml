@@ -6,7 +6,10 @@ services:
     platform: linux/amd64
     # Pinned by digest; keep in sync with CHAIN_IMAGE in .github/workflows/pr.yaml.
     # The previous 0.10.5-pr.349 pin was garbage-collected from the registry (404).
-    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
+    # Moved off 7b64692c because `hopr-types` 4.0.0 added a required `service_registry`
+    # contract address that image predates: the cluster aborts on startup with
+    # "contract addresses not a valid JSON: missing field `service_registry`".
+    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:32714eddb075c7eb781a4e5cc75c0e42a24ab8aa891f4749f7f49c5dcf1570f8
     ports:
       - "8080:8080"
     healthcheck:
