@@ -44,20 +44,23 @@ runtime-tokio = [
 # starts and serves normally; it panics on the first PIX deposit, which only happens once a
 # `Pix` strategy stanza is in the config.
 strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
-# Ethereum deposit addresses — what the localcluster tests and the PIX demo run against, and
-# currently the only pool that is implemented.
+# The plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
+# transfers. What the localcluster tests and the PIX demo run against, and currently the only pool
+# that is implemented.
+#
+# **For testing and development only.** Every deposit and sweep is linkable, so it offers no
+# anonymity at all. Named for that rather than for the curve, matching `hopr-strategy`'s own
+# `strategy-pix-test`: a pool that provides none of PIX's privacy should not be reachable in
+# production by asking for a curve. This was `strategy-pix-secp256k1` until hopr-strategy 4.0.0
+# renamed its half; the two are one name again.
+#
+# The curve has not moved and is not implied by the name — `hopr-lib/pix-secp256k1` below still
+# selects it, and `pix::pools::plain` still settles to an `Address`.
 #
 # `hopr-lib/pix-secp256k1` is stated positively rather than left to `default-features = false`,
 # because that opt-out only holds while every crate in the graph agrees to it — `hopr-utils-session`
 # pulling `hopr-lib` with defaults was enough to undo it, silently.
-#
-# The inner feature is `strategy-pix-test`, not a matching `strategy-pix-secp256k1`: hopr-strategy
-# 3.0.0 renamed it, to name the pool for what it is — plain, fully visible on-chain transfers, no
-# anonymity — rather than for the curve it settles on. The module is still `pix::secp256k1` and the
-# `hopr-lib/pix-secp256k1` pairing is unchanged, so only the one word moved. This feature keeps the
-# curve name because the Docker image, the flake outputs and `pix-demo.sh`'s `PIX_POOL` are named
-# after it.
-strategy-pix-secp256k1 = [
+strategy-pix-test = [
   "pix",
   "hopr-strategy/strategy-pix-test",
   "hopr-lib/pix-secp256k1",

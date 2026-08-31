@@ -25,7 +25,7 @@ use hopr_strategy::{
     channel_lifecycle::{
         CapacitySizingMode, ChannelLifecycleConfig, FundingConfig, PopulationConfig,
     },
-    // The pool matching this crate's `strategy-pix-secp256k1` on `hoprd`; `hoprd::strategy`
+    // The pool matching this crate's `strategy-pix-test` on `hoprd`; `hoprd::strategy`
     // selects the same one, so this is the type its `PixConfig::pool` field expects.
     pix::{pools::plain::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
 };

@@ -83,11 +83,11 @@ hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
 # agree on the major.
 #
 # What those majors changed for this workspace:
-#   - `strategy-pix-secp256k1` is now `strategy-pix-test`, and `pix::secp256k1` is now
+#   - `strategy-pix-secp256k1` became `strategy-pix-test`, and `pix::secp256k1` became
 #     `pix::pools::plain` — renamed upstream so that a pool offering no anonymity is named for how
 #     it settles rather than for the curve it settles on, and cannot be reached for in production
-#     by that curve name. hoprd keeps its own feature spelled `strategy-pix-secp256k1`, which is
-#     what the Docker image, the flake outputs and `pix-demo.sh`'s `PIX_POOL` are named after.
+#     by that curve name. hoprd's own feature, its flake outputs, its Docker image and
+#     `pix-demo.sh`'s `PIX_POOL` followed, so there is one name for it end to end.
 #   - **The Safe pays PIX deposits now, not the node's own account.** `hopr-types` 4.0.0 routes
 #     `SafePayloadGenerator::transfer` through the Safe module, so `withdraw` debits the Safe
 #     whoever signs. The pool follows that rather than fighting it. The node account still pays

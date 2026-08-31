@@ -297,14 +297,12 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
               }
             );
-            binary-hoprd-pix-secp256k1-x86_64-linux =
-              rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage
-                (
-                  projectBuildArgs
-                  // {
-                    cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-secp256k1";
-                  }
-                );
+            binary-hoprd-pix-test-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
+              }
+            );
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
@@ -506,15 +504,15 @@
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
-            docker-hoprd-pix-secp256k1-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd-pix-secp256k1";
+            docker-hoprd-pix-test-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd-pix-test";
               pathsToLink = [
                 "/bin"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
-                hoprdPackages.binary-hoprd-pix-secp256k1-x86_64-linux
+                hoprdPackages.binary-hoprd-pix-test-x86_64-linux
                 hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl

@@ -29,7 +29,7 @@
 # the test's module docs.
 #
 # The hoprd binary carries exactly one deposit pool, chosen at build time by a `strategy-pix-*`
-# feature; `PIX_POOL` (default `secp256k1`) says which one this run expects, and the binary is
+# feature; `PIX_POOL` (default `test`) says which one this run expects, and the binary is
 # checked against it before the cluster is started. `PIX_POOL=curvy` selects the Baby JubJub pool,
 # which is currently a stub that panics — it exists so the wiring can be exercised end to end.
 #
@@ -629,12 +629,14 @@ export HOPRD_BIN HOPRD_CHAIN_IMAGE
 #
 # `POOL` in `hoprd::strategy` is a `&str` compiled into the binary for exactly this, and for the
 # `pool=` field of the node's "enabling the PIX strategy" log line.
-: "${PIX_POOL:=secp256k1}"
+: "${PIX_POOL:=test}"
 case "$PIX_POOL" in
-secp256k1) POOL_MARKER="non-anonymous-secp256k1" ;;
+# The marker is the pool's own description, which still names the curve it settles on — only
+# the *feature* was renamed. `hoprd::strategy::POOL` is where it comes from.
+test) POOL_MARKER="non-anonymous-secp256k1" ;;
 curvy) POOL_MARKER="curvy" ;;
 *)
-  echo "PIX_POOL must be 'secp256k1' or 'curvy', got '$PIX_POOL'"
+  echo "PIX_POOL must be 'test' or 'curvy', got '$PIX_POOL'"
   exit 1
   ;;
 esac
@@ -660,7 +662,7 @@ fi
 if [ "$PIX_POOL" = "curvy" ]; then
   echo "PIX_POOL=curvy selects CurvyDepositPool, whose methods are unimplemented and panic."
   echo "The cluster will bootstrap and then die on the first deposit. This is expected until"
-  echo "the Baby JubJub pool is implemented; use PIX_POOL=secp256k1 for a run that completes."
+  echo "the Baby JubJub pool is implemented; use PIX_POOL=test for a run that completes."
   echo
 fi
 

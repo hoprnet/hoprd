@@ -17,12 +17,12 @@ use hopr_lib::api::{
 // unrelated error cascade rather than a message naming the rule it broke.
 //
 // Features are additive, so a third crate in the graph turning on the other pairing is enough to
-// reach the first case — and it does not fail, it silently picks secp256k1 by the `cfg` precedence
+// reach the first case — and it does not fail, it silently picks the plain pool by the `cfg` precedence
 // every block below is written with. The pool decides which address type deposits settle to, so
 // the wrong one deposits into an address the Exit can never sweep.
-#[cfg(all(feature = "strategy-pix-curvy", feature = "strategy-pix-secp256k1"))]
+#[cfg(all(feature = "strategy-pix-curvy", feature = "strategy-pix-test"))]
 compile_error!(
-    "the `strategy-pix-curvy` and `strategy-pix-secp256k1` features are mutually exclusive: they \
+    "the `strategy-pix-curvy` and `strategy-pix-test` features are mutually exclusive: they \
      select conflicting `hopr-lib/pix-*` features and `HoprPixSpec` has one deposit-address type. \
      Enable exactly one."
 );
@@ -31,11 +31,11 @@ compile_error!(
 // say nothing about the feature that is missing.
 #[cfg(all(
     feature = "pix",
-    not(any(feature = "strategy-pix-curvy", feature = "strategy-pix-secp256k1"))
+    not(any(feature = "strategy-pix-curvy", feature = "strategy-pix-test"))
 ))]
 compile_error!(
     "the `pix` feature selects no deposit pool on its own and is not meant to be enabled \
-     directly. Enable `strategy-pix-curvy` (production) or `strategy-pix-secp256k1` (tests and \
+     directly. Enable `strategy-pix-curvy` (production) or `strategy-pix-test` (tests and \
      demo), each of which turns on `pix` as well."
 );
 
@@ -47,12 +47,9 @@ use hopr_strategy::pix::strategy::{PixStrategy, PixStrategyConfig};
 // `PoolConfig` is per-pool: each pool module exports its own under that name, and the two share no
 // fields. Importing the selected one under a single name is what lets the two build blocks below
 // differ only in the fields they set.
-#[cfg(all(
-    feature = "strategy-pix-curvy",
-    not(feature = "strategy-pix-secp256k1")
-))]
+#[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
 use hopr_strategy::pix::pools::curvy::PoolConfig;
-#[cfg(feature = "strategy-pix-secp256k1")]
+#[cfg(feature = "strategy-pix-test")]
 use hopr_strategy::pix::pools::plain::PoolConfig;
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
 use serde::{Deserialize, Serialize};
@@ -67,12 +64,9 @@ use validator::{Validate, ValidationError};
 /// from `HOPRD_BIN` — so a stale artifact built with the other pairing would run with none of
 /// those checks having seen it. This is the one thing that makes the choice visible at runtime,
 /// and `pix-demo.sh` greps the binary for it.
-#[cfg(feature = "strategy-pix-secp256k1")]
+#[cfg(feature = "strategy-pix-test")]
 pub const POOL: &str = "non-anonymous-secp256k1";
-#[cfg(all(
-    feature = "strategy-pix-curvy",
-    not(feature = "strategy-pix-secp256k1")
-))]
+#[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
 pub const POOL: &str = "curvy";
 
 /// The deposit address type this build's `HoprPixSpec` produces.
@@ -84,7 +78,7 @@ pub const POOL: &str = "curvy";
 /// once per event at runtime having deposited nothing.
 ///
 /// Which instantiation of `HoprPixSpec` is in play is decided by the *feature graph*, not by
-/// anything visible in this file. The secp256k1 pool settles with a plain `HoprToken.transfer`
+/// anything visible in this file. The plain pool settles with an ordinary `HoprToken.transfer`
 /// signed by the node key, so it can only reach an Ethereum address; a Baby JubJub public key is
 /// a curve point, not an account, and no transfer can reach one.
 ///
@@ -164,7 +158,7 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 /// Both sections may be omitted; each falls back to the upstream defaults documented on the
 /// respective type. Note that the accepted keys under `pool` follow the build: a
 /// `strategy-pix-curvy` binary has only `max_deposit_tracking_time`, and — because
-/// `CurvyDepositPoolConfig` does not set `deny_unknown_fields` — it *ignores* the secp256k1
+/// `CurvyDepositPoolConfig` does not set `deny_unknown_fields` — it *ignores* the plain pool's
 /// keys rather than rejecting them.
 #[cfg(feature = "pix")]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Validate)]
@@ -246,7 +240,7 @@ impl validator::Validate for StrategyKind {
                         "the configuration contains a `Pix` strategy but this binary was built \
                          without a PIX deposit pool. Rebuild with `--features \
                          strategy-pix-curvy` (production) or `--features \
-                         strategy-pix-secp256k1` (tests and demo).",
+                         strategy-pix-test` (tests and demo).",
                     ),
                 );
                 Err(errors)
@@ -344,7 +338,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
 /// call site.
 ///
-/// `chain_key` is the node's own chain keypair. Only the `strategy-pix-secp256k1` pairing reads
+/// `chain_key` is the node's own chain keypair. Only the `strategy-pix-test` pairing reads
 /// it: since `hopr-types` 4.0.0 routes `SafePayloadGenerator::transfer` through the Safe module,
 /// the plain pool signs its sweeps and gas top-ups with short-lived EOA connectors instead, and
 /// the top-up is the one movement the *node* pays for. It is taken unconditionally so that the
@@ -392,7 +386,7 @@ where
 // feature rather than blanket-allowed, so the day something else here needs the key, an unused
 // one is still caught in the builds that have it.
 #[cfg_attr(
-    not(feature = "strategy-pix-secp256k1"),
+    not(feature = "strategy-pix-test"),
     allow(
         unused_variables,
         clippy::only_used_in_recursion,
@@ -479,17 +473,14 @@ where
                 // here, and `SpecDepositAddress` is the witness that it can settle what this
                 // build's spec produces. The generic `build_with_pool` exists for supplying a
                 // pool from outside this crate.
-                #[cfg(feature = "strategy-pix-secp256k1")]
+                #[cfg(feature = "strategy-pix-test")]
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_non_anonymous::<_, SpecDepositAddress>(
                         Arc::clone(&node),
                         chain_key.clone(),
                         sub_cfg.pool.clone(),
                     )?;
-                #[cfg(all(
-                    feature = "strategy-pix-curvy",
-                    not(feature = "strategy-pix-secp256k1")
-                ))]
+                #[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_curvy::<_, SpecDepositAddress>(
                         Arc::clone(&node),
@@ -503,7 +494,7 @@ where
             StrategyKind::Pix(_) => anyhow::bail!(
                 "the configuration contains a `Pix` strategy but this binary was built without a \
                  PIX deposit pool. Rebuild with `--features strategy-pix-curvy` (production) or \
-                 `--features strategy-pix-secp256k1` (tests and demo)."
+                 `--features strategy-pix-test` (tests and demo)."
             ),
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::ChannelLifecycle(sub_cfg) => strategies.push(
@@ -694,7 +685,7 @@ strategies:
             .expect_err("a Pix stanza must not validate without a deposit pool");
         let rendered = format!("{err:?}");
         assert!(
-            rendered.contains("strategy-pix-secp256k1"),
+            rendered.contains("strategy-pix-test"),
             "the error should name the features that fix it, got {rendered}"
         );
         Ok(())

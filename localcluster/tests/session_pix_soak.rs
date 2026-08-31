@@ -124,7 +124,7 @@
 //! It must also name a **deposit pool**, which no default supplies:
 //!
 //! ```bash
-//! nix develop -c cargo build --release -p hoprd --features strategy-pix-secp256k1
+//! nix develop -c cargo build --release -p hoprd --features strategy-pix-test
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -136,7 +136,7 @@
 //!
 //! | hoprd feature | pool | deposit address | status |
 //! |---|---|---|---|
-//! | `strategy-pix-secp256k1` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
+//! | `strategy-pix-test` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
 //! | `strategy-pix-curvy` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
 //!
 //! They are mutually exclusive and `hoprd::strategy` rejects both with a `compile_error!` —
@@ -152,7 +152,7 @@
 //! discover, which is why `pix-demo.sh` checks it before starting the cluster.
 //!
 //! Two separate builds are involved and nothing links them: this crate's own
-//! `strategy-pix-secp256k1` (in `localcluster/Cargo.toml`) selects the pool the *harness*
+//! `strategy-pix-test` (in `localcluster/Cargo.toml`) selects the pool the *harness*
 //! compiles against, while `HOPRD_BIN` is a *prebuilt binary* carrying whichever pool it was
 //! built with. When `CurvyDepositPool` is implemented and this test moves to Baby JubJub, both
 //! have to change together.

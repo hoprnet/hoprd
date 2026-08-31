@@ -31,11 +31,11 @@
 //!
 //! The `hoprd` binary must be built in **release** mode. Debug builds slow packet
 //! processing and cryptography enough to distort the SSA cycle pacing this test relies
-//! on. It must also carry the **secp256k1 deposit pool**, which is not hoprd's default —
+//! on. It must also carry the **plain deposit pool**, which is not hoprd's default —
 //! see [`session_pix_soak`](../session_pix_soak.rs) for why, and for the other pool.
 //!
 //! ```bash
-//! nix develop -c cargo build --release -p hoprd --features strategy-pix-secp256k1
+//! nix develop -c cargo build --release -p hoprd --features strategy-pix-test
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!

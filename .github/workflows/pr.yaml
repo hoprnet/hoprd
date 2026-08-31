@@ -229,8 +229,8 @@ jobs:
       docker_image_format: skopeo
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-  build-docker-pix-secp256k1:
-    name: Docker (pix-secp256k1)
+  build-docker-pix-test:
+    name: Docker (pix-test)
     needs: build-binaries
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
@@ -240,17 +240,17 @@ jobs:
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
       version_type: commit
-      concurrency_group_suffix: pix-secp256k1
+      concurrency_group_suffix: pix-test
       build_matrix: >-
         [
           {
             "runner": "depot-ubuntu-24.04-4",
             "architecture": "x86_64-linux",
-            "build_command": "nix build -L .#docker-hoprd-pix-secp256k1-x86_64-linux"
+            "build_command": "nix build -L .#docker-hoprd-pix-test-x86_64-linux"
           }
         ]
       build_file: ./hoprd/Cargo.toml
-      docker_image_name: hoprd-pix-secp256k1
+      docker_image_name: hoprd-pix-test
       docker_image_format: skopeo
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
