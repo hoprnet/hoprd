@@ -50,9 +50,16 @@ strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
 # `hopr-lib/pix-secp256k1` is stated positively rather than left to `default-features = false`,
 # because that opt-out only holds while every crate in the graph agrees to it — `hopr-utils-session`
 # pulling `hopr-lib` with defaults was enough to undo it, silently.
+#
+# The inner feature is `strategy-pix-test`, not a matching `strategy-pix-secp256k1`: hopr-strategy
+# 3.0.0 renamed it, to name the pool for what it is — plain, fully visible on-chain transfers, no
+# anonymity — rather than for the curve it settles on. The module is still `pix::secp256k1` and the
+# `hopr-lib/pix-secp256k1` pairing is unchanged, so only the one word moved. This feature keeps the
+# curve name because the Docker image, the flake outputs and `pix-demo.sh`'s `PIX_POOL` are named
+# after it.
 strategy-pix-secp256k1 = [
   "pix",
-  "hopr-strategy/strategy-pix-secp256k1",
+  "hopr-strategy/strategy-pix-test",
   "hopr-lib/pix-secp256k1",
 ]
 # "some PIX pool is selected", so the code that does not care which can gate on one name.

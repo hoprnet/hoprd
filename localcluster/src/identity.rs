@@ -27,7 +27,7 @@ use hopr_strategy::{
     },
     // The pool matching this crate's `strategy-pix-secp256k1` on `hoprd`; `hoprd::strategy`
     // selects the same one, so this is the type its `PixConfig::pool` field expects.
-    pix::{secp256k1::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
+    pix::{pools::plain::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
 };
 use hoprd::{
     config::{
@@ -120,13 +120,19 @@ pub struct PixSettings {
     /// Typically just the Exit — a relay never terminates a Session, so enforcement
     /// there has no effect.
     pub enforce_on_nodes: Vec<usize>,
-    /// wxHOPR left in each node's *own* account to pay for SSA deposits.
+    /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
-    /// Separate from the Safe's stake because deposits do not go through the Safe: see
-    /// the comment at the funding site. Sized by the caller against
-    /// `price_per_byte × quota_per_ssa × expected cycles` — a run that outlives this
-    /// float stops depositing, and the Exit's kill switch closes the Session.
-    pub node_deposit_float: HoprBalance,
+    /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
+    /// `SafePayloadGenerator::transfer` through the Safe module, so the pool's `withdraw` debits
+    /// the Safe whoever signs it. This used to fund the node account, back when that transfer was
+    /// direct.
+    ///
+    /// Sized by the caller against `price_per_byte × quota_per_ssa × expected cycles` — a run that
+    /// outlives this float stops depositing, and the Exit's kill switch closes the Session. It is
+    /// *added to* the stake rather than replacing it because the same Safe pays channel stakes,
+    /// and a float that merely overlapped them would run out early on whichever the strategy
+    /// happened to spend first.
+    pub safe_deposit_float: HoprBalance,
 
     // ── Settlement strategy, written as a `Pix` stanza in the node's strategy list ──
     /// Charged per byte of the agreed per-SSA quota; one SSA deposit is
@@ -135,6 +141,20 @@ pub struct PixSettings {
     /// Ceiling on a single SSA deposit. A larger computed deposit is refused outright,
     /// which starves the Session and lets the Exit's kill switch close it.
     pub max_ssa_allocation: HoprBalance,
+    /// Ceiling on the wxHOPR committed to deposits within [`Self::spend_window`], across all
+    /// Sessions. A deposit that would cross it is refused, which starves the Session exactly as
+    /// an empty account does — so this is also how a test bounds a run to a known number of
+    /// cycles.
+    ///
+    /// Bounding it by *balance* is no longer possible: deposits are paid by the Safe, which also
+    /// holds the channel stakes, so "the float ran out" cannot be arranged without also deciding
+    /// what the stakes leave behind. This says the number outright.
+    ///
+    /// Zero disables the ceiling.
+    pub max_spend_per_window: HoprBalance,
+    /// The window [`Self::max_spend_per_window`] is measured over. Must outlast the run, or the
+    /// window rolls mid-run and the budget silently refills.
+    pub spend_window: std::time::Duration,
     /// How long the Exit keeps polling for the deposit.
     ///
     /// This also sets the poll cadence (`/10`), which must stay comfortably below this
@@ -180,7 +200,7 @@ impl PixSettings {
 ///   and has no notion of which node terminates a Session, so enforcing anywhere would refuse
 ///   the ordinary non-PIX Sessions the same cluster is used for. PIX is available here, not
 ///   mandatory.
-/// - `node_deposit_float` is sized for a long interactive session rather than a fixed cycle
+/// - `safe_deposit_float` is sized for a long interactive session rather than a fixed cycle
 ///   count, since nothing bounds how long an operator leaves the cluster running. At the
 ///   price below that is roughly 300 cycles per node.
 ///
@@ -200,10 +220,17 @@ impl Default for PixSettings {
             max_ssa_delivery_time: std::time::Duration::from_secs(20),
             max_deposit_wait: std::time::Duration::from_secs(60),
             enforce_on_nodes: Vec::new(),
-            node_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
+            safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
             // ~3.32 wxHOPR per SSA deposit against the dimensions above.
             price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
+            // Matches `safe_deposit_float` above: an interactive cluster should stop when the
+            // float it was given is gone, not before. The two are stated separately because they
+            // guard different things — the float is what the Safe holds, this is what the
+            // strategy will commit — and a run stops at whichever binds first.
+            max_spend_per_window: "1000 wxHOPR".parse().expect("valid static amount"),
+            // Well beyond any interactive session; the ceiling is a total, not a rate.
+            spend_window: std::time::Duration::from_secs(24 * 3600),
             max_deposit_tracking_time: std::time::Duration::from_secs(30),
             gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
         }
@@ -487,20 +514,21 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 
     let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
     let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
-    // `deploy_safe` sweeps the node's whole wxHOPR balance into the Safe, but
-    // `SafePayloadGenerator::transfer` builds a *direct* `HoprToken.transfer` signed by
-    // the node key rather than routing through the module the way `announce` does — so
-    // PIX deposits are paid out of the node's own account, which is left at zero.
-    // Re-fund the node so it can make them.
-    let initial_pix_deposit_balance: HoprBalance = config
-        .pix
-        .as_ref()
-        .map(|pix| pix.node_deposit_float)
-        .unwrap_or_default();
-    // `fund_sweep_gas_impl` gates on the *Safe's* xDai balance before topping a
-    // recovered stealth address up for gas, so the Safe needs native funds even though
-    // the transfer itself is signed by the node.
-    let initial_safe_native_balance: XDaiBalance = "1 xDai".parse()?;
+    // What the Safe must hold for PIX, *on top of* the channel stake `deploy_safe` sweeps into
+    // it. The Safe and not the node account: `hopr-types` 4.0.0 routes
+    // `SafePayloadGenerator::transfer` through the Safe module, so the pool's `withdraw` debits
+    // the Safe whoever signs it. Before that the transfer was direct and the node paid, which is
+    // why this used to re-fund the node account that `deploy_safe` had just emptied.
+    //
+    // Summed rather than compared: the stake is already there, so a target of just the float
+    // would be met by the stake alone and transfer nothing — the float would silently be a slice
+    // of the stake, and whichever of channels or deposits spent first would starve the other.
+    let pix_safe_target: HoprBalance = initial_token_balance
+        + config
+            .pix
+            .as_ref()
+            .map(|pix| pix.safe_deposit_float)
+            .unwrap_or_default();
     let p2p_host = &config.p2p_host;
     debug!(
         token_balance = %initial_token_balance,
@@ -555,17 +583,38 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         debug!(
             price_per_byte = %pix.price_per_byte,
             max_ssa_allocation = %pix.max_ssa_allocation,
+            max_spend_per_window = %pix.max_spend_per_window,
             "enabling PIX settlement strategy",
         );
         strategies.push(StrategyKind::Pix(PixConfig {
             strategy: PixStrategyConfig {
                 price_per_byte: pix.price_per_byte,
                 max_ssa_allocation: pix.max_ssa_allocation,
+                max_spend_per_window: pix.max_spend_per_window,
+                spend_window: pix.spend_window,
                 ..Default::default()
             },
             pool: PixPoolConfig {
                 max_deposit_tracking_time: pix.max_deposit_tracking_time,
                 gas_xdai_per_sweep: pix.gas_xdai_per_sweep,
+                // Stated rather than left to the default. The pool builds its own EOA
+                // connectors here — that is how a sweep is signed by the deposit address
+                // instead of by the node's Safe module — and the default is a localhost
+                // placeholder. It happens to match a stock cluster, which is exactly why
+                // leaving it out would hide a cluster pointed somewhere else.
+                blokli_url: config.blokli_url.parse().with_context(|| {
+                    format!("parsing blokli URL {} for the PIX pool", config.blokli_url)
+                })?,
+                // The same multiplier every other connector in this cluster gets, and for the
+                // same reason: Anvil's block pacing does not resemble a real chain's, and the
+                // library default of 2 times out on a transaction that is still perfectly in
+                // flight. The pool's connectors need it stated separately because they are the
+                // pool's own — `HOPR_TX_TIMEOUT_MULTIPLIER` reaches the node's, not these.
+                //
+                // A sweep is the wrong place to be impatient: the transfer lands anyway, and
+                // what times out is only the wait for it, so the pool records a failure and the
+                // retries after it find the address already empty.
+                tx_timeout_multiplier: DEFAULT_TX_TIMEOUT_MULTIPLIER,
                 ..Default::default()
             },
         }));
@@ -712,31 +761,19 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             poll_handle.await??
         };
 
-        // Only PIX needs these top-ups, and each is an extra transaction per node — skip
-        // them when the strategy is off so other clusters bootstrap as fast as before.
+        // Only PIX needs this top-up, and it is an extra transaction per node — skip it when the
+        // strategy is off so other clusters bootstrap as fast as before.
+        //
+        // The Safe needs no xDai. It used to be given some, because `fund_sweep_gas` read its
+        // reserve gate off the Safe while signing the transfer with the node key — so a Safe
+        // without native funds refused every gas top-up and stranded every recovered deposit.
+        // hopr-strategy now derives that gate from the signing key itself, so the account it
+        // checks is the account it debits, and that is the node's. A real Safe holds wxHOPR and
+        // no xDai; this cluster now looks the same.
         if config.pix.is_some() {
-            let node_token_balance: HoprBalance = node_connector.balance(node_address).await?;
-            if node_token_balance < initial_pix_deposit_balance {
-                let top_up = initial_pix_deposit_balance - node_token_balance;
-                if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
-                    return Err(anyhow::anyhow!(
-                        "Account {} must have at least {top_up}.",
-                        anvil_connector.me()
-                    ));
-                }
-
-                anvil_connector
-                    .withdraw(top_up, &node_address)
-                    .await?
-                    .await?;
-                eprint!(
-                    "\x1b[2K\rNode {id}: {top_up} transferred to {node_address} for PIX deposits"
-                );
-            }
-
-            let safe_native_balance: XDaiBalance = node_connector.balance(safe.address).await?;
-            if safe_native_balance < initial_safe_native_balance {
-                let top_up = initial_safe_native_balance - safe_native_balance;
+            let safe_token_balance: HoprBalance = node_connector.balance(safe.address).await?;
+            if safe_token_balance < pix_safe_target {
+                let top_up = pix_safe_target - safe_token_balance;
                 if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
                     return Err(anyhow::anyhow!(
                         "Account {} must have at least {top_up}.",
@@ -749,7 +786,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                     .await?
                     .await?;
                 eprint!(
-                    "\x1b[2K\rNode {id}: {top_up} transferred to Safe {} for PIX sweep gas",
+                    "\x1b[2K\rNode {id}: {top_up} transferred to Safe {} for PIX deposits",
                     safe.address
                 );
             }

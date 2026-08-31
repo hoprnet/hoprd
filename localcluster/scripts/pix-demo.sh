@@ -320,10 +320,14 @@ trim() { printf '%s' "${1:-0}" | sed -e 's/\(\.[0-9]*[1-9]\)0*$/\1/' -e 's/\.0*$
 render() {
   for i in "${ALL_IDXS[@]}"; do scrape "$i"; done
 
-  local sweeps deposits made_failed confirmed keys last_sweep
+  local sweeps deposits made_failed over_budget confirmed keys last_sweep
   sweeps=$(metric "$EXIT_IDX" hopr_strategy_pix_sweeps)
   deposits=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits)
   made_failed=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_failed)
+  # How the run is *expected* to end: the strategy refuses the deposit that would cross
+  # `max_spend_per_window`. Counted separately from `_failed`, which is a deposit that was
+  # attempted and did not land — so the two lines below mean opposite things.
+  over_budget=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_over_budget)
   confirmed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
   keys=$(metric "$EXIT_IDX" hopr_strategy_pix_keys_recovered)
   last_sweep=$(grep -E '^hopr_strategy_pix_last_sweep_hopr' "$STATE_DIR/metrics_$EXIT_IDX" 2>/dev/null |
@@ -353,8 +357,11 @@ render() {
   local recovered
   recovered=$(trim "$(echo "$exit_safe - $baseline" | bc -l)")
 
+  # `safeHopr`, not `hopr`: since hopr-types 4.0.0 a deposit is routed through the Safe module,
+  # so it debits the Entry's Safe and its node account no longer moves. Reading `hopr` here
+  # showed a flat number all run and made it look as though nothing was being spent.
   local entry_float
-  entry_float=$(balance "$ENTRY_IDX" hopr)
+  entry_float=$(balance "$ENTRY_IDX" safeHopr)
   local per_cycle
   per_cycle=$(from_log "per_cycle")
   local funded
@@ -464,9 +471,13 @@ render() {
   printf '    %-22s %s %s%4d%s\n' "Exit confirmed" "$(bar "$confirmed" "$scale")" "" "$confirmed" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "SSA keys recovered" "$(bar "$keys" "$scale")" "" "$keys" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "swept into Safe" "$(bar "$sweeps" "$scale")" "$C_GREEN" "$sweeps" "$C_RESET"
+  if [ "${over_budget:-0}" -gt 0 ]; then
+    printf '    %-22s %s%4d%s  %sthe budget is spent — kill switch arming%s\n' \
+      "over budget" "$C_YELLOW" "$over_budget" "$C_RESET" "$C_DIM" "$C_RESET"
+  fi
   if [ "${made_failed:-0}" -gt 0 ]; then
-    printf '    %-22s %s%4d%s  %sthe float is spent — kill switch arming%s\n' \
-      "deposits refused" "$C_YELLOW" "$made_failed" "$C_RESET" "$C_DIM" "$C_RESET"
+    printf '    %-22s %s%4d%s  %snot expected — see the log%s\n' \
+      "deposits failed" "$C_RED" "$made_failed" "$C_RESET" "$C_DIM" "$C_RESET"
   fi
   printf '\n'
 
@@ -481,7 +492,19 @@ render() {
     printf '  %s= %s × %s%s' "$C_DIM" "${landed:-0}" "$per_cycle" "$C_RESET"
   fi
   printf '\n'
-  printf '    %-22s %s wxHOPR %sremaining for deposits%s\n' "Entry float" "$entry_float" "$C_DIM" "$C_RESET"
+  # What actually limits deposits is the rolling spend budget, not the balance — the Safe keeps
+  # whatever the channel stakes left over, so its remainder says nothing about how much longer
+  # the Entry can pay. Both are shown, the budget first, because the budget is what ends the run.
+  local budget
+  budget=$(from_log "float")
+  if [ -n "$budget" ] && [ -n "$per_cycle" ]; then
+    local committed
+    committed=$(trim "$(echo "$deposits * $per_cycle" | bc -l)")
+    printf '    %-22s %s of %s wxHOPR %scommitted to deposits%s\n' \
+      "Entry budget" "$committed" "$budget" "$C_DIM" "$C_RESET"
+  fi
+  printf '    %-22s %s wxHOPR %sSafe balance, stake remainder included%s\n' \
+    "Entry Safe" "$entry_float" "$C_DIM" "$C_RESET"
   [ -n "$last_sweep" ] && printf '    %-22s %s wxHOPR\n' "last sweep" "$last_sweep"
   printf '\n'
 
@@ -705,7 +728,7 @@ render "run finished"
 printf '\033[?25h'
 echo
 if [ "$STATUS" -eq 0 ]; then
-  printf '  %s✓ PASSED%s — the Entry spent its float, every recovered deposit reached the Safe,\n' "$C_GREEN$C_BOLD" "$C_RESET"
+  printf '  %s✓ PASSED%s — the Entry spent its budget, every recovered deposit reached the Safe,\n' "$C_GREEN$C_BOLD" "$C_RESET"
   printf '    and the Exit closed the Session once deposits stopped arriving.\n'
 else
   printf '  %s✗ FAILED%s — see %s\n' "$C_RED$C_BOLD" "$C_RESET" "$TEST_LOG"

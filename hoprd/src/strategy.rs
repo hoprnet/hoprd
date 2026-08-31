@@ -10,6 +10,7 @@ use hopr_lib::api::{
         PacketTransport,
     },
     tickets::TicketManagement,
+    types::crypto::keypairs::ChainKeypair,
 };
 // The two invariants the `strategy-pix-*` feature set relies on and Cargo cannot state. Both were
 // documented in prose in `Cargo.toml` and enforced by nothing; each produced a wrong binary or an
@@ -50,9 +51,9 @@ use hopr_strategy::pix::strategy::{PixStrategy, PixStrategyConfig};
     feature = "strategy-pix-curvy",
     not(feature = "strategy-pix-secp256k1")
 ))]
-use hopr_strategy::pix::curvy::PoolConfig;
+use hopr_strategy::pix::pools::curvy::PoolConfig;
 #[cfg(feature = "strategy-pix-secp256k1")]
-use hopr_strategy::pix::secp256k1::PoolConfig;
+use hopr_strategy::pix::pools::plain::PoolConfig;
 use hopr_strategy::strategy::{MultiStrategy, Strategy};
 use serde::{Deserialize, Serialize};
 
@@ -342,9 +343,16 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
 /// External strategies can be composed by building this result first, then wrapping
 /// it with additional strategies in a new `MultiStrategy::new(...)` call at the
 /// call site.
+///
+/// `chain_key` is the node's own chain keypair. Only the `strategy-pix-secp256k1` pairing reads
+/// it: since `hopr-types` 4.0.0 routes `SafePayloadGenerator::transfer` through the Safe module,
+/// the plain pool signs its sweeps and gas top-ups with short-lived EOA connectors instead, and
+/// the top-up is the one movement the *node* pays for. It is taken unconditionally so that the
+/// signature does not move with the feature set.
 pub fn build_strategies<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
+    chain_key: &ChainKeypair,
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
@@ -375,12 +383,26 @@ where
         .iter()
         .for_each(|s| METRIC_ENABLED_STRATEGIES.set(&[*s], 0_f64));
 
-    build_strategies_inner(cfg, node)
+    build_strategies_inner(cfg, node, chain_key)
 }
 
+// `chain_key` is unread unless the plain pool is compiled in; see `build_strategies`.
+// Without the plain pool there is no `build_non_anonymous` call, so `chain_key` reaches nothing
+// but the recursive call below — which is what both of these lints are pointing at. Gated on the
+// feature rather than blanket-allowed, so the day something else here needs the key, an unused
+// one is still caught in the builds that have it.
+#[cfg_attr(
+    not(feature = "strategy-pix-secp256k1"),
+    allow(
+        unused_variables,
+        clippy::only_used_in_recursion,
+        reason = "only the plain PIX pool signs with the node key"
+    )
+)]
 fn build_strategies_inner<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
+    chain_key: &ChainKeypair,
 ) -> anyhow::Result<Box<dyn Strategy + Send>>
 where
     N: ActionableEventSource
@@ -461,6 +483,7 @@ where
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_non_anonymous::<_, SpecDepositAddress>(
                         Arc::clone(&node),
+                        chain_key.clone(),
                         sub_cfg.pool.clone(),
                     )?;
                 #[cfg(all(
@@ -493,7 +516,7 @@ where
                 if cfg.allow_recursive {
                     let mut sub = sub_cfg.clone();
                     sub.allow_recursive = false;
-                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node))?);
+                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node), chain_key)?);
                 } else {
                     tracing::error!("recursive multi-strategy not allowed and skipped");
                     continue; // skip the telemetry update: nothing was actually built

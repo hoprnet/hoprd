@@ -9,7 +9,12 @@
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.4";
     nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
-    hoprnet.url = "github:hoprnet/hoprnet/a511b8a88b297f47a15986573bf6db3ef7b95937";
+    # Separate from the `hopr-lib` / `hopr-utils-session` rev in `Cargo.toml`, and used for one
+    # thing only: `binary-ticket-inspector`, which hoprnet builds as
+    # `-p hopr-ticket-manager --bin ticket-inspector`. That is the same crate the workspace pins,
+    # so the two are kept on the same commit — an inspector built against a different
+    # `hopr-ticket-manager` than the node writes with is reading someone else's schema.
+    hoprnet.url = "github:hoprnet/hoprnet/3188d8ee6b351934f7464960a79bf199e2151940";
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";

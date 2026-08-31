@@ -224,7 +224,9 @@ pub struct UserPixGlobalConfig {
     /// uses: the batch size is not negotiated, so an Exit batching above this has every request
     /// refused and loses the Session. Raise the two together.
     ///
-    /// Clamped upstream to 1..=20.
+    /// Clamped upstream to 1..=`MAX_SSA_BATCH_SIZE`, which hoprnet lowered from 20 to 9: each
+    /// entry in a batch costs the Entry a full commitment and its own on-chain deposit, and the
+    /// Exit a live reconstructor cycle of ~49 MiB.
     ///
     /// Default is 2.
     #[default(default_pix_max_ssas_per_request())]
@@ -289,7 +291,9 @@ pub struct UserIncomingSessionPixConfig {
     ///
     /// Must not exceed the peer Entry's `pix.max_ssas_per_request` — see that field.
     ///
-    /// Clamped upstream to 1..=20.
+    /// Clamped upstream to 1..=`MAX_SSA_BATCH_SIZE`, which hoprnet lowered from 20 to 9: each
+    /// entry in a batch costs the Entry a full commitment and its own on-chain deposit, and the
+    /// Exit a live reconstructor cycle of ~49 MiB.
     ///
     /// Default is 1, which reproduces the unbatched exchange exactly.
     #[default(default_pix_ssas_per_request())]

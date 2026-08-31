@@ -5,7 +5,7 @@
 //! group of endpoints.
 //!
 //! [`StubChain`] is a lightweight in-memory chain connector that implements
-//! all 11 `HoprChainApi` sub-traits. Write operations return stub errors;
+//! all 13 `HoprChainApi` sub-traits. Write operations return stub errors;
 //! read operations return sensible zero-values, except channel lookups, which
 //! are served from the channels planted with [`StubChain::with_channel`].
 //!
@@ -406,6 +406,73 @@ impl ChainWriteSafeOperations for StubChain {
     ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
     {
         Err(StubError("stub cannot deploy safe".into()))
+    }
+}
+
+// --- ChainReadServiceOperations ---
+
+#[async_trait]
+impl ChainReadServiceOperations for StubChain {
+    type Error = StubError;
+
+    fn stream_services<'a>(
+        &'a self,
+        _selector: ServiceSelector,
+    ) -> Result<BoxStream<'a, ServiceEntry>, Self::Error> {
+        Ok(Box::pin(stream::empty()))
+    }
+
+    async fn count_services(&self, _selector: ServiceSelector) -> Result<usize, Self::Error> {
+        Ok(0)
+    }
+
+    // `None` rather than a zero-burn config: the registry reports an unregistered service type
+    // this way, and an empty stub registry has none registered.
+    async fn get_service_type_config(
+        &self,
+        _service_type: ServiceType,
+    ) -> Result<Option<ServiceTypeConfig>, Self::Error> {
+        Ok(None)
+    }
+
+    async fn get_service_registry_config(&self) -> Result<ServiceRegistryConfig, Self::Error> {
+        Ok(ServiceRegistryConfig {
+            type_registration_fee: HoprBalance::zero(),
+            node_safe_registry: Address::default(),
+        })
+    }
+}
+
+// --- ChainWriteServiceOperations ---
+
+#[async_trait]
+impl ChainWriteServiceOperations for StubChain {
+    type Error = StubError;
+
+    async fn register_service<'a>(
+        &'a self,
+        _service_type: ServiceType,
+        _metadata: ServiceMetadata,
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot register services".into()))
+    }
+
+    async fn update_service<'a>(
+        &'a self,
+        _service_type: ServiceType,
+        _metadata: ServiceMetadata,
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot update services".into()))
+    }
+
+    async fn deregister_service<'a>(
+        &'a self,
+        _service_type: ServiceType,
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot deregister services".into()))
     }
 }
 

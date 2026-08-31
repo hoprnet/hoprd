@@ -29,14 +29,22 @@
 //! — an unopened channel, a missed announcement, a graph that only ever found one path — leaves
 //! every *other* assertion in this test passing. Here it fails the share floor.
 //!
-//! # The run ends when the Entry runs out of money
+//! # The run ends when the Entry runs out of budget
 //!
-//! There is no cycle target and no clock. The Entry is funded with a fixed float, it
-//! spends `price_per_byte × quota` of it per SSA, and when the next deposit is one it can
-//! no longer afford the deposit fails, the Exit stops seeing money arrive, and its PIX
-//! kill switch closes the Session with `ClosureReason::UnrealizedDeposit`. That is the
-//! designed behaviour, so this test asserts it happens rather than treating it as a
-//! failure — and it makes the run self-limiting:
+//! There is no cycle target and no clock. The Entry is given a fixed deposit budget, it
+//! commits `price_per_byte × quota` of it per SSA, and when the next deposit would cross the
+//! budget the strategy refuses it, the Exit stops seeing money arrive, and its PIX kill switch
+//! closes the Session with `ClosureReason::UnrealizedDeposit`. That is the designed behaviour,
+//! so this test asserts it happens rather than treating it as a failure — and it makes the run
+//! self-limiting:
+//!
+//! The budget is `PixStrategyConfig::max_spend_per_window`, not an empty account. It used to be
+//! the latter: deposits were paid by the node's own account, so funding that account with
+//! exactly N cycles' worth ended the run after N. `hopr-types` 4.0.0 moved the payer to the
+//! Safe, which also holds the channel stakes — so "the money ran out" would now mean "the
+//! stakes' leftovers ran out too", and the cycle count would depend on stake arithmetic that
+//! has nothing to do with PIX. The budget states the number instead. The Safe is still funded
+//! with the float, comfortably above the budget, so it is never what binds.
 //!
 //! ```text
 //! runtime ≈ bootstrap + (float / deposit_per_ssa) × (emissions_per_ssa / packet_rate)
@@ -484,7 +492,15 @@ fn packet_rate() -> u64 {
     }
 }
 
-fn pix_settings(node_deposit_float: HoprBalance) -> anyhow::Result<identity::PixSettings> {
+/// `budget` is what actually ends the run: the strategy refuses the deposit that would cross it,
+/// which starves the Session exactly as an empty account used to. `safe_deposit_float` is sized
+/// to cover it with room to spare, so the Safe's balance is never what binds — see
+/// [`identity::PixSettings::max_spend_per_window`] for why the run can no longer be bounded by
+/// balance alone.
+fn pix_settings(
+    safe_deposit_float: HoprBalance,
+    budget: HoprBalance,
+) -> anyhow::Result<identity::PixSettings> {
     Ok(identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
@@ -498,13 +514,17 @@ fn pix_settings(node_deposit_float: HoprBalance) -> anyhow::Result<identity::Pix
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         enforce_on_nodes: vec![EXIT],
-        node_deposit_float,
+        safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
         price_per_byte: PRICE_PER_BYTE.parse().context("parsing price per byte")?,
         max_ssa_allocation: MAX_SSA_ALLOCATION
             .parse()
             .context("parsing max SSA allocation")?,
+        max_spend_per_window: budget,
+        // Far past `DEFAULT_RUN_BUDGET` and past any plausible `HOPRD_PIX_SOAK_FLOAT` override.
+        // A window that rolled mid-run would refill the budget and the run would never end.
+        spend_window: Duration::from_secs(24 * 3600),
         max_deposit_tracking_time: MAX_DEPOSIT_TRACKING_TIME,
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
     })
@@ -758,7 +778,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         est_share_rate = emissions_per_ssa() / TARGET_CYCLE_SECS,
         "PIX geometry: {PIX_POLYS} polys x ({PIX_SHARES} + {PIX_ADDITIONAL_SHARES}) shares = \
          {quota} B per SSA at {price_per_byte}/B = {per_cycle} per deposit; {rate} datagrams/s \
-         each way, the run ends when {funded_cycles} deposits have drained the float"
+         each way, the run ends when {funded_cycles} deposits have spent the budget"
     );
 
     let cluster = Cluster::start(ClusterSpec {
@@ -772,7 +792,11 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             channel_lifecycle: false,
         },
         strategy_execution_interval: Some(Duration::from_secs(600)),
-        pix: Some(pix_settings(float)?),
+        // The same figure twice, deliberately: the Safe is funded with the float *and* the
+        // strategy is budgeted for it. The budget is what binds — the Safe additionally holds
+        // whatever the channel stakes left behind, so its balance alone would run the Entry
+        // several cycles past `funded_cycles`.
+        pix: Some(pix_settings(float, float)?),
         logs_to: Some("/tmp/pix-soak-logs"),
         ..ClusterSpec::new(ports::SESSION_PIX_SOAK)
     })
@@ -813,9 +837,10 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // Snapshot after channel funding, so the stakes are already out of the Safes and the
     // only movement left is PIX.
     //
-    // The two sides use different accounts: `SafePayloadGenerator::transfer` signs a
-    // direct token transfer with the node key, so deposits leave the Entry's *node*
-    // account, while `sweep_recovered` withdraws to the Exit's *Safe*.
+    // Both sides move wxHOPR through their *Safe*: `hopr-types` 4.0.0 routes
+    // `SafePayloadGenerator::transfer` through the Safe module, so a deposit debits the Entry's
+    // Safe however it is signed, and a sweep credits the Exit's. Until then the Entry's transfer
+    // was direct and left its node account, which is what this used to sample.
     let entry_before = entry.api.balances().await.context("entry balances")?;
     let exit_before = exit_node.api.balances().await.context("exit balances")?;
     let entry_metrics_before = NodeMetrics::scrape(&entry.api).await;
@@ -824,14 +849,18 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     for relay in RELAYS {
         relays_metrics_before.push(NodeMetrics::scrape(&cluster.node(relay).api).await);
     }
-    assert_eq!(
-        entry_before.node_hopr, float,
-        "the Entry node account holds {} rather than the {float} float it was configured \
-         with; the run length would not match the funding",
-        entry_before.node_hopr
+    // The budget is what ends the run, so what matters is that the Safe can cover it — not that
+    // it holds some exact figure. It holds the float plus whatever the channel stakes left, and
+    // an equality here would be asserting the arithmetic of the stakes rather than anything
+    // about PIX.
+    assert!(
+        entry_before.safe_hopr >= float,
+        "the Entry Safe holds {} against a {float} deposit budget, so it would run dry before \
+         the budget bound and the run would end for the wrong reason",
+        entry_before.safe_hopr
     );
     tracing::info!(
-        entry_node_hopr = %entry_before.node_hopr,
+        entry_safe_hopr = %entry_before.safe_hopr,
         exit_safe_hopr = %exit_before.safe_hopr,
         exit_safe_native = %exit_before.safe_native,
         "balances before the Session"
@@ -965,7 +994,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             cycles,
             funded_cycles,
             %recovered,
-            entry_float = %entry_now.node_hopr,
+            entry_safe = %entry_now.safe_hopr,
             sent_mb = sent_n * CHUNK_SIZE as u64 / 1_000_000,
             echoed_mb = echoed_n * CHUNK_SIZE as u64 / 1_000_000,
             echo_pkt_s = format!("{:.0}", echoed_n as f64 / secs),
@@ -1050,7 +1079,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         .await
         .context("exit balances after")?;
     let recovered = exit_after.safe_hopr - exit_before.safe_hopr;
-    let spent = entry_before.node_hopr - entry_after.node_hopr;
+    let spent = entry_before.safe_hopr - entry_after.safe_hopr;
     let sent_n = sent.load(Ordering::Acquire);
     let echoed_n = echoed.load(Ordering::Acquire);
     let echoed_bytes = echoed_n * CHUNK_SIZE as u64;
@@ -1127,19 +1156,23 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         entry_metrics.deposits_failed
     );
 
-    // The Entry spent its float down to what it could no longer afford, and every wxHOPR
-    // left as a whole SSA deposit.
+    // The Entry spent its budget down to what it could no longer afford, and every wxHOPR left
+    // as a whole SSA deposit. That the Safe delta is *only* deposits is arranged rather than
+    // assumed: both strategies that move Safe wxHOPR are off, and the channel stakes left before
+    // `entry_before` was sampled.
     let deposited_cycles = completed_cycles(spent, per_cycle).unwrap_or_else(|| {
         panic!(
-            "the Entry node account paid out {spent}, which is not a whole multiple of the \
+            "the Entry Safe paid out {spent}, which is not a whole multiple of the \
              {per_cycle} per-SSA deposit — something other than PIX deposits moved it"
         )
     });
     assert_eq!(
         deposited_cycles, funded_cycles,
-        "the Entry was funded for {funded_cycles} deposits but made {deposited_cycles}, leaving \
-         {} unspent. The run should end only once the float can no longer cover a deposit.",
-        entry_after.node_hopr
+        "the Entry was budgeted for {funded_cycles} deposits but made {deposited_cycles}. The \
+         run should end only once the next deposit would cross `max_spend_per_window` ({float}); \
+         its Safe still holds {}, so a shortfall here is the budget being hit early or a deposit \
+         being refused for some other reason.",
+        entry_after.safe_hopr
     );
 
     // And all of it, bar the SSAs cut short at the end, reached the Exit's Safe as whole

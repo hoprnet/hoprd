@@ -26,14 +26,20 @@ hoprd-api-client = { path = "rest-api-client" }
 # silently between one `cargo update` and the next. The `rev` is what makes a rebuild
 # reproducible, and moving it is a reviewable change.
 #
-# The PR squash-merged, so the rev is not an ancestor of the branch head it replaces and
-# `git merge-base` will not show the relationship; `2436e5d4` was verified byte-identical to
-# `66dee7c5` by content diff instead, and `7b46149b` moves only `.cargo/audit.toml` on top of it.
+# `3188d8ee` is the current `master` head and a plain fast-forward from the `7b46149b` it
+# replaces — four commits, all reachable, so `git log 7b46149b..master` is the whole diff. The
+# two earlier moves needed a content diff to establish that relationship because their PR had
+# squash-merged; this one does not.
+#
+# What those four commits carry: `f7c32948` reworks the Start protocol's `deposit_data` into one
+# entry per SSA sourced from the deposit pool (and caps `MAX_SSA_BATCH_SIZE` to 9), `3188d8ee`
+# bumps the published `hopr-api` stack to 4.1.0 / `hopr-types` 4.0.0, `ac40eff5` quiets
+# ERROR-spam on inbound packets to torn-down sessions, and `bb7bc621` is a flake-input bump.
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "7b46149bc32f0cdca76fd84e52c598b881c7d643", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "3188d8ee6b351934f7464960a79bf199e2151940", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "3188d8ee6b351934f7464960a79bf199e2151940", default-features = false }
 
 # crates.io HOPR deps
 #
@@ -56,37 +62,59 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "7b4614
 # why the PIX deposit-address assertion still holds either way and does not catch this. When
 # `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
 # hoprnet followed; this line is where that agreement is written down.
-hopr-api = { version = "=2.0.0" }
-hopr-chain-connector = "0.22.2"
-hopr-ct-full-network = { version = "0.4.0", default-features = false }
-hopr-network-graph = { version = "0.5.0", default-features = false }
-hopr-session-server-forwarder = { version = "0.1.1", default-features = false }
-# Was a `rev` on `hopr-strategy`'s `main` until that repo cut 1.0.0 from the very commit this was
-# pinned to — `748ec3ba`, per the release's `.cargo_vcs_info.json`. Verified rather than assumed:
-# the published `src/` tree diffs clean against the git checkout, the only omissions being the
-# `insta` snapshot directories, which the package excludes and no consumer compiles.
+hopr-api = { version = "=4.1.0" }
+hopr-chain-connector = "0.25.0"
+hopr-ct-full-network = { version = "0.6.0", default-features = false }
+hopr-network-graph = { version = "0.7.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
+# A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
+# only job is to document a version; this is a real dependency the resolver acts on, and pinning
+# it exactly would conflict with any other crate in the graph asking for a later 4.x.
 #
-# A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its only
-# job is to document a version; this is a real dependency the resolver acts on, and pinning it
-# exactly would conflict with any other crate in the graph asking for a later 1.x.
+# 4.0.0 is `477ab741` on that repo's `main` — the squash-merge of hopr-strategy#51 — per the
+# release's `.cargo_vcs_info.json`. Verified rather than assumed: the published `src/` tree diffs
+# clean against that commit, the only omissions being the `insta` snapshot directories, which the
+# package excludes and no consumer compiles.
 #
-# 1.0.2 is the floor rather than 1.0.0, and both patches are load-bearing here. 1.0.1 gave the PIX
-# config types `DisplayFromStr` on their balance fields — without it a balance is a positional
-# `[U256, currency]` pair and `price_per_byte: 0.0001 wxHOPR` does not parse — plus `PartialEq`,
-# which `StrategyKind`'s own derive requires of anything it carries. 1.0.2 extended the same set to
-# `CurvyDepositPoolConfig`, which 1.0.1 missed and which `--features strategy-pix-curvy` selects.
-hopr-strategy = { version = "1.0.2", default-features = false }
+# 4.0.0 is the third major in a fortnight, and it had to be taken together with the `hopr-lib` rev
+# above: 2.0.0 moved to `hopr-api` 3.0 and 3.0.0 to `hopr-api` 4.1, which is the agreement the
+# `hopr-api` line above records. Sitting still was not an option once hoprnet moved — the
+# `PixEvent` the node emits and the one the pool consumes are the same type only when both sides
+# agree on the major.
+#
+# What those majors changed for this workspace:
+#   - `strategy-pix-secp256k1` is now `strategy-pix-test`, and `pix::secp256k1` is now
+#     `pix::pools::plain` — renamed upstream so that a pool offering no anonymity is named for how
+#     it settles rather than for the curve it settles on, and cannot be reached for in production
+#     by that curve name. hoprd keeps its own feature spelled `strategy-pix-secp256k1`, which is
+#     what the Docker image, the flake outputs and `pix-demo.sh`'s `PIX_POOL` are named after.
+#   - **The Safe pays PIX deposits now, not the node's own account.** `hopr-types` 4.0.0 routes
+#     `SafePayloadGenerator::transfer` through the Safe module, so `withdraw` debits the Safe
+#     whoever signs. The pool follows that rather than fighting it. The node account still pays
+#     the sweep's *gas* top-up, which is signed on its own behalf. `localcluster` funds and
+#     asserts against both accordingly — see `PixSettings::safe_deposit_float`.
+#   - `build_non_anonymous` takes the node's `ChainKeypair`: the sweep and the gas top-up are
+#     signed by keys the node's Safe-bound connector cannot represent, so the pool builds its own.
+#   - `PoolConfig` gained `blokli_url` (where those connectors connect) and
+#     `tx_timeout_multiplier` (how long they wait for a confirmation — the node's setting does not
+#     reach them, and the default times out against Anvil).
+#   - `PixStrategyConfig` gained `max_spend_per_window` / `spend_window`;
+#     `NonAnonymousDepositPoolConfig` gained `min_node_xdai_reserve` / `min_safe_hopr_reserve`.
+#     All carry serde defaults, so existing `Pix` stanzas still parse unchanged.
+#   - Both builders now call `StrategyError::validate_config` before constructing anything, so a
+#     bad stanza fails at `build_strategies` instead of at the first deposit.
+hopr-strategy = { version = "4.0.0", default-features = false }
 # Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
 # `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
 # feature the rest of the workspace expects.
-hopr-ticket-manager = { version = "0.5.2", default-features = false, features = [
+hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
-hopr-transport-p2p = { version = "0.9.5", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.11.0", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"

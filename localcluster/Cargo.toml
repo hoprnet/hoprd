@@ -33,7 +33,9 @@ hopr-strategy = { workspace = true, features = [
   "runtime-tokio",
   "strategy-auto-redeeming",
   "strategy-channel-lifecycle",
-  "strategy-pix-secp256k1",
+  # hopr-strategy 3.0.0's name for the pool hoprd's `strategy-pix-secp256k1` above selects; see
+  # that feature's comment in `hoprd/Cargo.toml`.
+  "strategy-pix-test",
 ] }
 hopr-lib = { workspace = true }
 hopr-session-server-forwarder = { workspace = true }

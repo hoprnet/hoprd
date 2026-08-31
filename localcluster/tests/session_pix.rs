@@ -170,13 +170,17 @@ fn pix_settings() -> anyhow::Result<identity::PixSettings> {
         // Only the Exit refuses non-PIX Sessions; the relay never terminates one.
         enforce_on_nodes: vec![EXIT],
         // ~60 SSA deposits at this test's ~1.66 wxHOPR per cycle; it needs four.
-        node_deposit_float: "100 wxHOPR".parse().expect("valid static amount"),
+        safe_deposit_float: "100 wxHOPR".parse().expect("valid static amount"),
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
         price_per_byte: PRICE_PER_BYTE.parse().context("parsing price per byte")?,
         max_ssa_allocation: MAX_SSA_ALLOCATION
             .parse()
             .context("parsing max SSA allocation")?,
+        // Matches the float, so neither binds before the other: this test ends on its own
+        // cycle count, not on either budget, and a run that hits one of them has gone wrong.
+        max_spend_per_window: "100 wxHOPR".parse().expect("valid static amount"),
+        spend_window: Duration::from_secs(3600),
         max_deposit_tracking_time: MAX_DEPOSIT_TRACKING_TIME,
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
     })
@@ -252,11 +256,14 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
     // Snapshot after channel funding so the stakes are already out of the Safes and the
     // only subsequent movement is PIX.
     //
-    // The two sides use different accounts, which is not symmetric and easy to get
-    // wrong: `SafePayloadGenerator::transfer` signs a direct `HoprToken.transfer` with
-    // the node key, so the Entry's deposits leave its *node* account, while
-    // `sweep_recovered` calls `withdraw_from_signer(.., &safe_address)`, so the Exit's
-    // recoveries land in its *Safe*.
+    // Both sides move wxHOPR through their *Safe*, and for the same reason: `hopr-types` 4.0.0
+    // routes `SafePayloadGenerator::transfer` through the Safe module, so the Entry's deposits
+    // are debited from its Safe however they are signed, and the Exit's sweeps are credited to
+    // its own. Until then the Entry's transfer was direct and left its node account instead,
+    // which is what this used to sample.
+    //
+    // The node accounts are not idle — they still pay gas, and on the Exit they pay the sweep's
+    // xDai top-up — but nothing moves *wxHOPR* through them any more.
     let entry_before = entry
         .api
         .balances()
@@ -268,7 +275,7 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
         .await
         .context("reading exit balances")?;
     tracing::info!(
-        entry_node_hopr = %entry_before.node_hopr,
+        entry_safe_hopr = %entry_before.safe_hopr,
         exit_safe_hopr = %exit_before.safe_hopr,
         exit_safe_native = %exit_before.safe_native,
         "balances before the Session"
@@ -389,7 +396,15 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
     sender.abort();
     receiver.abort();
 
-    let deposits_made = count_in_node_log(&log_dir, ENTRY, "deposit successful")?;
+    // `hopr_strategy`'s wording, which is not the Exit's `SSA deposit successful` below — that one
+    // is `hopr_transport_session`'s. This grepped `deposit successful` and so counted zero however
+    // many deposits were made, which is a bad way to be wrong: it appears only in the failure
+    // messages, where it reads as "the Entry never deposited" and points the reader at the Entry
+    // when the fault is downstream.
+    //
+    // Only the single-deposit line. A batch logs once for the whole batch, so counting it would
+    // undercount; nothing here batches, because the SSAs arrive one at a time.
+    let deposits_made = count_in_node_log(&log_dir, ENTRY, "single deposit flushed successfully")?;
     let keys_recovered = count_in_node_log(&log_dir, EXIT, "private key recovered")?;
     let deposits_seen = count_in_node_log(&log_dir, EXIT, "SSA deposit successful")?;
     let deposits_missed = count_in_node_log(&log_dir, EXIT, "deposit confirmation timed out")?;
@@ -443,7 +458,11 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
         t0.elapsed()
     );
 
-    // The Entry funded every one of those deposits out of its own node account.
+    // The Entry funded every one of those deposits out of its Safe.
+    //
+    // That the delta is *only* deposits is arranged, not assumed: both strategies that move Safe
+    // wxHOPR are off (see `StrategySet` above), and the channel stakes left the Safe before
+    // `entry_before` was sampled. So nothing else here debits or credits it.
     //
     // Not an equality: the Exit requests the next SSA at the early-recovery threshold
     // (~85% of shares), so the Entry has already deposited for SSAs still in flight by
@@ -455,10 +474,10 @@ async fn localcluster_pix_session_sweeps_recovered_deposits_into_exit_safe() -> 
         .balances()
         .await
         .context("reading entry balances after")?;
-    let spent = entry_before.node_hopr - entry_after.node_hopr;
+    let spent = entry_before.safe_hopr - entry_after.safe_hopr;
     let deposited_cycles = completed_cycles(spent, per_cycle).unwrap_or_else(|| {
         panic!(
-            "the Entry node account paid out {spent}, which is not a whole multiple of the \
+            "the Entry Safe paid out {spent}, which is not a whole multiple of the \
              {per_cycle} per-SSA deposit — something other than PIX deposits moved it"
         )
     });
