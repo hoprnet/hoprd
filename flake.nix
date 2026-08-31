@@ -9,12 +9,8 @@
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.4";
     nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
-    # Separate from the `hopr-lib` / `hopr-utils-session` rev in `Cargo.toml`, and used for one
-    # thing only: `binary-ticket-inspector`, which hoprnet builds as
-    # `-p hopr-ticket-manager --bin ticket-inspector`. That is the same crate the workspace pins,
-    # so the two are kept on the same commit — an inspector built against a different
-    # `hopr-ticket-manager` than the node writes with is reading someone else's schema.
-    hoprnet.url = "github:hoprnet/hoprnet/3188d8ee6b351934f7464960a79bf199e2151940";
+    # No `hoprnet` input. It existed for one output — `binary-ticket-inspector` — which is now
+    # built here instead; see `ticketInspectorBuildArgs` for why and how.
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -45,7 +41,6 @@
       rust-overlay,
       crane,
       nix-lib,
-      hoprnet,
       foundry,
       pre-commit,
       ...
@@ -180,6 +175,68 @@
             ];
           };
 
+          # `ticket-inspector` is a diagnostic CLI for the node's tickets database. It is a binary
+          # target of `hopr-ticket-manager`, which this workspace already depends on — but as a
+          # registry crate, so `cargo build -p` cannot reach it from here and it needs a
+          # derivation of its own over the published tarball.
+          #
+          # It used to come from a `hoprnet` flake input. hoprnet extracted `hopr-ticket-manager`
+          # to `hopr-impls` and consumes it from crates.io itself now, but its flake still points
+          # `cargoToml` at the deleted `impls/ticket-manager/Cargo.toml`, so that output stopped
+          # evaluating ("unable to infer crate name and version"). Their own CI does not catch it:
+          # the only job that builds it is gated on a `build:candidate` label.
+          #
+          # Version and hash are read out of `Cargo.lock` rather than written down here, so the
+          # inspector is built from the exact bytes the node links and cannot drift from it. That
+          # invariant is the whole point — an inspector built against a different
+          # `hopr-ticket-manager` than the node writes with is reading someone else's schema — and
+          # deriving it is worth more than the comment that used to assert it.
+          #
+          # Two entries would mean the graph carries two majors and picking either one silently
+          # reintroduces exactly that mismatch, so this refuses rather than choosing.
+          ticketInspectorLockEntry =
+            let
+              lock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+              matches = lib.filter (p: p.name == "hopr-ticket-manager") lock.package;
+            in
+            if lib.length matches == 1 then
+              lib.head matches
+            else
+              throw "expected exactly one hopr-ticket-manager in Cargo.lock, found ${toString (lib.length matches)}";
+
+          # `fetchurl`, not `fetchCrate`: the latter unpacks via `fetchzip`, whose hash covers the
+          # extracted tree rather than the tarball, and so cannot be checked against the lock.
+          ticketInspectorSrc =
+            pkgs.runCommand "hopr-ticket-manager-${ticketInspectorLockEntry.version}-src" { }
+              ''
+                mkdir -p "$out"
+                tar -xzf ${
+                  pkgs.fetchurl {
+                    name = "hopr-ticket-manager-${ticketInspectorLockEntry.version}.tar.gz";
+                    url = "https://static.crates.io/crates/hopr-ticket-manager/${ticketInspectorLockEntry.version}/download";
+                    sha256 = ticketInspectorLockEntry.checksum;
+                  }
+                } --strip-components=1 -C "$out"
+              '';
+
+          ticketInspectorBuildArgs = {
+            inherit rev;
+            src = ticketInspectorSrc;
+            # The published tarball is a single self-contained package with its own `Cargo.lock`,
+            # so there is no larger tree to trim down to a dependency-only source, and no source
+            # churn for that trimming to buy anything against.
+            depsSrc = ticketInspectorSrc;
+            cargoToml = "${ticketInspectorSrc}/Cargo.toml";
+            # `cli` and `redb` are the binary's `required-features`; `serde` matches the feature
+            # set the workspace enables on the same crate in `Cargo.toml`.
+            cargoExtraArgs = "--bin ticket-inspector -F redb,serde,cli";
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
+          };
+
           # Build args for the memory-profiling variant (Linux).
           # Linux gets full jemalloc profiling: stats + dump-on-interval.
           memprofBuildArgs = projectBuildArgs // {
@@ -306,6 +363,11 @@
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
+
+            # Diagnostic CLI over the tickets database, shipped in every hoprd image.
+            binary-ticket-inspector = rust-builder-local.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
+            binary-ticket-inspector-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
+            binary-ticket-inspector-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
 
             binary-hoprd-profile-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
             binary-hoprd-profile-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
@@ -461,7 +523,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -487,7 +549,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -513,7 +575,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-pix-test-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -580,7 +642,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-aarch64-linux
+                hoprdPackages.binary-ticket-inspector-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -605,7 +667,7 @@
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];
