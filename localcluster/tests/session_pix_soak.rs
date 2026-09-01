@@ -33,8 +33,9 @@
 //!
 //! There is no cycle target and no clock. The Entry is given a fixed deposit budget, it
 //! commits `price_per_byte × quota` of it per SSA, and when the next deposit would cross the
-//! budget the strategy refuses it, the Exit stops seeing money arrive, and its PIX kill switch
-//! closes the Session with `ClosureReason::UnrealizedDeposit`. That is the designed behaviour,
+//! budget the strategy refuses it, the Exit stops seeing money arrive, and its PIX supervisor
+//! closes the Session with `ClosureReason::PixFailure` — its own `DepositTimeout`, rendered on the
+//! Exit's "pix supervisor closed the session" line. That is the designed behaviour,
 //! so this test asserts it happens rather than treating it as a failure — and it makes the run
 //! self-limiting:
 //!
@@ -521,6 +522,34 @@ fn pix_settings(
         // `session_pix.rs` is where the batched exchange is exercised.
         ssas_per_request: 1,
         max_ssas_per_request: 2,
+        // Inert at the ceiling of one above — the only batch the Exit can derive is the one it
+        // would have asked for — so this is upstream's default rather than the opt-out
+        // `session_pix.rs` needs. Stated anyway, because "unbatched" above is an assumption the
+        // soak's whole budget arithmetic rests on, and leaving the knob unmentioned would make it
+        // an assumption about a default rather than a setting.
+        allow_dynamic_ssa_batches: true,
+        // Sized against this run's own SURB buffer, because that buffer is exactly the number of
+        // packets the Exit can serve after a cycle recovers without any of them counting as
+        // progress.
+        //
+        // A share is bound to its SURB when the SURB is minted and the Exit spends the buffer
+        // roughly in order — the pipeline delay [`surb_buffer_target`] documents. So the instant an
+        // SSA recovers, all `surb_buffer_target()` buffered SURBs still carry *its* shares, and the
+        // successor's first share is that many replies away. Upstream drops progress reported
+        // against a recovered cycle, so none of those replies refreshes anything the successor
+        // owns.
+        //
+        // At the stock 2048 the gate blocks ~2048 replies into that drain (plus the
+        // `max_predeposit_packets` allowance an unfunded successor gets, 10 000). A blocked Exit
+        // spends no SURBs, which is the only thing that was draining the buffer, so nothing can
+        // restart it: measured three times as exactly one recovered cycle, the echo stopping dead,
+        // and `RecoveryIdle` closing the Session 60 s later with zero shares on SSA #2. That the
+        // old code survived this is not a difference in the drain — it is that nothing used to
+        // close a Session for lack of progress, so the run merely paused for the pipeline.
+        //
+        // One extra second of replies on top, so the bound is the drain plus slack rather than
+        // exactly the drain. `session_pix.rs` needs none of this: its response buffer is ~16 SURBs.
+        max_served_without_progress: surb_buffer_target() + packet_rate(),
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.

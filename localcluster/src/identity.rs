@@ -112,8 +112,11 @@ pub struct PixSettings {
     /// Exit's deadline for the SSA commitment to arrive.
     pub max_ssa_delivery_time: std::time::Duration,
     /// Exit's deadline for the deposit to land. Together with `max_ssa_delivery_time`
-    /// this forms the PIX kill switch: the Session is closed with
-    /// `ClosureReason::UnrealizedDeposit` once it elapses without a deposit.
+    /// this forms the PIX kill switch: the Exit-side supervisor closes the Session with
+    /// `ClosureReason::PixFailure`, for its own `SessionPixCloseReason::DepositTimeout`, once it
+    /// elapses without a deposit. It used to be `ClosureReason::UnrealizedDeposit`; that variant
+    /// still exists upstream but nothing produces it now that every PIX deadline belongs to the
+    /// supervisor and reports through one reason.
     pub max_deposit_wait: std::time::Duration,
     /// Node ids that reject incoming Sessions which do not opt into PIX.
     ///
@@ -148,6 +151,32 @@ pub struct PixSettings {
     /// Every node here gets both values, so in a cluster where any node may act as either end this
     /// must be at least `ssas_per_request` unless the refusal is the point.
     pub max_ssas_per_request: usize,
+    /// Whether the Exit may derive a smaller batch from the offered quota
+    /// (`incoming_session_pix.allow_dynamic_ssa_batches`).
+    ///
+    /// Upstream ships this on, which makes [`Self::ssas_per_request`] a ceiling rather than the size
+    /// actually asked for: the Exit takes the smallest batch whose `batch × quota_per_ssa` lands in
+    /// `quota_range_min..=quota_range_max`. With a floor of zero — which every configuration here
+    /// uses, since these dimensions sit far below the production window — a batch of one always
+    /// fits, so the ceiling is never reached.
+    ///
+    /// So a caller that means a *particular* batch size, rather than an upper bound on one, has to
+    /// turn this off. That is the only way an assertion about the batch on the wire says anything.
+    pub allow_dynamic_ssa_batches: bool,
+    /// Packets the Exit serves without a share coming back before its egress gate blocks
+    /// (`incoming_session_pix.max_served_without_progress`).
+    ///
+    /// **Must clear the Session's SURB buffer, and this is where a caller has to know that.** A
+    /// share is bound to a SURB when the SURB is minted and the Exit spends its buffer roughly in
+    /// order, so at the moment a cycle recovers the whole buffer still holds *that* cycle's shares
+    /// — and upstream discards progress reported against a recovered cycle. Draining it is
+    /// therefore that many served packets with nothing counting as progress, and a gate that blocks
+    /// partway through stops the very SURB spending that was draining it.
+    ///
+    /// A caller whose response buffer is a handful of SURBs can leave this at upstream's 2048; one
+    /// sizing a buffer for throughput has to size this against it. See `session_pix_soak.rs`, which
+    /// derives both from the same rate.
+    pub max_served_without_progress: u64,
     /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
     /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
@@ -252,6 +281,13 @@ impl Default for PixSettings {
             // room for one pipelined cycle — exactly as it did before either was reachable here.
             ssas_per_request: 1,
             max_ssas_per_request: 2,
+            // Upstream's default, and inert at the ceiling of one above: the only batch size the
+            // Exit can pick is the one it would have asked for anyway. Left on rather than pinned
+            // off so an operator raising `ssas_per_request` here gets the shipping behaviour.
+            allow_dynamic_ssa_batches: true,
+            // Upstream's default, which the interactive cluster's small response buffer leaves
+            // ample room under — see the field.
+            max_served_without_progress: 2048,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
             // ~3.32 wxHOPR per SSA deposit against the dimensions above.
             price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
@@ -306,6 +342,15 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             // named rather than swept up by `..Default::default()`, so a new upstream field is a
             // compile error here instead of a silently defaulted one.
             ssas_per_request: pix.ssas_per_request,
+            allow_dynamic_ssa_batches: pix.allow_dynamic_ssa_batches,
+            max_served_without_progress: pix.max_served_without_progress,
+            // Not [`PixSettings`] fields, because nothing here has a reason to move them: both are
+            // sized against `quota_range_max`, and every configuration in this crate sits orders of
+            // magnitude below the production window those defaults were chosen for. They are named
+            // rather than defaulted for the same reason the rest are — a `..Default::default()`
+            // here would take an upstream addition silently.
+            max_live_cycle_bytes: UserIncomingSessionPixConfig::default().max_live_cycle_bytes,
+            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -1262,12 +1307,16 @@ mod tests {
         Ok(())
     }
 
-    /// Both halves of the SSA batch pair must reach hoprd's config, survive YAML and validate.
+    /// Both halves of the SSA batch pair, and the switch that decides what the Exit's half means,
+    /// must reach hoprd's config, survive YAML and validate.
     ///
     /// The only check on that plumbing which does not need a cluster: the batch size is not
     /// negotiated on the wire, so an `ssas_per_request` that silently failed to reach the Exit —
     /// or a `max_ssas_per_request` that failed to reach the Entry — does not fail loudly. It
     /// shows up as a refused `SsaRequest` and a lost Session, minutes into an integration run.
+    /// `allow_dynamic_ssa_batches` is worse, because it fails *quietly*: an Exit that keeps
+    /// upstream's default derives its own batch size and simply runs unbatched, which looks like a
+    /// healthy run rather than like a failure.
     ///
     /// The mismatched pair is a case on purpose. hoprd has no cross-field validation for the two,
     /// so a node configured to ask for more than its peer accepts must still *start* — which is
@@ -1283,13 +1332,20 @@ mod tests {
         };
         let strategy = MultiStrategyConfig::default();
 
-        // The demo default, a matched batch, and the mismatch the refusal test arranges.
-        for (ssas_per_request, max_ssas_per_request) in [(1, 2), (3, 3), (3, 2)] {
+        // The demo default, a matched batch, and the mismatch the refusal test arranges. The
+        // last two carry the dynamic-batch opt-out with them, because that is how
+        // `session_pix.rs` configures them and the two knobs only mean a fixed batch together:
+        // left on, the Exit derives its own size from the offered quota and `ssas_per_request`
+        // becomes a ceiling it never reaches.
+        for (ssas_per_request, max_ssas_per_request, allow_dynamic_ssa_batches) in
+            [(1, 2, true), (3, 3, false), (3, 2, false)]
+        {
             let config = GenerationConfig {
                 config_home: PathBuf::from("/tmp/localcluster-test"),
                 pix: Some(PixSettings {
                     ssas_per_request,
                     max_ssas_per_request,
+                    allow_dynamic_ssa_batches,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1325,6 +1381,16 @@ mod tests {
             assert_eq!(
                 parsed.hopr.network.pix.max_ssas_per_request, max_ssas_per_request,
                 "the Entry's max_ssas_per_request did not reach the generated config"
+            );
+            assert_eq!(
+                parsed
+                    .hopr
+                    .network
+                    .incoming_session_pix
+                    .allow_dynamic_ssa_batches,
+                allow_dynamic_ssa_batches,
+                "the Exit's allow_dynamic_ssa_batches did not reach the generated config, so \
+                 ssas_per_request above means a ceiling rather than a batch size"
             );
         }
 

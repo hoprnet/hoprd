@@ -195,24 +195,22 @@ const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(30);
 const EXIT_BATCH_REQUEST: &str = "generated exit commitments for the SSA batch";
 /// Exit, once per SSA whose deposit it confirmed — which is also what defuses that cycle's
 /// kill switch. `hopr_transport_session`'s wording, not the Entry's deposit-flush lines below.
-const EXIT_DEPOSIT_SEEN: &str = "SSA deposit successful";
-/// Exit, once per SSA whose deposit did not arrive inside the (batch-scaled) window, letting
-/// the kill switch fire.
-const EXIT_DEPOSIT_MISSED: &str = "deposit confirmation timed out";
+const EXIT_DEPOSIT_SEEN: &str = "ssa deposit confirmed";
 /// Exit, once per SSA cycle whose stealth-address key it reconstructed.
 const EXIT_KEY_RECOVERED: &str = "private key recovered";
-/// Exit, once per kill switch that fired.
+/// Exit, when the PIX supervisor tore the Session down, carrying the `reason` it did it for.
 ///
-/// A strict prefix of `"pix session deposit timeout set"`, which is the switch being *armed* and
-/// happens on every request. Counting it needs the second needle below to tell them apart — see
-/// [`Cluster::count_log_lines`].
-const EXIT_KILL_SWITCH_FIRED: &str = "pix session deposit timeout";
-/// Field present on the fired line and absent from the armed one.
-const EXIT_KILL_SWITCH_INDEX: &str = "ssa_index=";
-/// Exit, when the SSA index space ran out mid-batch and the request was shortened. Reaching it
-/// needs 2^32 cycles in one Session, so it is a legibility guard: without it, a short batch
-/// would only show up as the batch-size assertion failing for no visible reason.
-const EXIT_BATCH_TRUNCATED: &str = "ssa batch truncated";
+/// One line, not one per SSA: the supervisor owns every PIX deadline now — commitment, deposit,
+/// service-gated recovery idle, the hard recovery ceiling, share order — and the first one it
+/// decides on closes the whole Session. So this single count stands in for the pair of per-SSA
+/// counters this test used to keep, and it is *wider* than they were: it also catches the failure
+/// modes upstream added with the supervisor, any of which would be a real fault in a run like this
+/// one.
+const EXIT_SUPERVISOR_CLOSED: &str = "pix supervisor closed the session";
+/// The `reason` field of the line above, for the case this test is most likely to hit: a deposit
+/// that did not arrive inside the batch-scaled window. `SessionPixCloseReason` renders it through
+/// `strum::Display`. Named only so the failure message can say which of the reasons it was.
+const EXIT_CLOSE_DEPOSIT_TIMEOUT: &str = "reason=DepositTimeout";
 /// Entry, once per SSA of an accepted batch, emitted only after that SSA's commitment is on
 /// the wire and its deposit has been handed to the strategy. This is the line that says the
 /// Entry *proceeded* with a batch entry rather than merely receiving it.
@@ -336,6 +334,22 @@ fn pix_settings(
         enforce_on_nodes: vec![EXIT],
         ssas_per_request,
         max_ssas_per_request: entry_cap,
+        // Off, so `ssas_per_request` is the batch size rather than a ceiling on one. Upstream's
+        // default derives the batch from the offered quota — the smallest whose
+        // `batch × quota_per_ssa` lands inside `quota_range` — and with the floor of zero above,
+        // a batch of one always lands there. Every profile would therefore run unbatched, which
+        // would take the `full_batches == exit_requests` assertion below with it: `batches_three`
+        // would quietly measure the same thing as `sweeps_recovered`, and the refusal test would
+        // never send the over-cap request it exists to arrange.
+        //
+        // Not worked around by raising `quota_range_min` past two cycles' worth, which would also
+        // force the batch: that makes the batch size a consequence of an arithmetic relation
+        // between four constants rather than something these tests state.
+        allow_dynamic_ssa_batches: false,
+        // Upstream's default, which `RESPONSE_BUFFER`'s ~16 SURBs sit two orders of magnitude
+        // under. `session_pix_soak.rs` is where the buffer is sized for throughput instead, and
+        // where this has to follow it.
+        max_served_without_progress: 2048,
         safe_deposit_float: DEPOSIT_BUDGET.parse().context("parsing deposit float")?,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
@@ -570,12 +584,11 @@ async fn run_pix_cycles(profile: &CycleProfile) -> anyhow::Result<()> {
     let exit_requests = cluster.count_log_lines(EXIT, &[EXIT_BATCH_REQUEST])?;
     let full_batches =
         cluster.count_log_lines(EXIT, &[EXIT_BATCH_REQUEST, &format!("batch_size={batch}")])?;
-    let truncated = cluster.count_log_lines(EXIT, &[EXIT_BATCH_TRUNCATED])?;
     let keys_recovered = cluster.count_log_lines(EXIT, &[EXIT_KEY_RECOVERED])?;
     let deposits_seen = cluster.count_log_lines(EXIT, &[EXIT_DEPOSIT_SEEN])?;
-    let deposits_missed = cluster.count_log_lines(EXIT, &[EXIT_DEPOSIT_MISSED])?;
-    let kill_switches_fired =
-        cluster.count_log_lines(EXIT, &[EXIT_KILL_SWITCH_FIRED, EXIT_KILL_SWITCH_INDEX])?;
+    let supervisor_closes = cluster.count_log_lines(EXIT, &[EXIT_SUPERVISOR_CLOSED])?;
+    let deposit_timeouts =
+        cluster.count_log_lines(EXIT, &[EXIT_SUPERVISOR_CLOSED, EXIT_CLOSE_DEPOSIT_TIMEOUT])?;
     let echoed = echoed.load(Ordering::Acquire);
 
     // ── Assertions ──────────────────────────────────────────────────────────────
@@ -589,12 +602,10 @@ async fn run_pix_cycles(profile: &CycleProfile) -> anyhow::Result<()> {
     // ── The batch size actually in effect ───────────────────────────────────────
     // Asserted for both profiles rather than only the batched one, so the unbatched run states
     // that it *is* unbatched instead of assuming it. `batch_size` is what the Exit allocated,
-    // not what it was configured with, so this also catches an upstream clamp.
-    assert_eq!(
-        truncated, 0,
-        "the Exit shortened {truncated} batch(es) for want of SSA index space, which needs 2^32 \
-         cycles in one Session and means something is very wrong"
-    );
+    // not what it was configured with, so this catches both an upstream clamp and the two ways a
+    // batch can come out short: `allow_dynamic_ssa_batches` left on, which would have the Exit
+    // size the batch from the offered quota instead (see `pix_settings`), and SSA index-space
+    // exhaustion, which needs 2^32 cycles in one Session and is silent upstream.
     assert_eq!(
         full_batches, exit_requests,
         "the Exit made {exit_requests} SSA requests but only {full_batches} of them asked for \
@@ -629,22 +640,23 @@ async fn run_pix_cycles(profile: &CycleProfile) -> anyhow::Result<()> {
          Entry served only part of each batch."
     );
 
-    // ── The Exit saw the deposits and did not kill the Session ──────────────────
+    // ── The Exit saw the deposits and its supervisor did not kill the Session ───
     // The deposit awaiter logs one line per SSA when it confirms a deposit and defuses that
-    // cycle's kill switch, and a different one when it gives up. Both are per SSA, not per
-    // batch, so they stay comparable to the cycle count under batching. Upstream scales the
-    // awaiter's window by `ssas_per_request` for exactly this reason: the N-th deposit of a
-    // batch the Entry is funding in order legitimately arrives late.
+    // cycle's kill switch — per SSA, not per batch, so it stays comparable to the cycle count
+    // under batching. Upstream scales the deadline by `ssas_per_request` for exactly this reason:
+    // the N-th deposit of a batch the Entry is funding in order legitimately arrives late.
+    //
+    // The close is one line for the whole Session rather than one per SSA, so it is asserted as a
+    // count of zero and not compared against the cycle count. `deposit_timeouts` only names which
+    // reason it was; a close for any other one — a stalled recovery, shares landing off the front
+    // of the batch, a part that failed to open — is just as much a failure of this run.
     assert_eq!(
-        deposits_missed, 0,
-        "the Exit gave up waiting for {deposits_missed} deposit(s) (it confirmed \
-         {deposits_seen}). Either the Entry's strategy never deposited, or a deposit landed \
-         outside the {batch} x (max_deposit_wait + max_ssa_delivery_time) window."
-    );
-    assert_eq!(
-        kill_switches_fired, 0,
-        "the PIX kill switch fired {kill_switches_fired} time(s), closing the Session for an \
-         unrealized deposit"
+        supervisor_closes, 0,
+        "the Exit's PIX supervisor closed the Session {supervisor_closes} time(s), \
+         {deposit_timeouts} of them for a deposit that never landed (it confirmed \
+         {deposits_seen}). A deposit timeout means either the Entry's strategy never deposited or \
+         a deposit landed outside the {batch} x (max_deposit_wait + max_ssa_delivery_time) \
+         window; any other reason is in the Exit's log next to \"{EXIT_SUPERVISOR_CLOSED}\"."
     );
     assert!(
         deposits_seen >= target_cycles as usize,
