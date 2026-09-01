@@ -502,6 +502,38 @@ impl Cluster {
         &self.log_dir
     }
 
+    /// Lines of node `id`'s hoprd log that contain *every* needle.
+    ///
+    /// Line-scoped rather than a count of substring occurrences over the whole file, which is
+    /// what a suite asserting on a `tracing` line actually needs. Two reasons, both load-bearing
+    /// for the PIX suites:
+    ///
+    /// - A message and one of its own fields — `"…for the SSA batch"` and `batch_size=3` — are only
+    ///   the same event if they are on the same line.
+    /// - One PIX message is a strict prefix of another: `"pix session deposit timeout"` is the kill
+    ///   switch firing, `"pix session deposit timeout set"` is it being armed. A substring count of
+    ///   the former reports both, so "the kill switch never fired" would be unassertable.
+    ///
+    /// Colour is stripped first, and that is not cosmetic. hoprd colours its output whether or not
+    /// stdout is a terminal, and `tracing` wraps a field's *name*, its `=` and its value in separate
+    /// escape sequences — a line displaying `batch_size=3` holds
+    /// `ESC[3mbatch_size ESC[0m ESC[2m= ESC[0m 3`. So no `field=value` needle matches the raw bytes,
+    /// and a suite asserting on one silently counts zero for every line.
+    ///
+    /// Fallible on purpose. Some of these counts *are* primary assertions, and a missing or
+    /// unreadable log would otherwise report zero — which reads as "the node never did this" when
+    /// the truth is "the test never looked", and fails the companion assertion while blaming the
+    /// node for a file-system problem.
+    pub fn count_log_lines(&self, id: usize, needles: &[&str]) -> Result<usize> {
+        let path = self.log_dir.join(format!("hoprd_{id}.log"));
+        let log = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {} to count {needles:?}", path.display()))?;
+        Ok(strip_ansi(&log)
+            .lines()
+            .filter(|line| needles.iter().all(|needle| line.contains(needle)))
+            .count())
+    }
+
     /// Wait for every node's `/readyz`.
     pub async fn wait_ready(&self, timeout: Duration) -> Result<()> {
         futures::future::try_join_all(self.nodes().iter().map(|n| n.api.wait_ready(timeout)))
@@ -530,6 +562,33 @@ impl Cluster {
             .await
             .context("waiting for peer reachability")
     }
+}
+
+/// `text` with ANSI CSI escape sequences removed. See [`Cluster::count_log_lines`] for why a
+/// harness reading hoprd's log files needs this at all.
+///
+/// Hand-rolled rather than a dependency: this models one sequence family — `ESC [` … final byte in
+/// `@`..=`~` — which is all `tracing`'s colour output emits. Anything else the escape starts is
+/// dropped along with the `ESC`, so a sequence this does not model degrades to a stray character
+/// rather than to swallowed text.
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(esc) = rest.find('\u{1b}') {
+        out.push_str(&rest[..esc]);
+        let after_esc = &rest[esc + 1..];
+        rest = match after_esc.strip_prefix('[') {
+            Some(params) => match params.find(|c: char| ('\u{40}'..='\u{7e}').contains(&c)) {
+                // The final byte is ASCII, so one past its start is a char boundary.
+                Some(end) => &params[end + 1..],
+                // Unterminated: the rest of the input is sequence, not text.
+                None => "",
+            },
+            None => after_esc,
+        };
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Loopback, for both the API and the P2P listeners. Not a knob: a localcluster is a

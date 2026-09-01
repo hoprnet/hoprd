@@ -514,6 +514,13 @@ fn pix_settings(
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         enforce_on_nodes: vec![EXIT],
+        // Unbatched, with hoprd's own Entry cap. The soak's subject is a long run at a fixed
+        // per-cycle cost, and batching would multiply the cycles in flight, the kill-switch
+        // window and the unincentivized service fronted before the first deposit — all of which
+        // this file's budget and pacing arithmetic is written against one cycle at a time.
+        // `session_pix.rs` is where the batched exchange is exercised.
+        ssas_per_request: 1,
+        max_ssas_per_request: 2,
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
