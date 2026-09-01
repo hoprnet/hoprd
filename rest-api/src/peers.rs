@@ -251,10 +251,10 @@ pub(super) async fn show_peer_info<
             }
             if let Some(imm) = obs.immediate_qos() {
                 found = Some(PeerQosInfo {
-                    probe_rate: imm.average_probe_rate().unwrap_or_default(),
+                    probe_rate: imm.average_probe_rate(),
                     last_update: obs.last_update().as_millis(),
                     average_latency: imm.average_latency().map(|l| l.as_millis()),
-                    score: obs.score().unwrap_or_default(),
+                    score: obs.score(),
                 });
             }
             break;

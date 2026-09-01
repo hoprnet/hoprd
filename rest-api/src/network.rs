@@ -177,7 +177,7 @@ pub(super) async fn connected<
         let Some(imm) = obs.immediate_qos() else {
             continue;
         };
-        if !imm.is_connected().unwrap_or(false) {
+        if !imm.is_connected() {
             continue;
         }
 
@@ -188,10 +188,10 @@ pub(super) async fn connected<
 
         peers.push(ConnectedPeerResponse {
             address,
-            probe_rate: imm.average_probe_rate().unwrap_or_default(),
+            probe_rate: imm.average_probe_rate(),
             last_update: obs.last_update().as_millis(),
             average_latency: imm.average_latency().map(|l| l.as_millis()),
-            score: obs.score().unwrap_or_default(),
+            score: obs.score(),
         });
     }
 
@@ -377,16 +377,16 @@ pub(super) async fn graph<
     for (src, dst, obs) in &edges {
         let src_label = label(src);
         let dst_label = label(dst);
-        let mut attrs = vec![format!("score={:.2}", obs.score().unwrap_or_default())];
+        let mut attrs = vec![format!("score={:.2}", obs.score())];
         if let Some(imm) = obs.immediate_qos()
             && let Some(latency) = imm.average_latency()
         {
             attrs.push(format!("lat={}ms", latency.as_millis()));
         }
         if let Some(inter) = obs.intermediate_qos()
-            && let Some(balance) = inter.balance()
+            && let Some(cap) = inter.capacity()
         {
-            attrs.push(format!("bal={balance}"));
+            attrs.push(format!("cap={cap}"));
         }
         use std::fmt::Write;
         let _ = writeln!(
