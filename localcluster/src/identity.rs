@@ -166,12 +166,13 @@ pub struct PixSettings {
     /// Packets the Exit serves without a share coming back before its egress gate blocks
     /// (`incoming_session_pix.max_served_without_progress`).
     ///
-    /// **Must clear the Session's SURB buffer, and this is where a caller has to know that.** A
-    /// share is bound to a SURB when the SURB is minted and the Exit spends its buffer roughly in
-    /// order, so at the moment a cycle recovers the whole buffer still holds *that* cycle's shares
-    /// — and upstream discards progress reported against a recovered cycle. Draining it is
-    /// therefore that many served packets with nothing counting as progress, and a gate that blocks
-    /// partway through stops the very SURB spending that was draining it.
+    /// **Must clear the Session's SURB buffer once that buffer is deeper than one cycle's paid
+    /// surplus.** A share is bound to its SURB when the SURB is minted and the Exit spends the
+    /// buffer roughly in order, so when a cycle recovers the queued SURBs still carry *its* shares.
+    /// Upstream credits that drain as liveness only up to `num_ssa_parts × additional_shares` —
+    /// the surplus the cycle was paid for, and a cap it holds for replay-resistance rather than
+    /// convenience. Anything queued beyond that is uncreditable, and a gate that blocks partway
+    /// through it stops the very SURB spending that was draining it.
     ///
     /// A caller whose response buffer is a handful of SURBs can leave this at upstream's 2048; one
     /// sizing a buffer for throughput has to size this against it. See `session_pix_soak.rs`, which

@@ -329,23 +329,28 @@ pub struct UserIncomingSessionPixConfig {
     /// Packets the Exit will serve without a single PIX share coming back before its egress gate
     /// blocks, as a backstop against an Entry that consumes service and returns nothing.
     ///
-    /// **This has to clear the peer's SURB buffer, and nothing validates that it does.** A PIX
-    /// share is bound to a SURB when the SURB is minted, and the Exit spends its buffer roughly in
-    /// order, so the buffer is a pipeline delay between a share being generated and being
-    /// delivered. The moment a cycle recovers, every SURB already buffered still carries *that*
-    /// cycle's shares — and upstream discards progress reported against a recovered cycle, since it
-    /// is no longer the one at the front. So the successor's first share cannot arrive until the
-    /// whole buffer has been spent, and none of those packets counts as progress.
+    /// **This has to clear the Session's SURB buffer whenever that buffer is deeper than one
+    /// cycle's paid surplus, and nothing validates that it does.** A PIX share is bound to a SURB
+    /// when the SURB is minted, and the Exit spends its buffer roughly in order, so the buffer is a
+    /// pipeline delay between a share being generated and being delivered. When a cycle recovers,
+    /// the SURBs already queued still carry *its* shares, and the successor's first share is that
+    /// whole queue away.
     ///
-    /// If this value is below that depth the gate blocks partway through the drain, and a blocked
-    /// Exit spends no SURBs — which is the only thing that was draining it. The Session then sits
-    /// until upstream's 60-second `max_recovery_idle` closes it, having recovered exactly one cycle
-    /// and seen no share at all on the next. The `max_predeposit_packets` allowance the gate grants
-    /// an unfunded successor is spent on the same drain, so the two together are what has to clear
-    /// the buffer.
+    /// Upstream credits part of that drain as liveness — the recovered cycle is kept as the paid
+    /// front until its FIFO tail passes — but only up to `num_ssa_parts × additional_shares`, the
+    /// surplus the cycle was actually paid for. That cap is a security bound, not a shortfall:
+    /// reconstruction releases the share set, so duplicate detection is gone and an uncapped
+    /// allowance would let an Entry replay one completed polynomial for unbounded service.
     ///
-    /// The default is sized for a Session whose buffer is a few thousand SURBs. A deployment
-    /// running a large response buffer for throughput has to raise this to match it.
+    /// So a Session whose SURB buffer exceeds that surplus volume has a remainder no protocol rule
+    /// can credit, and this is the only thing standing between it and a deadlock: the gate blocks
+    /// partway through the drain, and a blocked Exit spends no SURBs, which is the only thing that
+    /// was draining it. The Session then sits until upstream's 60-second `max_recovery_idle` closes
+    /// it, having recovered exactly one cycle.
+    ///
+    /// The default suits a Session buffering a few thousand SURBs. One provisioning a deep buffer
+    /// for throughput has to raise this to match it — see `session_pix_soak.rs`, which derives both
+    /// from the same rate.
     ///
     /// Default is upstream's 2048 packets.
     #[default(default_pix_max_served_without_progress())]
