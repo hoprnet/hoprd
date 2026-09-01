@@ -38,8 +38,8 @@ hoprd-api-client = { path = "rest-api-client" }
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "3188d8ee6b351934f7464960a79bf199e2151940", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "3188d8ee6b351934f7464960a79bf199e2151940", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
 
 # crates.io HOPR deps
 #
@@ -63,7 +63,7 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "3188d8
 # `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
 # hoprnet followed; this line is where that agreement is written down.
 hopr-api = { version = "=4.1.0" }
-hopr-chain-connector = "0.25.0"
+hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
