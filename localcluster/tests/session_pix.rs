@@ -346,9 +346,9 @@ fn pix_settings(
         // force the batch: that makes the batch size a consequence of an arithmetic relation
         // between four constants rather than something these tests state.
         allow_dynamic_ssa_batches: false,
-        // Upstream's default, which `RESPONSE_BUFFER`'s ~16 SURBs sit two orders of magnitude
-        // under. `session_pix_soak.rs` is where the buffer is sized for throughput instead, and
-        // where this has to follow it.
+        // Upstream's default. `RESPONSE_BUFFER`'s ~16 SURBs sit far under the
+        // `PIX_POLYS x PIX_ADDITIONAL_SHARES` = 16-share tail upstream credits after a recovery,
+        // so the drain never reaches this. `session_pix_soak.rs` is where it does.
         max_served_without_progress: 2048,
         safe_deposit_float: DEPOSIT_BUDGET.parse().context("parsing deposit float")?,
         // Settlement knobs. These used to travel as environment variables; they are written
