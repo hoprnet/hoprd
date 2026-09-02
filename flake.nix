@@ -758,6 +758,8 @@
               foundry-bin
               nfpm
               envsubst
+              # localcluster/scripts/pix-demo.sh does its arithmetic with bc
+              bc
             ];
             shellHook = ''
               # Runner-provided Nix binaries must not load libraries from this

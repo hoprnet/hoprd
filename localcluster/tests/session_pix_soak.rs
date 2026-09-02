@@ -114,6 +114,9 @@
 //! Required (at least one chain source):
 //!   HOPRD_CHAIN_URL   or HOPRD_CHAIN_IMAGE
 //! Optional: HOPRD_BIN, HOPRD_CONTAINER_RUNTIME, HOPRD_PIX_SOAK_FLOAT, HOPRD_PIX_SOAK_RATE
+//! With a Curvy binary (see *Curvy runs*), also:
+//!   CURVY_ZK_KEYS_DIR                 the Groth16 proving keys, required
+//!   HOPRD_CURVY_OPERATOR_PRIVATE_KEY  optional; defaults to the localcluster deployer key
 //!
 //! # Prerequisites
 //!
@@ -124,7 +127,7 @@
 //! It must also name a **deposit pool**, which no default supplies:
 //!
 //! ```bash
-//! nix develop -c cargo build --release -p hoprd --features strategy-pix-test
+//! nix develop -c cargo build --release -p hoprd --features strategy-pix-test   # or strategy-pix-curvy
 //! export HOPRD_BIN=$(pwd)/target/release/hoprd
 //! ```
 //!
@@ -137,7 +140,7 @@
 //! | hoprd feature | pool | deposit address | status |
 //! |---|---|---|---|
 //! | `strategy-pix-test` | `NonAnonymousDepositPool` | Ethereum `Address` | implemented — **what this test needs** |
-//! | `strategy-pix-curvy` | `CurvyDepositPool` | `BjjPublicKey` | stub, methods panic — production's eventual choice |
+//! | `strategy-pix-curvy` | `CurvyDepositPool` | `BjjPublicKey` | implemented — settles through the Curvy vault, see *Curvy runs* |
 //!
 //! They are mutually exclusive and `hoprd::strategy` rejects both with a `compile_error!` —
 //! `hopr-strategy` itself compiles both pools and lets the call site choose, since features are
@@ -153,9 +156,30 @@
 //!
 //! Two separate builds are involved and nothing links them: this crate's own
 //! `strategy-pix-test` (in `localcluster/Cargo.toml`) selects the pool the *harness*
-//! compiles against, while `HOPRD_BIN` is a *prebuilt binary* carrying whichever pool it was
-//! built with. When `CurvyDepositPool` is implemented and this test moves to Baby JubJub, both
-//! have to change together.
+//! compiles against — which only has to be *a* pool, since the harness never settles anything —
+//! while `HOPRD_BIN` is a *prebuilt binary* carrying whichever pool it was built with. The test
+//! reads the binary to learn which ([`binary_pool`]) and adapts its accounting to it.
+//!
+//! # Curvy runs
+//!
+//! Against a `strategy-pix-curvy` binary the money moves differently, and the assertions follow:
+//!
+//! * The Entry's Safe pays **once**: the pool shields [`curvy_shield`] into the Curvy vault on
+//!   the first deposit and allocates every SSA deposit out of that note, so the Safe delta is the
+//!   shield and not a count of deposits — those are taken from the strategy's own metric. The
+//!   shield is sized by this test and handed to the pool through `HOPRD_CURVY_INITIAL_FUNDING`,
+//!   gross of the vault's deposit fee.
+//! * The Exit is credited by the vault **less its withdrawal fee** (20 bps on the pinned chain
+//!   image), so a sweep lands `per_cycle` minus the fee. Both fees are read from Blokli once the
+//!   chain is up rather than assumed.
+//! * The first cycle carries the shield — a Safe transfer, the shield transaction, a commitment
+//!   proof and an aggregation proof, each waiting for a block — and was measured at 17–20 s where
+//!   the plain pool settles in 2–10 s. The kill switch is armed with the wider
+//!   [`CURVY_MAX_DEPOSIT_WAIT`] fuse.
+//!
+//! What such a run shows is the point of the pool: the Entry's Safe pays the vault and the vault
+//! pays the Exit, and nothing on chain ties the two. `localcluster/scripts/curvy-demo.sh` renders
+//! exactly that ledger, next to `pix-demo.sh`.
 //!
 //! Each test must be run individually — see [`common`] for details.
 //!
@@ -168,6 +192,7 @@
 mod common;
 
 use std::{
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -181,7 +206,7 @@ use common::{
     pix::{MAX_PLAUSIBLE_CYCLES, completed_cycles},
     ports,
 };
-use hopr_lib::api::types::primitive::prelude::HoprBalance;
+use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
 use hoprd_localcluster::{client_helper, identity};
 use tokio::net::UdpSocket;
 
@@ -433,6 +458,33 @@ const MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(20);
 /// Also fixes the Exit's deposit poll cadence at a tenth of this.
 const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
 
+// ── Curvy pool ──────────────────────────────────────────────────────────────────
+//
+// Only consulted when `HOPRD_BIN` carries `CurvyDepositPool`; see *Curvy runs* in the module docs.
+
+/// The pool's own knobs, read from the node's environment. `hopr_strategy::pix::pools::curvy`
+/// names them; they are restated here because the harness is built with the plain pool and that
+/// module is not in its graph.
+const CURVY_INITIAL_FUNDING_ENV: &str = "HOPRD_CURVY_INITIAL_FUNDING";
+const CURVY_OPERATOR_KEY_ENV: &str = "HOPRD_CURVY_OPERATOR_PRIVATE_KEY";
+/// Read by the Curvy SDK, which proves in-process and needs the zkeys on disk.
+const CURVY_ZK_KEYS_ENV: &str = "CURVY_ZK_KEYS_DIR";
+/// The deposit fee the shield is sized to absorb, in basis points. The pinned chain image
+/// charges 10. The actual figure is read from Blokli once the chain is up, and a deployment
+/// charging more than this is refused before any traffic moves: its last deposit would fail for
+/// want of funds and end the run for the wrong reason.
+const CURVY_SHIELD_FEE_CEILING_BPS: u64 = 100;
+/// Replaces both [`MAX_DEPOSIT_WAIT`] and [`MAX_DEPOSIT_TRACKING_TIME`] for the Curvy pool.
+///
+/// A Curvy deposit is a chain of transactions, each waiting for anvil to mine its predecessor,
+/// and the first one carries the shield on top: the Safe → portal transfer, the shield itself, a
+/// commitment proof and its transaction, then the allocation proof and its transaction, then that
+/// one's commitment. Measured at 17.4–20.3 s for the first cycle and 8–12 s after — against the
+/// 2–10 s the 20 s fuse was sized for. The same rule, 2× the observed worst case, rounded up.
+/// As `max_deposit_tracking_time` it also bounds how long a sweep waits for its note to be
+/// committed.
+const CURVY_MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(45);
+
 /// Per-SSA quota in bytes implied by the dimensions above.
 ///
 /// Mirrors [`identity::PixSettings::quota_per_ssa`], which cannot be used here because the
@@ -492,6 +544,138 @@ fn packet_rate() -> u64 {
     }
 }
 
+// ── Deposit pools ───────────────────────────────────────────────────────────────
+
+/// The deposit pool compiled into `HOPRD_BIN`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pool {
+    /// `NonAnonymousDepositPool`: each deposit is a plain transfer from the Entry's Safe to a
+    /// fresh address, swept to the Exit's Safe in full.
+    Test,
+    /// `CurvyDepositPool`: one shield into the Curvy vault, allocations inside it, withdrawals
+    /// under a zk proof net of the vault's fee. See *Curvy runs* in the module docs.
+    Curvy,
+}
+
+impl std::fmt::Display for Pool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Pool::Test => "test",
+            Pool::Curvy => "curvy",
+        })
+    }
+}
+
+/// `hoprd::strategy::POOL` of a `strategy-pix-test` build — a string compiled into the binary,
+/// and the marker `pix-demo.sh` checks. It is the only usable needle: `hopr-strategy` compiles
+/// both pools into either binary and the feature merely selects one, so "curvy" is in both.
+const TEST_POOL_MARKER: &[u8] = b"non-anonymous-secp256k1";
+
+/// Which pool `HOPRD_BIN` carries, read off the binary itself.
+///
+/// Nothing links the harness build to the prebuilt binary (module docs), and the accounting
+/// differs per pool, so a guess that was wrong would surface five minutes later as a Safe delta
+/// that is off by a fee.
+fn binary_pool() -> anyhow::Result<Pool> {
+    let bin = std::env::var("HOPRD_BIN").unwrap_or_else(|_| "hoprd".to_string());
+    let path = if bin.contains(std::path::MAIN_SEPARATOR) {
+        PathBuf::from(&bin)
+    } else {
+        std::env::var_os("PATH")
+            .into_iter()
+            .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+            .map(|dir| dir.join(&bin))
+            .find(|candidate| candidate.is_file())
+            .with_context(|| format!("HOPRD_BIN={bin} is not on PATH"))?
+    };
+    let bytes = std::fs::read(&path).with_context(|| {
+        format!(
+            "reading {} to tell which deposit pool it carries",
+            path.display()
+        )
+    })?;
+    let is_test = bytes
+        .windows(TEST_POOL_MARKER.len())
+        .any(|window| window == TEST_POOL_MARKER);
+    Ok(if is_test { Pool::Test } else { Pool::Curvy })
+}
+
+/// `amount` less `bps` basis points of it, the way the vault takes its cut.
+fn less_fee(amount: HoprBalance, bps: u64) -> HoprBalance {
+    let fee = amount.amount() * U256::from(bps) / U256::from(10_000u64);
+    HoprBalance::from(amount.amount() - fee)
+}
+
+/// The shield that leaves at least `net` in the vault after a deposit fee of up to
+/// [`CURVY_SHIELD_FEE_CEILING_BPS`], rounded up to a whole wxHOPR so that the figure the chain
+/// shows is one a viewer can read.
+fn curvy_shield(net: HoprBalance) -> HoprBalance {
+    let keep = U256::from(10_000 - CURVY_SHIELD_FEE_CEILING_BPS);
+    let gross = (net.amount() * U256::from(10_000u64) + keep - U256::one()) / keep;
+    let one = U256::exp10(18);
+    HoprBalance::from((gross + one - U256::one()) / one * one)
+}
+
+/// What the Curvy pool needs from the environment, checked before minutes are spent on a
+/// bootstrap, and what this test hands it: the shield it sized, and the operator key defaulted
+/// to the localcluster deployer, which deployed the Curvy contracts on the pinned chain image.
+fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> {
+    let zk_keys = std::env::var(CURVY_ZK_KEYS_ENV).with_context(|| {
+        format!(
+            "{CURVY_ZK_KEYS_ENV} must point at the Curvy proving keys for a Curvy binary: the \
+             pool proves in-process"
+        )
+    })?;
+    anyhow::ensure!(
+        Path::new(&zk_keys).is_dir(),
+        "{CURVY_ZK_KEYS_ENV}={zk_keys} is not a directory"
+    );
+    anyhow::ensure!(
+        std::env::var_os(CURVY_INITIAL_FUNDING_ENV).is_none(),
+        "{CURVY_INITIAL_FUNDING_ENV} is set, but this test sizes the shield itself ({shield}) and \
+         asserts that the Safe paid exactly that; unset it"
+    );
+    let operator_key = std::env::var(CURVY_OPERATOR_KEY_ENV)
+        .unwrap_or_else(|_| identity::DEFAULT_PRIVATE_KEY.to_string());
+    Ok(vec![
+        (CURVY_INITIAL_FUNDING_ENV.to_string(), shield.to_string()),
+        (CURVY_OPERATOR_KEY_ENV.to_string(), operator_key),
+    ])
+}
+
+/// The vault's `(deposit, withdrawal)` fees in basis points, from Blokli.
+///
+/// A direct GraphQL query rather than `blokli-client`'s `query_curvy_vault_fees`: that method is
+/// behind the client's `curvy` feature, which only a `strategy-pix-curvy` build enables, and the
+/// harness is built with the plain pool.
+async fn curvy_vault_fees(blokli_url: &str) -> anyhow::Result<(u64, u64)> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    let body = serde_json::json!({
+        "query": "{ curvyVaultFees { ... on CurvyVaultFees { depositFee withdrawalFee } } }"
+    });
+    let reply: serde_json::Value = client
+        .post(format!("{blokli_url}/graphql"))
+        .json(&body)
+        .send()
+        .await
+        .context("querying Blokli for the Curvy vault fees")?
+        .error_for_status()?
+        .json()
+        .await
+        .context("decoding the Curvy vault fees")?;
+    let fees = &reply["data"]["curvyVaultFees"];
+    let bps = |field: &str| -> anyhow::Result<u64> {
+        fees[field]
+            .as_str()
+            .with_context(|| format!("no `{field}` in Blokli's curvyVaultFees reply: {reply}"))?
+            .parse()
+            .with_context(|| format!("`{field}` is not a number in {reply}"))
+    };
+    Ok((bps("depositFee")?, bps("withdrawalFee")?))
+}
+
 /// `budget` is what actually ends the run: the strategy refuses the deposit that would cross it,
 /// which starves the Session exactly as an empty account used to. `safe_deposit_float` is sized
 /// to cover it with room to spare, so the Safe's balance is never what binds — see
@@ -500,6 +684,7 @@ fn packet_rate() -> u64 {
 fn pix_settings(
     safe_deposit_float: HoprBalance,
     budget: HoprBalance,
+    pool: Pool,
 ) -> anyhow::Result<identity::PixSettings> {
     Ok(identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
@@ -512,7 +697,10 @@ fn pix_settings(
         quota_range_min: 0,
         quota_range_max: 64 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
-        max_deposit_wait: MAX_DEPOSIT_WAIT,
+        max_deposit_wait: match pool {
+            Pool::Test => MAX_DEPOSIT_WAIT,
+            Pool::Curvy => CURVY_MAX_DEPOSIT_WAIT,
+        },
         enforce_on_nodes: vec![EXIT],
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
@@ -525,7 +713,10 @@ fn pix_settings(
         // Far past `DEFAULT_RUN_BUDGET` and past any plausible `HOPRD_PIX_SOAK_FLOAT` override.
         // A window that rolled mid-run would refill the budget and the run would never end.
         spend_window: Duration::from_secs(24 * 3600),
-        max_deposit_tracking_time: MAX_DEPOSIT_TRACKING_TIME,
+        max_deposit_tracking_time: match pool {
+            Pool::Test => MAX_DEPOSIT_TRACKING_TIME,
+            Pool::Curvy => CURVY_MAX_DEPOSIT_WAIT,
+        },
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
     })
 }
@@ -747,6 +938,16 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         funded_cycles > 0,
         "the float {float} does not cover even one {per_cycle} deposit"
     );
+    let pool = binary_pool()?;
+    // What the Entry's Safe pays out over the run: every deposit with the plain pool, the one
+    // shield with Curvy.
+    let (safe_outlay, node_env) = match pool {
+        Pool::Test => (float, Vec::new()),
+        Pool::Curvy => {
+            let shield = curvy_shield(float);
+            (shield, curvy_node_env(shield)?)
+        }
+    };
     // Refuse a rate whose buffer would not fit, rather than running it and reporting the damage
     // hundreds of lines later as an unexplained stranded deposit. Evicted SURBs lose their shares
     // permanently, so there is no partial result worth having here.
@@ -764,7 +965,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // greps this banner for `<name>=<number>` and takes the first match in the whole log, so
     // a field name that could occur in any other line would be read out of that line instead.
     tracing::info!(
-        rate, quota, %price_per_byte, %per_cycle, %float, funded_cycles,
+        rate, quota, %price_per_byte, %per_cycle, %float, funded_cycles, %pool,
         ssa_polys = PIX_POLYS,
         ssa_shares = PIX_SHARES,
         ssa_surplus = PIX_ADDITIONAL_SHARES,
@@ -792,12 +993,13 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             channel_lifecycle: false,
         },
         strategy_execution_interval: Some(Duration::from_secs(600)),
-        // The same figure twice, deliberately: the Safe is funded with the float *and* the
-        // strategy is budgeted for it. The budget is what binds — the Safe additionally holds
-        // whatever the channel stakes left behind, so its balance alone would run the Entry
-        // several cycles past `funded_cycles`.
-        pix: Some(pix_settings(float, float)?),
+        // The Safe is funded with what it will pay out *and* the strategy is budgeted for the
+        // float — the same figure with the plain pool, the shield with Curvy. The budget is what
+        // binds — the Safe additionally holds whatever the channel stakes left behind, so its
+        // balance alone would run the Entry several cycles past `funded_cycles`.
+        pix: Some(pix_settings(safe_outlay, float, pool)?),
         logs_to: Some("/tmp/pix-soak-logs"),
+        node_env,
         ..ClusterSpec::new(ports::SESSION_PIX_SOAK)
     })
     .await?;
@@ -807,6 +1009,31 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     cluster.wait_reachable(SETUP_TIMEOUT).await?;
     tracing::info!("channels ready after {:?}", t0.elapsed());
     let log_dir = cluster.log_dir().to_path_buf();
+
+    // What one sweep credits the Exit. The deposit itself with the plain pool; with Curvy the
+    // vault keeps its withdrawal fee, and the shield has to have covered its deposit fee. Both
+    // are the deployment's figures, not this test's, so they are read now that the chain is up.
+    // `pix-demo.sh` greps `per_sweep=` off this line.
+    let per_sweep = match pool {
+        Pool::Test => per_cycle,
+        Pool::Curvy => {
+            let (deposit_fee_bps, withdrawal_fee_bps) =
+                curvy_vault_fees(cluster.blokli_url()).await?;
+            anyhow::ensure!(
+                deposit_fee_bps <= CURVY_SHIELD_FEE_CEILING_BPS,
+                "the Curvy vault charges {deposit_fee_bps} bps on deposits, over the \
+                 {CURVY_SHIELD_FEE_CEILING_BPS} bps the {safe_outlay} shield is sized for; the \
+                 last of the {funded_cycles} deposits would fail for want of funds"
+            );
+            let per_sweep = less_fee(per_cycle, withdrawal_fee_bps);
+            tracing::info!(
+                %pool, shield = %safe_outlay, deposit_fee_bps, withdrawal_fee_bps, %per_sweep,
+                "Curvy pool: the Entry shields once, gross of the deposit fee, and each sweep \
+                 credits the Exit the deposit less the withdrawal fee"
+            );
+            per_sweep
+        }
+    };
 
     let echo_port = common::echo_server().await?;
     let entry = cluster.node(ENTRY);
@@ -854,9 +1081,10 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // an equality here would be asserting the arithmetic of the stakes rather than anything
     // about PIX.
     assert!(
-        entry_before.safe_hopr >= float,
-        "the Entry Safe holds {} against a {float} deposit budget, so it would run dry before \
-         the budget bound and the run would end for the wrong reason",
+        entry_before.safe_hopr >= safe_outlay,
+        "the Entry Safe holds {} against the {safe_outlay} it has to pay out for a {float} \
+         deposit budget, so it would run dry before the budget bound and the run would end for \
+         the wrong reason",
         entry_before.safe_hopr
     );
     tracing::info!(
@@ -981,7 +1209,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             .await
             .context("polling entry balances")?;
         recovered = exit_now.safe_hopr - exit_before.safe_hopr;
-        cycles = completed_cycles(recovered, per_cycle).unwrap_or(cycles);
+        cycles = completed_cycles(recovered, per_sweep).unwrap_or(cycles);
         entry_metrics = NodeMetrics::scrape(&entry.api).await;
         exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
         let relayed = relay_forwarded(cluster.nodes(), &relays_metrics_before).await;
@@ -1156,16 +1384,29 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         entry_metrics.deposits_failed
     );
 
-    // The Entry spent its budget down to what it could no longer afford, and every wxHOPR left
-    // as a whole SSA deposit. That the Safe delta is *only* deposits is arranged rather than
-    // assumed: both strategies that move Safe wxHOPR are off, and the channel stakes left before
-    // `entry_before` was sampled.
-    let deposited_cycles = completed_cycles(spent, per_cycle).unwrap_or_else(|| {
-        panic!(
-            "the Entry Safe paid out {spent}, which is not a whole multiple of the \
-             {per_cycle} per-SSA deposit — something other than PIX deposits moved it"
-        )
-    });
+    // The Entry spent its budget down to what it could no longer afford. That the Safe delta is
+    // *only* PIX money is arranged rather than assumed: both strategies that move Safe wxHOPR
+    // are off, and the channel stakes left before `entry_before` was sampled.
+    //
+    // With the plain pool every wxHOPR left as a whole SSA deposit, so the delta counts them.
+    // With Curvy the Safe paid the shield once and the deposits were allocated inside the vault,
+    // so the delta is the shield and the count is the strategy's own.
+    let deposited_cycles = match pool {
+        Pool::Test => completed_cycles(spent, per_cycle).unwrap_or_else(|| {
+            panic!(
+                "the Entry Safe paid out {spent}, which is not a whole multiple of the \
+                 {per_cycle} per-SSA deposit — something other than PIX deposits moved it"
+            )
+        }),
+        Pool::Curvy => {
+            assert_eq!(
+                spent, safe_outlay,
+                "the Entry Safe paid out {spent} where the Curvy pool shields exactly \
+                 {safe_outlay}, once — something other than the shield moved it"
+            );
+            entry_metrics.deposits - entry_metrics_before.deposits
+        }
+    };
     assert_eq!(
         deposited_cycles, funded_cycles,
         "the Entry was budgeted for {funded_cycles} deposits but made {deposited_cycles}. The \
@@ -1175,13 +1416,14 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         entry_after.safe_hopr
     );
 
-    // And all of it, bar the SSAs cut short at the end, reached the Exit's Safe as whole
-    // quota-sized deposits — recovered funds correspond to the data quota delivered.
-    let cycles = completed_cycles(recovered, per_cycle).unwrap_or_else(|| {
+    // And all of it, bar the SSAs cut short at the end, reached the Exit's Safe as whole sweeps —
+    // recovered funds correspond to the data quota delivered. A sweep is the deposit itself with
+    // the plain pool, and the deposit less the vault's withdrawal fee with Curvy.
+    let cycles = completed_cycles(recovered, per_sweep).unwrap_or_else(|| {
         panic!(
-            "Exit Safe gained {recovered}, which is not a whole multiple of the {per_cycle} \
-             per-SSA deposit — something other than PIX sweeps moved the balance (Entry \
-             deposits: {deposited_cycles}, Exit keys recovered: {})",
+            "Exit Safe gained {recovered}, which is not a whole multiple of the {per_sweep} a \
+             sweep credits for a {per_cycle} deposit — something other than PIX sweeps moved the \
+             balance (Entry deposits: {deposited_cycles}, Exit keys recovered: {})",
             exit_metrics.keys_recovered
         )
     });

@@ -225,6 +225,7 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
+            env: &[],
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

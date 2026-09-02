@@ -14,14 +14,13 @@ description = "Local HOPR cluster runner using external hoprd processes"
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
-# The PIX pool pairing has to match the one the *binary* under test was built with — see
-# `strategy-pix-test` in hoprd's Cargo.toml. It is stated in both places because these are
-# two different builds: this one produces the test harness, and `cargo build --release -p hoprd`
-# produces the nodes the harness launches from `HOPRD_BIN`. Nothing links them, so a mismatch is
-# only caught by the demo script's binary check and by the pool named in the node's startup log.
-#
-# The plain pool because it is the only implemented one: `strategy-pix-curvy` selects
-# `CurvyDepositPool`, whose methods panic. Switch both together when that lands.
+# The PIX pool pairing here is what the *harness* compiles its PIX config types against — see
+# `strategy-pix-test` in hoprd's Cargo.toml. The nodes are a separate build: `cargo build
+# --release -p hoprd` produces the binary the harness launches from `HOPRD_BIN`, carrying
+# whichever pool it was built with, and nothing links the two. That is workable because the
+# harness never settles anything: the plain pool's config stanza is a subset of the Curvy pool's,
+# and `session_pix_soak` reads the binary to learn which pool it carries and adapts its
+# accounting to it. The plain pool here because it needs nothing at runtime.
 hoprd = { workspace = true, features = [
   "runtime-tokio",
   "telemetry",

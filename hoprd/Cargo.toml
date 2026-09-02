@@ -40,13 +40,13 @@ runtime-tokio = [
 ]
 # === PIX deposit pool: pick exactly one ===
 #
-# NOTE: `CurvyDepositPool` is currently a stub whose methods panic. A build with this feature
-# starts and serves normally; it panics on the first PIX deposit, which only happens once a
-# `Pix` strategy stanza is in the config.
+# The Curvy privacy pool: a deposit is an allocation inside the Curvy shielded vault and a sweep is
+# a zk withdrawal from it, so nothing on chain ties the Entry to the Exit. Needs `CURVY_ZK_KEYS_DIR`
+# and an operator key at runtime — see `hopr_strategy::pix::pools::curvy` — and comes through the
+# `[patch.crates-io]` path pins at the bottom of the workspace manifest until it is published.
 strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
 # The plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
-# transfers. What the localcluster tests and the PIX demo run against, and currently the only pool
-# that is implemented.
+# transfers. What the localcluster tests and the PIX demo run against by default.
 #
 # **For testing and development only.** Every deposit and sweep is linkable, so it offers no
 # anonymity at all. Named for that rather than for the curve, matching `hopr-strategy`'s own

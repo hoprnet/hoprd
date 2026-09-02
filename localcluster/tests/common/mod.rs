@@ -365,6 +365,8 @@ pub struct ClusterSpec {
     /// Where to copy the node logs when the cluster drops. `None` discards them along with
     /// the temp directory.
     pub logs_to: Option<&'static str>,
+    /// Extra environment for the node processes; see [`client_helper::NodeStartConfig::env`].
+    pub node_env: Vec<(String, String)>,
 }
 
 impl ClusterSpec {
@@ -380,6 +382,7 @@ impl ClusterSpec {
             pix: None,
             start_timeout: Duration::from_secs(120),
             logs_to: None,
+            node_env: Vec::new(),
         }
     }
 }
@@ -402,6 +405,7 @@ pub struct Cluster {
     /// The generated identities, for a test that checks a node against its own.
     pub identities: hoprd_localcluster::identity::GenerationOutput,
     log_dir: PathBuf,
+    blokli_url: String,
 }
 
 impl Cluster {
@@ -431,7 +435,7 @@ impl Cluster {
         tracing::info!("chain ready after {:?}", t0.elapsed());
 
         let identities = identity::generate(&identity::GenerationConfig {
-            blokli_url,
+            blokli_url: blokli_url.clone(),
             num_nodes: spec.num_nodes,
             config_home: temp.data_dir.clone(),
             random_identities: spec.random_identities,
@@ -446,7 +450,7 @@ impl Cluster {
         .context("generating identities")?;
         tracing::info!("identities generated after {:?}", t0.elapsed());
 
-        // The ten fields are spelled out rather than defaulted, and that is deliberate:
+        // The eleven fields are spelled out rather than defaulted, and that is deliberate:
         // `NodeStartConfig` holds `&Path`s, which have no `Default`, and a hand-written one
         // would turn "you forgot `api_port_base`" from a compile error into a silent
         // collision with another suite's port block. This is the only construction site in
@@ -462,6 +466,7 @@ impl Cluster {
             p2p_port_base: spec.ports.p2p,
             identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
             api_token: None,
+            env: &spec.node_env,
         })
         .await
         .context("starting nodes")?;
@@ -486,6 +491,7 @@ impl Cluster {
             _temp: temp,
             identities,
             log_dir,
+            blokli_url,
         })
     }
 
@@ -500,6 +506,11 @@ impl Cluster {
     /// The live log directory, inside the temp tree. Valid until the cluster drops.
     pub fn log_dir(&self) -> &std::path::Path {
         &self.log_dir
+    }
+
+    /// Blokli's base URL, for a test that reads something of the chain the harness does not model.
+    pub fn blokli_url(&self) -> &str {
+        &self.blokli_url
     }
 
     /// Wait for every node's `/readyz`.

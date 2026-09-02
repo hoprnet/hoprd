@@ -266,3 +266,15 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# `hopr-strategy` with the Curvy deposit pool is not on crates.io: the pool pulls the Curvy SDK in
+# as a git dependency, which crates.io refuses, and two of the SDK's crates (`curvy-prover`,
+# `curvy-witness`) are vendored inside hopr-strategy with a `thiserror` pin relaxed — the published
+# ones pin `=2.0.19` against `hopr-api`'s `^2.0.20`. Cargo only honours `[patch]` from the root
+# workspace, so those two patches have to be repeated here; see `vendor/README.md` in
+# hopr-strategy. Path sources while the branch is under test; switch all three to
+# `git = "https://github.com/hoprnet/hopr-strategy", rev = "<rev>"` once it is pushed.
+[patch.crates-io]
+curvy-prover  = { path = "../hopr-strategy/vendor/curvy-prover" }
+curvy-witness = { path = "../hopr-strategy/vendor/curvy-witness" }
+hopr-strategy = { path = "../hopr-strategy" }
