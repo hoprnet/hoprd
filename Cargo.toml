@@ -64,14 +64,19 @@ hoprd-api-client = { path = "rest-api-client" }
 # at upstream's numbers.
 #
 # The wire format is untouched, which is what lets the `hoprd-test` PIX scenarios keep pairing an
-# Exit built from this tree with an edgli Entry still on `87f0e07d`. `hopr-protocol-start` is not
-# among the 33 files: the `SsaRequest`, the commitment burst and `StartSession.additional_data`
-# all say what they said before.
+# Exit built from this tree with an edgli Entry still on `87f0e07d`: the `SsaRequest`, the
+# commitment burst and `StartSession.additional_data` all say what they said before.
 #
-# These two stay on git because hoprnet does not publish them. Everything it does publish is in
+# `hopr-protocol-start` did move, in #8377, but only by adding `StartErrorReason::TargetNotAdmitted`
+# = 4 and by reading an unrecognized reason byte as `Unknown` rather than failing the decode. An
+# Entry on `87f0e07d` predates both and would fault on a `4` — but only an Exit with
+# `session_admission_rules` configured ever sends one, and these scenarios configure none.
+#
+# These two stay on git because hoprnet does not publish them (neither `hopr-lib` nor
+# `hopr-utils-session` exists on crates.io). Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "94a303e404729988ff6cb011c975f2309ed16685", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "94a303e404729988ff6cb011c975f2309ed16685", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
 
 # crates.io HOPR deps
 #
