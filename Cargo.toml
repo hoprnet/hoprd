@@ -101,7 +101,7 @@ hopr-network-graph = { version = "0.7.0", default-features = false }
 # Temporary, for the duration of hoprnet/hoprnet#8376: 0.4.0 carries the `admit` implementation
 # and is not published yet. Nothing else in the graph depends on it, so a plain git dep is
 # enough here — unlike `hopr-api` above, which needs a `[patch]`.
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", rev = "c9d47cd573e7be64fac6ece42b3c8fd823c0ba6e", default-features = false }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", rev = "e6beb5249092591d43c234bee713e9e7ccbf2639", default-features = false }
 # A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
 # only job is to document a version; this is a real dependency the resolver acts on, and pinning
 # it exactly would conflict with any other crate in the graph asking for a later 4.x.
