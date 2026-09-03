@@ -70,8 +70,8 @@ hoprd-api-client = { path = "rest-api-client" }
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "40834c273782246f70858a964b30ed777a45558a", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "40834c273782246f70858a964b30ed777a45558a", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "94a303e404729988ff6cb011c975f2309ed16685", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "94a303e404729988ff6cb011c975f2309ed16685", default-features = false }
 
 # crates.io HOPR deps
 #
@@ -94,14 +94,11 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "40834c
 # why the PIX deposit-address assertion still holds either way and does not catch this. When
 # `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
 # hoprnet followed; this line is where that agreement is written down.
-hopr-api = { version = "=4.1.0" }
+hopr-api = { version = "=4.3.0" }
 hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
-# Temporary, for the duration of hoprnet/hoprnet#8376: 0.4.0 carries the `admit` implementation
-# and is not published yet. Nothing else in the graph depends on it, so a plain git dep is
-# enough here — unlike `hopr-api` above, which needs a `[patch]`.
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", rev = "a9009b4df6936985ab62ae53beb0909a8719c442", default-features = false }
+hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 # A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
 # only job is to document a version; this is a real dependency the resolver acts on, and pinning
 # it exactly would conflict with any other crate in the graph asking for a later 4.x.
@@ -301,13 +298,3 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
-
-# Temporary, for the duration of hoprnet/hoprnet#8376. `hopr-api` 4.3.0 adds
-# `HoprSessionServer::admit` and is not published yet; a `[patch]` rather than a git dependency
-# because the crates.io HOPR deps above each pull `hopr-api` themselves, and a git dep would leave
-# two distinct `hopr-api` packages in the graph — exactly the split the comment on the `hopr-api`
-# line describes. Pinned by `rev` rather than by branch, like every other git dependency here, so
-# the resolved commit cannot move under CI. Reverted, together with that line's `=4.1.0`, once
-# 4.3.0 is on crates.io.
-[patch.crates-io]
-hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "8818e6ca00ffa3618b002b97ce004c6deca426a3" }
