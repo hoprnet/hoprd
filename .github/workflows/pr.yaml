@@ -90,8 +90,7 @@ jobs:
     # Note the `release` ruleset does not list this check among its required ones, so with this
     # condition it informs rather than gates. Making it gate again means adding it there.
     if: >-
-      github.event_name == 'pull_request' &&
-      startsWith(github.base_ref, 'release/')
+      github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/')
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
