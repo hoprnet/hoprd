@@ -15,135 +15,17 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# No PIX curve feature here on purpose. The curve is chosen by hoprd's `strategy-pix-*` pairing,
-# which bundles it with the matching deposit pool; pinning it at the workspace level would force
-# one curve on every build and make the other unreachable — which is exactly the state this
-# workspace was in before the split.
-#
-# Both are pinned to a `rev` rather than tracked on a branch, and that matters more here than it
-# used to: `2e8bdae7` is the head of `lukas/session-pix-supervisor`, which is *not* merged. A
-# `branch` ref to unmerged work would rewrite this workspace's dependency on every push to it,
-# including the rebases and force-pushes a review branch collects. The `rev` is what makes a
-# rebuild reproducible, and moving it is a reviewable change.
-#
-# `2e8bdae7` is a fast-forward from the `87f0e07d` this workspace last tracked on `master` —
-# `git merge-base origin/master 2e8bdae7` is `87f0e07d` itself, which is also `master`'s head, so
-# the branch is exactly `master` plus its own work and `git log 87f0e07d..2e8bdae7` is the whole
-# diff. Just under 490 commits, but 33 files: it is a long-lived branch that has merged `master`
-# several times, not a wide change.
-#
-# What it carries: the Exit-side PIX supervisor. `transport/session` gains a `supervision` module —
-# a per-Session state machine over the SSA batch with deadlines (commitment, deposit, recovery
-# idle, hard recovery), a service gate that meters egress against recovery progress, and
-# share-order enforcement that stops a batched Entry spreading its shares across every cycle to
-# take `n × quota` while finishing none. `protocols/pix` grows `SsaRecoveryProgress::shares_seen`
-# next to `useful_shares` so liveness and payment stop being the same counter, and
-# `new_exit_commitment` takes the whole negotiated `PixParams` rather than two of its three fields.
-#
-# `2e8bdae7` is why this rev and not `1596bc67`, which is what this workspace first moved to. A PIX
-# share is bound to its SURB when the SURB is minted, so when a cycle recovers every SURB still
-# queued at the Exit carries the *recovered* cycle's shares. `1596bc67` retired the cycle at once
-# and discarded them, so the drain read as pure silence on the successor; `2e8bdae7` keeps a compact
-# recovered tail and holds the recovered predecessor as the paid front until its FIFO tail passes,
-# crediting the drain as liveness.
-#
-# It credits `polys × surplus_shares` of it — exactly the surplus the cycle was paid for — and that
-# ceiling is deliberate: reconstruction releases the share set, so duplicate detection is gone and
-# an uncapped allowance would let an Entry replay one completed polynomial for unbounded service. A
-# Session whose SURB buffer is deeper than that surplus volume therefore still has an uncreditable
-# remainder, and `max_served_without_progress` is the only thing between it and a deadlock — the
-# gate blocks mid-drain, and a blocked Exit spends no SURBs, which is what was draining the queue.
-# `session_pix_soak` buffers ~42 000 SURBs against a 6912-share credit and wedged one cycle in on
-# both revs, so it sizes the ceiling from its own buffer. `pix-demo.sh` is that test, so this is
-# what the demo rests on.
-#
-# What it costs this workspace is `hoprd/src/config.rs`. Upstream's `IncomingSessionPixConfig` now
-# holds its deadlines and batch settings in a nested `SupervisorConfig`, because they are validated
-# against each other and against the Exit's reconstructor as a set; `UserIncomingSessionPixConfig`
-# keeps them flat and picks up three of the new dials — see there for which, and why the rest stay
-# at upstream's numbers.
-#
-# The wire format is untouched, which is what lets the `hoprd-test` PIX scenarios keep pairing an
-# Exit built from this tree with an edgli Entry still on `87f0e07d`: the `SsaRequest`, the
-# commitment burst and `StartSession.additional_data` all say what they said before.
-#
-# `hopr-protocol-start` did move, in #8377, but only by adding `StartErrorReason::TargetNotAdmitted`
-# = 4 and by reading an unrecognized reason byte as `Unknown` rather than failing the decode. An
-# Entry on `87f0e07d` predates both and would fault on a `4` — but only an Exit with
-# `session_admission_rules` configured ever sends one, and these scenarios configure none.
-#
-# These two stay on git because hoprnet does not publish them (neither `hopr-lib` nor
-# `hopr-utils-session` exists on crates.io). Everything it does publish is in
-# the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
 
 # crates.io HOPR deps
-#
-# The six below used to come off the hoprnet branch alongside `hopr-lib`. They were the
-# `impls/` workspace members, and hoprnet 10f6d80 extracted them to the `hopr-impls` repo
-# and now consumes them from crates.io itself — so pointing them at the branch resolves to
-# nothing. Versions and feature flags mirror hoprnet's own declarations exactly; they are
-# the same crates it links against, and a divergence here would show up as two copies of a
-# type that ought to be one.
-#
-# `hopr-api` is documentation, not a constraint: no crate in this workspace declares
-# `hopr-api = { workspace = true }` and nothing here names `hopr_api::`, so the requirement never
-# reaches the resolver and the `=` binds nothing. What hoprd actually links is whatever `hopr-lib`
-# asks for. Stating the version it mirrors is the whole value it has, so it is kept in step by hand.
-#
-# Keeping it in step is not cosmetic. `hopr-api` majors cannot coexist across this boundary: its
-# node traits — `HasChainApi`, `ActionableEventSource`, `PacketTransport` and the rest — are
-# defined in `hopr-api` itself, so two majors are two unrelated traits and the node hoprd passes to
-# `hopr-strategy` satisfies only one of them. `hopr-types` is shared and single-versioned, which is
-# why the PIX deposit-address assertion still holds either way and does not catch this. When
-# `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
-# hoprnet followed; this line is where that agreement is written down.
+
 hopr-api = { version = "=4.3.0" }
 hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
-# A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
-# only job is to document a version; this is a real dependency the resolver acts on, and pinning
-# it exactly would conflict with any other crate in the graph asking for a later 4.x.
-#
-# 4.0.0 is `477ab741` on that repo's `main` — the squash-merge of hopr-strategy#51 — per the
-# release's `.cargo_vcs_info.json`. Verified rather than assumed: the published `src/` tree diffs
-# clean against that commit, the only omissions being the `insta` snapshot directories, which the
-# package excludes and no consumer compiles.
-#
-# 4.0.0 is the third major in a fortnight, and it had to be taken together with the `hopr-lib` rev
-# above: 2.0.0 moved to `hopr-api` 3.0 and 3.0.0 to `hopr-api` 4.1, which is the agreement the
-# `hopr-api` line above records. Sitting still was not an option once hoprnet moved — the
-# `PixEvent` the node emits and the one the pool consumes are the same type only when both sides
-# agree on the major.
-#
-# What those majors changed for this workspace:
-#   - `strategy-pix-secp256k1` became `strategy-pix-test`, and `pix::secp256k1` became
-#     `pix::pools::plain` — renamed upstream so that a pool offering no anonymity is named for how
-#     it settles rather than for the curve it settles on, and cannot be reached for in production
-#     by that curve name. hoprd's own feature, its flake outputs, its Docker image and
-#     `pix-demo.sh`'s `PIX_POOL` followed, so there is one name for it end to end.
-#   - **The Safe pays PIX deposits now, not the node's own account.** `hopr-types` 4.0.0 routes
-#     `SafePayloadGenerator::transfer` through the Safe module, so `withdraw` debits the Safe
-#     whoever signs. The pool follows that rather than fighting it. The node account still pays
-#     the sweep's *gas* top-up, which is signed on its own behalf. `localcluster` funds and
-#     asserts against both accordingly — see `PixSettings::safe_deposit_float`.
-#   - `build_non_anonymous` takes the node's `ChainKeypair`: the sweep and the gas top-up are
-#     signed by keys the node's Safe-bound connector cannot represent, so the pool builds its own.
-#   - `PoolConfig` gained `blokli_url` (where those connectors connect) and
-#     `tx_timeout_multiplier` (how long they wait for a confirmation — the node's setting does not
-#     reach them, and the default times out against Anvil).
-#   - `PixStrategyConfig` gained `max_spend_per_window` / `spend_window`;
-#     `NonAnonymousDepositPoolConfig` gained `min_node_xdai_reserve` / `min_safe_hopr_reserve`.
-#     All carry serde defaults, so existing `Pix` stanzas still parse unchanged.
-#   - Both builders now call `StrategyError::validate_config` before constructing anything, so a
-#     bad stanza fails at `build_strategies` instead of at the first deposit.
 hopr-strategy = { version = "4.0.0", default-features = false }
-# Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
-# `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
-# feature the rest of the workspace expects.
 hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
   "redb",
   "cli",
