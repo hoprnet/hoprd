@@ -294,66 +294,26 @@ jobs:
       || (github.event_name == 'pull_request'
         && contains(github.event.pull_request.labels.*.name, 'run-integration'))
     runs-on: depot-ubuntu-24.04
-    # Must exceed the test's ~30-40 min. Keep the merge queue's own
-    # "maximum time to wait for checks" above this or entries get evicted mid-run.
-    timeout-minutes: 120
     permissions:
       contents: read
     steps:
-      # Same pattern as the cross-repo dispatches in `merge.yaml` and blokli: mint a
-      # short-lived GitHub App token rather than carrying a PAT secret. `GITHUB_TOKEN`
-      # cannot be used — it is scoped to THIS repo, and this has to drive a workflow
-      # in hoprnet/hoprd-test.
-      #
-      # `permission-actions: write` covers both halves: `gh workflow run` needs write,
-      # and `gh run list` / `gh run watch` need read (write implies read).
       - name: Generate GitHub App token
         id: bot-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          # Client id is not a secret — it identifies the app, it does not authorise
-          # anything. The private key is the credential.
-          client-id: Iv23liV1vEl5aA1L93To
+          client-id: ${{ vars.GH_APP_HOPRNET_BOT_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
           owner: hoprnet
           repositories: hoprd-test
-          # Scoped down deliberately, and it also fails fast: if the installation
-          # lacks Actions write, token generation errors here with a clear message
-          # instead of `gh workflow run` returning an opaque 403 later. Drop this
-          # line to inherit whatever the installation grants.
-          permission-actions: write
-      - name: Run the cross-repo integration throughput test
-        env:
-          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
-          PROJECT: hoprd
-          # merge_group: the queue candidate. pull_request: `github.sha` is already
-          # the PR's test-merge commit, so both paths test "PR merged into base".
-          REV: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.sha }}
-        run: |
-          set -euo pipefail
-          REPO=hoprnet/hoprd-test
-          # hoprd-test echoes this into its run name; polling for it is the only
-          # reliable way to find OUR run (`gh workflow run` returns no id, the API
-          # does not expose a run's dispatch inputs, and "newest run" races with the
-          # other repos dispatching there).
-          MARKER="${GITHUB_REPOSITORY##*/}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-
-          echo "Testing $PROJECT @ $REV"
-          gh workflow run integration.yaml -R "$REPO" -r main \
-            -f project="$PROJECT" -f rev="$REV" -f marker="$MARKER"
-
-          id=""
-          for _ in $(seq 1 60); do
-            id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 40 \
-                   --json databaseId,displayTitle \
-                   -q "[.[] | select(.displayTitle | contains(\"$MARKER\")) | .databaseId] | first // empty")
-            [ -n "$id" ] && break
-            sleep 10
-          done
-          if [ -z "$id" ]; then
-            echo "::error::dispatched the integration test but never found a run tagged $MARKER" >&2
-            exit 1
-          fi
-
-          echo "Gating on https://github.com/$REPO/actions/runs/$id"
-          gh run watch "$id" -R "$REPO" --exit-status
+      - name: Invoke integration test
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
+          repository: hoprnet/hoprd-test
+          event-type: integration
+          client-payload: |-
+            {
+              "project": "hoprd",
+              "rev": "${{ github.event.pull_request.head.ref }}",
+              "marker": ""
+            }
