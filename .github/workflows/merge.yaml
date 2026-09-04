@@ -57,7 +57,7 @@ jobs:
     name: Docker
     needs: build-binaries
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@daaa7da25fb983e55c4a44e63fe02522a7ac6408 # build-docker-v3.2.2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@668074b9d98d53c248cbadffb01d5f20617d8cb1 # build-docker-v3.2.3
     permissions:
       contents: read
       pull-requests: write
