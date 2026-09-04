@@ -20,26 +20,58 @@ hoprd-api-client = { path = "rest-api-client" }
 # one curve on every build and make the other unreachable — which is exactly the state this
 # workspace was in before the split.
 #
-# Both are pinned to a `rev` rather than tracked on a branch. PIX landed on `master` as #8095 and
-# `lukas/pix` was deleted, so there is no branch left to follow — and a `branch` ref would be the
-# wrong replacement anyway: `master` moves, and every unrelated commit on it would arrive here
-# silently between one `cargo update` and the next. The `rev` is what makes a rebuild
-# reproducible, and moving it is a reviewable change.
+# Both are pinned to a `rev` rather than tracked on a branch, and that matters more here than it
+# used to: `2e8bdae7` is the head of `lukas/session-pix-supervisor`, which is *not* merged. A
+# `branch` ref to unmerged work would rewrite this workspace's dependency on every push to it,
+# including the rebases and force-pushes a review branch collects. The `rev` is what makes a
+# rebuild reproducible, and moving it is a reviewable change.
 #
-# `3188d8ee` is the current `master` head and a plain fast-forward from the `7b46149b` it
-# replaces — four commits, all reachable, so `git log 7b46149b..master` is the whole diff. The
-# two earlier moves needed a content diff to establish that relationship because their PR had
-# squash-merged; this one does not.
+# `2e8bdae7` is a fast-forward from the `87f0e07d` this workspace last tracked on `master` —
+# `git merge-base origin/master 2e8bdae7` is `87f0e07d` itself, which is also `master`'s head, so
+# the branch is exactly `master` plus its own work and `git log 87f0e07d..2e8bdae7` is the whole
+# diff. Just under 490 commits, but 33 files: it is a long-lived branch that has merged `master`
+# several times, not a wide change.
 #
-# What those four commits carry: `f7c32948` reworks the Start protocol's `deposit_data` into one
-# entry per SSA sourced from the deposit pool (and caps `MAX_SSA_BATCH_SIZE` to 9), `3188d8ee`
-# bumps the published `hopr-api` stack to 4.1.0 / `hopr-types` 4.0.0, `ac40eff5` quiets
-# ERROR-spam on inbound packets to torn-down sessions, and `bb7bc621` is a flake-input bump.
+# What it carries: the Exit-side PIX supervisor. `transport/session` gains a `supervision` module —
+# a per-Session state machine over the SSA batch with deadlines (commitment, deposit, recovery
+# idle, hard recovery), a service gate that meters egress against recovery progress, and
+# share-order enforcement that stops a batched Entry spreading its shares across every cycle to
+# take `n × quota` while finishing none. `protocols/pix` grows `SsaRecoveryProgress::shares_seen`
+# next to `useful_shares` so liveness and payment stop being the same counter, and
+# `new_exit_commitment` takes the whole negotiated `PixParams` rather than two of its three fields.
+#
+# `2e8bdae7` is why this rev and not `1596bc67`, which is what this workspace first moved to. A PIX
+# share is bound to its SURB when the SURB is minted, so when a cycle recovers every SURB still
+# queued at the Exit carries the *recovered* cycle's shares. `1596bc67` retired the cycle at once
+# and discarded them, so the drain read as pure silence on the successor; `2e8bdae7` keeps a compact
+# recovered tail and holds the recovered predecessor as the paid front until its FIFO tail passes,
+# crediting the drain as liveness.
+#
+# It credits `polys × surplus_shares` of it — exactly the surplus the cycle was paid for — and that
+# ceiling is deliberate: reconstruction releases the share set, so duplicate detection is gone and
+# an uncapped allowance would let an Entry replay one completed polynomial for unbounded service. A
+# Session whose SURB buffer is deeper than that surplus volume therefore still has an uncreditable
+# remainder, and `max_served_without_progress` is the only thing between it and a deadlock — the
+# gate blocks mid-drain, and a blocked Exit spends no SURBs, which is what was draining the queue.
+# `session_pix_soak` buffers ~42 000 SURBs against a 6912-share credit and wedged one cycle in on
+# both revs, so it sizes the ceiling from its own buffer. `pix-demo.sh` is that test, so this is
+# what the demo rests on.
+#
+# What it costs this workspace is `hoprd/src/config.rs`. Upstream's `IncomingSessionPixConfig` now
+# holds its deadlines and batch settings in a nested `SupervisorConfig`, because they are validated
+# against each other and against the Exit's reconstructor as a set; `UserIncomingSessionPixConfig`
+# keeps them flat and picks up three of the new dials — see there for which, and why the rest stay
+# at upstream's numbers.
+#
+# The wire format is untouched, which is what lets the `hoprd-test` PIX scenarios keep pairing an
+# Exit built from this tree with an edgli Entry still on `87f0e07d`. `hopr-protocol-start` is not
+# among the 33 files: the `SsaRequest`, the commitment burst and `StartSession.additional_data`
+# all say what they said before.
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "2e8bdae7f881bc6dadc28053dd1703cad12eb3c9", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "2e8bdae7f881bc6dadc28053dd1703cad12eb3c9", default-features = false }
 
 # crates.io HOPR deps
 #
