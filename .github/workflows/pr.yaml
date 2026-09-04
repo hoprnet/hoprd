@@ -12,6 +12,8 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      # So applying `run-integration` starts the opt-in integration job below.
+      - labeled
 permissions:
   contents: read
   id-token: write # zizmor: ignore[excessive-permissions]
@@ -269,3 +271,67 @@ jobs:
             LOCALCLUSTER_BIN="$PWD/result-localcluster/bin/hoprd-localcluster" \
             DATA_DIR="$RUNNER_TEMP/localcluster" \
               ./scripts/localcluster-smoke.sh
+  integration-throughput:
+    name: Integration throughput
+    # Two ways in, one job so there is a single check name to require:
+    #
+    #  * MERGE QUEUE (`merge_group`) — the gate. GitHub builds a candidate commit
+    #    (this PR merged into the target branch) and asks for checks on it; the PR
+    #    only merges if they pass. `merge_group.head_sha` IS that candidate, so this
+    #    tests the exact code that is about to land, base included — not the PR
+    #    branch in isolation.
+    #  * PR + `run-integration` label — opt-in, for exercising this before queueing.
+    #
+    # Scoped to one target branch — see the note per repo below.
+    #
+    # hoprd-test only supports the v4 line (its crate pins hoprnet `release/4.0`)
+    # and rejects a rev off it, so a candidate for `main` (v5) must NOT be gated on
+    # it. Keyed on `vars.MAINTENANCE_RELEASE_BRANCH` so a bump to `release/4.2`
+    # needs no edit here.
+    if: >-
+      (github.event_name == 'merge_group'
+        && github.event.merge_group.base_ref == format('refs/heads/{0}', vars.MAINTENANCE_RELEASE_BRANCH))
+      || (github.event_name == 'pull_request'
+        && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    runs-on: depot-ubuntu-24.04
+    # Must exceed the test's ~30-40 min. Keep the merge queue's own
+    # "maximum time to wait for checks" above this or entries get evicted mid-run.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Run the cross-repo integration throughput test
+        env:
+          GH_TOKEN: ${{ secrets.HOPRD_TEST_DISPATCH_TOKEN }}
+          PROJECT: hoprd
+          # merge_group: the queue candidate. pull_request: `github.sha` is already
+          # the PR's test-merge commit, so both paths test "PR merged into base".
+          REV: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          REPO=hoprnet/hoprd-test
+          # hoprd-test echoes this into its run name; polling for it is the only
+          # reliable way to find OUR run (`gh workflow run` returns no id, the API
+          # does not expose a run's dispatch inputs, and "newest run" races with the
+          # other repos dispatching there).
+          MARKER="${GITHUB_REPOSITORY##*/}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          echo "Testing $PROJECT @ $REV"
+          gh workflow run integration.yaml -R "$REPO" -r main \
+            -f project="$PROJECT" -f rev="$REV" -f marker="$MARKER"
+
+          id=""
+          for _ in $(seq 1 60); do
+            id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 40 \
+                   --json databaseId,displayTitle \
+                   -q "[.[] | select(.displayTitle | contains(\"$MARKER\")) | .databaseId] | first // empty")
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          if [ -z "$id" ]; then
+            echo "::error::dispatched the integration test but never found a run tagged $MARKER" >&2
+            exit 1
+          fi
+
+          echo "Gating on https://github.com/$REPO/actions/runs/$id"
+          gh run watch "$id" -R "$REPO" --exit-status
