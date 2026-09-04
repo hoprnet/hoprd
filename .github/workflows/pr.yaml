@@ -12,6 +12,8 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      # So applying `run-integration` starts the opt-in integration job below.
+      - labeled
 permissions:
   contents: read
   id-token: write # zizmor: ignore[excessive-permissions]
@@ -269,3 +271,49 @@ jobs:
             LOCALCLUSTER_BIN="$PWD/result-localcluster/bin/hoprd-localcluster" \
             DATA_DIR="$RUNNER_TEMP/localcluster" \
               ./scripts/localcluster-smoke.sh
+  integration-throughput:
+    name: Integration throughput
+    # Two ways in, one job so there is a single check name to require:
+    #
+    #  * MERGE QUEUE (`merge_group`) — the gate. GitHub builds a candidate commit
+    #    (this PR merged into the target branch) and asks for checks on it; the PR
+    #    only merges if they pass. `merge_group.head_sha` IS that candidate, so this
+    #    tests the exact code that is about to land, base included — not the PR
+    #    branch in isolation.
+    #  * PR + `run-integration` label — opt-in, for exercising this before queueing.
+    #
+    # Scoped to one target branch — see the note per repo below.
+    #
+    # hoprd-test only supports the v4 line (its crate pins hoprnet `release/4.0`)
+    # and rejects a rev off it, so a candidate for `main` (v5) must NOT be gated on
+    # it. Keyed on `vars.MAINTENANCE_RELEASE_BRANCH` so a bump to `release/4.2`
+    # needs no edit here.
+    if: >-
+      (github.event_name == 'merge_group'
+        && github.event.merge_group.base_ref == format('refs/heads/{0}', vars.MAINTENANCE_RELEASE_BRANCH))
+      || (github.event_name == 'pull_request'
+        && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Generate GitHub App token
+        id: bot-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.GH_APP_HOPRNET_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
+          owner: hoprnet
+          repositories: hoprd-test
+      - name: Invoke integration test
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
+          repository: hoprnet/hoprd-test
+          event-type: integration
+          client-payload: |-
+            {
+              "project": "hoprd",
+              "rev": "${{ github.event.pull_request.head.ref }}",
+              "marker": ""
+            }
