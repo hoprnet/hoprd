@@ -300,9 +300,31 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Same pattern as the cross-repo dispatches in `merge.yaml` and blokli: mint a
+      # short-lived GitHub App token rather than carrying a PAT secret. `GITHUB_TOKEN`
+      # cannot be used — it is scoped to THIS repo, and this has to drive a workflow
+      # in hoprnet/hoprd-test.
+      #
+      # `permission-actions: write` covers both halves: `gh workflow run` needs write,
+      # and `gh run list` / `gh run watch` need read (write implies read).
+      - name: Generate GitHub App token
+        id: bot-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # Client id is not a secret — it identifies the app, it does not authorise
+          # anything. The private key is the credential.
+          client-id: Iv23liV1vEl5aA1L93To
+          private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
+          owner: hoprnet
+          repositories: hoprd-test
+          # Scoped down deliberately, and it also fails fast: if the installation
+          # lacks Actions write, token generation errors here with a clear message
+          # instead of `gh workflow run` returning an opaque 403 later. Drop this
+          # line to inherit whatever the installation grants.
+          permission-actions: write
       - name: Run the cross-repo integration throughput test
         env:
-          GH_TOKEN: ${{ secrets.HOPRD_TEST_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
           PROJECT: hoprd
           # merge_group: the queue candidate. pull_request: `github.sha` is already
           # the PR's test-merge commit, so both paths test "PR merged into base".
