@@ -8,7 +8,8 @@ use hopr_lib::{
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
-        config::{HoprCodecConfig, SurbPopOrder, SurbStoreConfig},
+        config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
+        session::IncomingSessionPixConfig,
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
@@ -184,6 +185,140 @@ fn build_mixer_cfg_from_env() -> MixerConfig {
     }
 }
 
+/// User-facing PIX global configuration (wraps upstream [`PixGlobalConfig`] which has `serde(skip)`).
+#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserPixGlobalConfig {
+    /// Number of parts an SSA is split into.
+    ///
+    /// Default is 4096.
+    #[default(4096)]
+    #[serde(default = "default_pix_num_ssa_parts")]
+    pub num_ssa_parts: usize,
+    /// Number of shares required to reconstruct an SSA part.
+    ///
+    /// Default is 128.
+    #[default(128)]
+    #[serde(default = "default_pix_ssa_part_size")]
+    pub ssa_part_size: usize,
+    /// Number of additional shares sent beyond `ssa_part_size`, to absorb packet loss.
+    ///
+    /// **Leave unset unless you have measured your return-path loss.** Unset derives the
+    /// surplus from `ssa_part_size`, sized to absorb 20 % of a polynomial's shares going
+    /// missing. An absolute count means a different loss tolerance at every `ssa_part_size`,
+    /// which is why upstream stopped defaulting it to one — so this passes `None` through
+    /// rather than resolving it here, where `ssa_part_size` might not be the one in effect.
+    ///
+    /// The surplus is billed: it travels in the negotiated `PixParams`, so the per-SSA quota
+    /// counts it and the deposit pays for it whether or not any share is lost. Raising it buys
+    /// loss tolerance and costs money.
+    ///
+    /// Default is unset.
+    #[serde(default = "default_pix_additional_shares")]
+    pub additional_shares: Option<usize>,
+    /// Maximum number of SSA commitments this node, acting as an Entry, accepts in one request
+    /// from an Exit. Each accepted entry costs its own commitment, packet burst and on-chain
+    /// deposit, so this caps how much work one inbound packet can amplify into.
+    ///
+    /// Must be at least the `incoming_session_pix.ssas_per_request` of every Exit this node
+    /// uses: the batch size is not negotiated, so an Exit batching above this has every request
+    /// refused and loses the Session. Raise the two together.
+    ///
+    /// Clamped upstream to 1..=`MAX_SSA_BATCH_SIZE`, which hoprnet lowered from 20 to 9: each
+    /// entry in a batch costs the Entry a full commitment and its own on-chain deposit, and the
+    /// Exit a live reconstructor cycle of ~49 MiB.
+    ///
+    /// Default is 2.
+    #[default(default_pix_max_ssas_per_request())]
+    #[serde(default = "default_pix_max_ssas_per_request")]
+    pub max_ssas_per_request: usize,
+}
+
+fn default_pix_num_ssa_parts() -> usize {
+    PixGlobalConfig::default().num_ssa_parts
+}
+fn default_pix_ssa_part_size() -> usize {
+    PixGlobalConfig::default().ssa_part_size
+}
+fn default_pix_additional_shares() -> Option<usize> {
+    PixGlobalConfig::default().additional_shares
+}
+fn default_pix_max_ssas_per_request() -> usize {
+    PixGlobalConfig::default().max_ssas_per_request
+}
+
+/// User-facing incoming session PIX configuration (wraps upstream [`IncomingSessionPixConfig`] which has `serde(skip)`).
+#[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserIncomingSessionPixConfig {
+    /// Reject incoming Sessions that do not opt into PIX.
+    #[default(false)]
+    #[serde(default)]
+    pub enforce_pix: bool,
+    /// Minimum acceptable PIX quota per SSA in bytes.
+    ///
+    /// Default is 134217728 (128 MB).
+    #[default(134_217_728)]
+    #[serde(default = "default_pix_quota_range_min")]
+    pub quota_range_min: u64,
+    /// Maximum acceptable PIX quota per SSA in bytes.
+    ///
+    /// Default is 536870912 (512 MB).
+    #[default(536_870_912)]
+    #[serde(default = "default_pix_quota_range_max")]
+    pub quota_range_max: u64,
+    /// Maximum time to wait for SSA commitment delivery.
+    ///
+    /// Default is 20 seconds.
+    #[default(Duration::from_secs(20))]
+    #[serde(
+        default = "default_pix_max_ssa_delivery_time",
+        with = "humantime_serde"
+    )]
+    pub max_ssa_delivery_time: Duration,
+    /// Maximum time to wait for deposit into SSA.
+    ///
+    /// Default is 60 seconds.
+    #[default(Duration::from_secs(60))]
+    #[serde(default = "default_pix_max_deposit_wait", with = "humantime_serde")]
+    pub max_deposit_wait: Duration,
+    /// Number of SSAs this node, acting as an Exit, asks the Entry to commit to in one request.
+    ///
+    /// Batching amortizes the round trip over several deposit cycles, at the cost of holding that
+    /// many reconstructor cycles at once and serving that many SSA quotas unincentivized before
+    /// the first deposit lands. The kill switch scales with it: each cycle in a batch is given
+    /// `ssas_per_request × (max_deposit_wait + max_ssa_delivery_time)`.
+    ///
+    /// Must not exceed the peer Entry's `pix.max_ssas_per_request` — see that field.
+    ///
+    /// Clamped upstream to 1..=`MAX_SSA_BATCH_SIZE`, which hoprnet lowered from 20 to 9: each
+    /// entry in a batch costs the Entry a full commitment and its own on-chain deposit, and the
+    /// Exit a live reconstructor cycle of ~49 MiB.
+    ///
+    /// Default is 1, which reproduces the unbatched exchange exactly.
+    #[default(default_pix_ssas_per_request())]
+    #[serde(default = "default_pix_ssas_per_request")]
+    pub ssas_per_request: usize,
+}
+
+fn default_pix_quota_range_min() -> u64 {
+    let range = IncomingSessionPixConfig::default().quota_range;
+    *range.start()
+}
+fn default_pix_quota_range_max() -> u64 {
+    let range = IncomingSessionPixConfig::default().quota_range;
+    *range.end()
+}
+fn default_pix_max_ssa_delivery_time() -> Duration {
+    IncomingSessionPixConfig::default().max_ssa_delivery_time
+}
+fn default_pix_max_deposit_wait() -> Duration {
+    IncomingSessionPixConfig::default().max_deposit_wait
+}
+fn default_pix_ssas_per_request() -> usize {
+    IncomingSessionPixConfig::default().ssas_per_request
+}
+
 /// Subset of various selected HOPR library network-related configuration options.
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -232,6 +367,12 @@ pub struct UserHoprNetworkConfig {
     #[default(build_mixer_cfg_from_env())]
     #[serde(default = "build_mixer_cfg_from_env")]
     pub mixer: MixerConfig,
+    /// PIX global configuration.
+    #[serde(default)]
+    pub pix: UserPixGlobalConfig,
+    /// PIX configuration for incoming sessions (Exit node).
+    #[serde(default)]
+    pub incoming_session_pix: UserIncomingSessionPixConfig,
 }
 
 /// Subset of the [`HoprLibConfig`] that is tuned to be user-facing and more user-friendly.
@@ -296,8 +437,29 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     // Reply with the freshest SURBs first, so a return-path change takes effect
                     // immediately instead of only after a stale backlog has been drained.
+                    //
+                    // Not under PIX, which needs the opposite end. A PIX share is delivered to the
+                    // reconstructor only when its SURB is *used*, and the ring buffer evicts from
+                    // the oldest end — so popping newest-first leaves the oldest SURBs unspent
+                    // until they are overwritten, and each overwrite is a permanently lost share.
+                    // Under sustained traffic the Exit then never assembles `ssa_part_size` shares
+                    // for any polynomial: the key is never reconstructed, nothing is swept, and the
+                    // Entry never gets a second deposit request. Observed exactly that — one
+                    // deposit confirmed, then a stall with no error anywhere — before this gate.
+                    //
+                    // `Fifo` is upstream's default for this reason; see `SurbPopOrder`, whose own
+                    // documentation calls out the lost-share hazard.
+                    //
+                    // Gated on the feature rather than on `enforce_pix` so the pop order is a
+                    // property of the binary rather than something a config toggle changes
+                    // underneath a running deployment. The cost is that a PIX-capable build whose
+                    // strategy list has no `Pix` stanza also gets `Fifo` — that is upstream's
+                    // default, so it forgoes an optimisation rather than regressing.
                     surb_store: SurbStoreConfig {
+                        #[cfg(not(feature = "pix"))]
                         pop_order: SurbPopOrder::Lifo,
+                        #[cfg(feature = "pix")]
+                        pop_order: SurbPopOrder::Fifo,
                         ..Default::default()
                     },
                     ..Default::default()
@@ -318,8 +480,30 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     ..Default::default()
                 },
+                pix: PixGlobalConfig {
+                    num_ssa_parts: value.network.pix.num_ssa_parts,
+                    ssa_part_size: value.network.pix.ssa_part_size,
+                    additional_shares: value.network.pix.additional_shares,
+                    max_ssas_per_request: value.network.pix.max_ssas_per_request,
+                    // Exit-side reconstructor capacity is not yet exposed in `UserPixGlobalConfig`,
+                    // so operators get upstream's defaults. Listed rather than swept up by
+                    // `..Default::default()` on purpose: the exhaustive literal is what turns a new
+                    // upstream field into a compile error here instead of a silent default.
+                    reconstructor: Default::default(),
+                },
+                incoming_session_pix_config: IncomingSessionPixConfig {
+                    enforce_pix: value.network.incoming_session_pix.enforce_pix,
+                    quota_range: value.network.incoming_session_pix.quota_range_min
+                        ..=value.network.incoming_session_pix.quota_range_max,
+                    max_ssa_delivery_time: value.network.incoming_session_pix.max_ssa_delivery_time,
+                    max_deposit_wait: value.network.incoming_session_pix.max_deposit_wait,
+                    ssas_per_request: value.network.incoming_session_pix.ssas_per_request,
+                },
                 path_planner: Default::default(),
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
+                // Same standing as `counter_flush_interval` above: an interval at which telemetry
+                // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
+                // default rather than restated, so the number lives in one place.
                 surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
                 mixer: value.network.mixer,
                 stream: Default::default(),

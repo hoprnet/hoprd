@@ -13,8 +13,8 @@ use hopr_lib::{
     api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
-        SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
-        SurbBalancerConfig,
+        HoprPixSpec, PixParams, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
+        SessionTarget, SurbBalancerConfig,
     },
 };
 #[allow(deprecated)]
@@ -114,6 +114,8 @@ pub enum SessionCapability {
     NoDelay,
     /// Disable SURB-based egress rate control at the Exit.
     NoRateControl,
+    /// Use the Protocol for Incentivization of eXits (PIX).
+    UsePIX,
 }
 
 impl From<SessionCapability> for SessionCapabilities {
@@ -134,6 +136,9 @@ impl From<SessionCapability> for SessionCapabilities {
             }
             SessionCapability::NoRateControl => {
                 hopr_lib::exports::transport::SessionCapability::NoRateControl.into()
+            }
+            SessionCapability::UsePIX => {
+                hopr_lib::exports::transport::SessionCapability::UsePIX.into()
             }
         }
     }
@@ -181,6 +186,46 @@ impl From<hopr_lib::api::types::internal::routing::RoutingOptions> for RoutingOp
             }
         }
     }
+}
+
+/// The three SSA dimensions a PIX Session is priced against.
+///
+/// Named fields rather than the positional triple this used to be, for the reason
+/// [`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable
+/// to any type checker and are *not* interchangeable to the protocol, while their product —
+/// which is all the Exit compares — is identical either way. A transposed pair therefore
+/// announces valid-looking dimensions against a correct quota. Names are what close that, and
+/// they close it in every consumer of the spec, not just the Rust ones.
+///
+/// The field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the
+/// packed protocol word.
+//
+// The per-field `value_type`/`maximum` pairs describe each Rust type's own range, not the
+// protocol's: `usize` drops utoipa's `format: int32` (which would otherwise make every dimension
+// a signed `i32` downstream) and the bound is what typify then uses to pick the width back up, so
+// the generated client lands on the exact `u16`/`u8`/`u8` this struct declares. The narrower
+// protocol limits — `MAX_POLYS_PER_SSA`, `MIN_POLY_THRESHOLD` — stay with
+// `PixParams::try_new_for`, which rejects them by name and says what the node expects; a schema
+// bound could only produce an untyped 422. `//` rather than `///`: this explains the attributes,
+// and utoipa would otherwise publish it as the type's description.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[schema(example = json!({"polysPerSsa": 8, "sharesPerPoly": 4, "surplusShares": 2}))]
+pub(crate) struct PixSsaQuota {
+    /// Polynomials per SSA.
+    #[schema(value_type = usize, maximum = 65535)]
+    pub polys_per_ssa: u16,
+    /// Shares per polynomial, i.e. the reconstruction threshold.
+    #[schema(value_type = usize, maximum = 255)]
+    pub shares_per_poly: u8,
+    /// Shares beyond the threshold.
+    ///
+    /// Priced like the other two: the per-SSA quota is
+    /// `polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that
+    /// disagreed with the Exit would size every deposit against a quota the node never
+    /// agreed to.
+    #[schema(value_type = usize, maximum = 255)]
+    pub surplus_shares: u8,
 }
 
 #[serde_as]
@@ -260,6 +305,22 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
+    /// PIX SSA parameters.
+    ///
+    /// When set, the Session will use the PIX protocol with the given parameters. When
+    /// not set, PIX is not advertised to the Exit node.
+    ///
+    /// All three dimensions have to match this node's own installed share generator, or the
+    /// Session is refused at setup.
+    ///
+    /// [`PixParams`] is a quadruple — the fourth element is the curve suite, and it is
+    /// deliberately not here. The suite is a property of this build, fixed by the
+    /// `pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API
+    /// caller may pick: shares are produced under one curve and announcing another would
+    /// describe a generator this node does not have. It is supplied by
+    /// `PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.
+    #[serde(default)]
+    pub pix_ssa_quota: Option<PixSsaQuota>,
     /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
     ///
     /// Flow control paces the entry (sending) side of the session. When omitted, the node's
@@ -267,6 +328,62 @@ pub(crate) struct SessionClientRequest {
     /// profile for throttled / high-latency multi-hop paths.
     #[serde(default)]
     pub flow_control: Option<crate::config::SessionFlowControl>,
+}
+
+/// Maps the wire-form quota onto [`PixParams`] for this build's curve suite.
+///
+/// Shared by both session request types because the conversion carries the whole validation
+/// contract of `pixSsaQuota` — the node refuses any Session whose three dimensions disagree with
+/// its installed generator — and two hand-synchronised copies of that is one copy too many.
+///
+/// The error text is kept. It names which dimension is wrong and what the node expects, and it is
+/// what stands between a caller whose generator disagrees and a bare `400 INVALID_INPUT`.
+fn pix_params_from_quota(quota: Option<PixSsaQuota>) -> Result<Option<PixParams>, ApiErrorStatus> {
+    quota
+        .map(|q| {
+            let PixSsaQuota {
+                polys_per_ssa,
+                shares_per_poly,
+                surplus_shares,
+            } = q;
+            PixParams::try_new_for::<HoprPixSpec>(polys_per_ssa, shares_per_poly, surplus_shares)
+                .map_err(|e| {
+                    ApiErrorStatus::InvalidInputDetail(format!(
+                        "invalid pixSsaQuota {{polysPerSsa: {polys_per_ssa}, sharesPerPoly: \
+                         {shares_per_poly}, surplusShares: {surplus_shares}}}: {e}"
+                    ))
+                })
+        })
+        .transpose()
+}
+
+/// Rejects a `pixSsaQuota` and a `UsePIX` capability that do not arrive together.
+///
+/// Neither half is caught anywhere else, and both are silent failures rather than errors:
+///
+/// - Quota without the capability builds `PixParams` into a capability set that never advertises
+///   PIX. The Session opens, the Exit relays with no deposit expectation, and the caller believes
+///   it opened a paid Session.
+/// - The capability without a quota announces PIX with no negotiated parameters. What the Exit
+///   does with that is decided outside this crate, and either way it is a configuration error
+///   that should be reported here, where each field still has a name attached.
+fn check_pix_consistency(
+    capabilities: SessionCapabilities,
+    quota: Option<PixSsaQuota>,
+) -> Result<(), ApiErrorStatus> {
+    // The protocol capability, not this module's same-named API enum: `capabilities` is already
+    // the converted flag set.
+    let advertises_pix =
+        capabilities.contains(hopr_lib::exports::transport::SessionCapability::UsePIX);
+    if advertises_pix != quota.is_some() {
+        return Err(ApiErrorStatus::InvalidInputDetail(
+            "`pixSsaQuota` and the `UsePIX` capability must be supplied together: a quota without \
+             the capability opens an unpaid Session, and the capability without a quota \
+             advertises PIX with no negotiated parameters"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 impl SessionClientRequest {
@@ -277,33 +394,37 @@ impl SessionClientRequest {
         flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
     ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
+        let capabilities = self
+            .capabilities
+            .map(|vs| {
+                let mut caps = SessionCapabilities::empty();
+                caps.extend(vs.into_iter().map(SessionCapabilities::from));
+                caps
+            })
+            .unwrap_or_else(|| match target_protocol {
+                IpProtocol::TCP => {
+                    hopr_lib::exports::transport::SessionCapability::RetransmissionAck
+                        | hopr_lib::exports::transport::SessionCapability::RetransmissionNack
+                        | hopr_lib::exports::transport::SessionCapability::Segmentation
+                }
+                // Only Segmentation capability for UDP per default
+                _ => SessionCapability::Segmentation.into(),
+            });
+        check_pix_consistency(capabilities, self.pix_ssa_quota)?;
+
         Ok((
             self.destination,
             target_spec.into_target(target_protocol.into())?,
             HoprSessionClientConfig {
                 forward_path: self.forward_path.try_into()?,
                 return_path: self.return_path.try_into()?,
-                capabilities: self
-                    .capabilities
-                    .map(|vs| {
-                        let mut caps = SessionCapabilities::empty();
-                        caps.extend(vs.into_iter().map(SessionCapabilities::from));
-                        caps
-                    })
-                    .unwrap_or_else(|| match target_protocol {
-                        IpProtocol::TCP => {
-                            hopr_lib::exports::transport::SessionCapability::RetransmissionAck
-                                | hopr_lib::exports::transport::SessionCapability::RetransmissionNack
-                                | hopr_lib::exports::transport::SessionCapability::Segmentation
-                        }
-                        // Only Segmentation capability for UDP per default
-                        _ => SessionCapability::Segmentation.into(),
-                    }),
+                capabilities,
                 surb_management: SessionConfig {
                     response_buffer: self.response_buffer,
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
+                pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                 // Per-request profile overrides the node default when present.
                 flow_control: self
                     .flow_control
@@ -349,6 +470,12 @@ pub(crate) struct SessionClientExplicitPathRequest {
     pub max_surb_upstream: Option<human_bandwidth::re::bandwidth::Bandwidth>,
     pub session_pool: Option<usize>,
     pub max_client_sessions: Option<usize>,
+    /// PIX SSA parameters.
+    ///
+    /// Same meaning and same constraints as on
+    /// [`SessionClientRequest`](SessionClientRequest::pix_ssa_quota).
+    #[serde(default)]
+    pub pix_ssa_quota: Option<PixSsaQuota>,
 }
 
 impl SessionClientExplicitPathRequest {
@@ -421,6 +548,7 @@ impl SessionClientExplicitPathRequest {
                 }
                 _ => SessionCapability::Segmentation.into(),
             });
+        check_pix_consistency(capabilities, self.pix_ssa_quota)?;
 
         Ok((
             self.destination,
@@ -436,6 +564,7 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
+                    pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                     // The deprecated explicit-path endpoint has no per-request override, so it
                     // always uses the node default profile.
                     flow_control,
@@ -1271,6 +1400,7 @@ mod tests {
             max_surb_upstream: None,
             session_pool: None,
             max_client_sessions: None,
+            pix_ssa_quota: None,
             flow_control: per_request,
         };
 
@@ -1336,5 +1466,168 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes)?;
         assert_eq!(body.as_array().unwrap().len(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn use_pix_capability_maps_correctly() {
+        let caps: SessionCapabilities = SessionCapability::UsePIX.into();
+        assert!(caps.contains(hopr_lib::exports::transport::SessionCapability::UsePIX));
+    }
+
+    #[test]
+    fn pix_quota_and_capability_must_arrive_together() {
+        let with_pix: SessionCapabilities = SessionCapability::UsePIX.into();
+        let without_pix: SessionCapabilities = SessionCapability::Segmentation.into();
+
+        assert!(check_pix_consistency(with_pix, Some(quota(8, 4, 2))).is_ok());
+        assert!(check_pix_consistency(without_pix, None).is_ok());
+
+        // A quota with no capability is the dangerous half: the Session would open and the Exit
+        // would relay with no deposit expectation.
+        let quota_alone = check_pix_consistency(without_pix, Some(quota(8, 4, 2)));
+        assert!(matches!(
+            quota_alone,
+            Err(ApiErrorStatus::InvalidInputDetail(_))
+        ));
+
+        let capability_alone = check_pix_consistency(with_pix, None);
+        assert!(matches!(
+            capability_alone,
+            Err(ApiErrorStatus::InvalidInputDetail(_))
+        ));
+    }
+
+    /// A caller whose dimensions disagree with the generator has to be told which one, and the
+    /// status code has to stay 400 while that happens.
+    #[test]
+    fn pix_params_conversion_keeps_the_validation_message() {
+        assert!(matches!(pix_params_from_quota(None), Ok(None)));
+
+        // 0 polynomials cannot describe a generator, whichever spec this build installed.
+        match pix_params_from_quota(Some(quota(0, 0, 0))) {
+            Err(ApiErrorStatus::InvalidInputDetail(detail)) => {
+                assert!(
+                    detail.starts_with(
+                        "invalid pixSsaQuota {polysPerSsa: 0, sharesPerPoly: 0, surplusShares: \
+                         0}: "
+                    ),
+                    "detail should name each offending dimension, got {detail:?}"
+                );
+            }
+            other => panic!("expected a detailed InvalidInput, got {other:?}"),
+        }
+    }
+
+    fn quota(polys_per_ssa: u16, shares_per_poly: u8, surplus_shares: u8) -> PixSsaQuota {
+        PixSsaQuota {
+            polys_per_ssa,
+            shares_per_poly,
+            surplus_shares,
+        }
+    }
+
+    #[test]
+    fn pix_ssa_quota_roundtrips_via_json() {
+        let req = SessionClientRequest {
+            destination: Address::default(),
+            forward_path: RoutingOptions::Hops(1),
+            return_path: RoutingOptions::Hops(1),
+            target: SessionTargetSpec::Plain("127.0.0.1:8080".to_string()),
+            listen_host: None,
+            capabilities: None,
+            response_buffer: None,
+            max_surb_upstream: None,
+            session_pool: None,
+            max_client_sessions: None,
+            pix_ssa_quota: Some(quota(8, 4, 2)),
+            flow_control: None,
+        };
+        let serialized = serde_json::to_value(&req).expect("serialize");
+        assert_eq!(
+            serialized["pixSsaQuota"],
+            serde_json::json!({"polysPerSsa": 8, "sharesPerPoly": 4, "surplusShares": 2})
+        );
+        let deserialized: SessionClientRequest =
+            serde_json::from_value(serialized).expect("deserialize");
+        assert_eq!(deserialized.pix_ssa_quota, Some(quota(8, 4, 2)));
+    }
+
+    /// Every dimension is named, required, and spelled the one way.
+    ///
+    /// What the names buy is that a caller cannot *quietly* transpose two of them: under the
+    /// positional triple `[4, 8, 2]` was a well-formed request for dimensions nobody meant, and
+    /// only the downstream generator check — which is about something else — stood any chance of
+    /// noticing. Swapping two values in the object form now requires swapping their keys too,
+    /// which is a thing a reader can see.
+    #[test]
+    fn pix_ssa_quota_rejects_names_it_does_not_know() {
+        let ok = serde_json::json!({"polysPerSsa": 8, "sharesPerPoly": 4, "surplusShares": 2});
+        assert_eq!(
+            serde_json::from_value::<PixSsaQuota>(ok).expect("named triple deserializes"),
+            quota(8, 4, 2)
+        );
+
+        // serde's derived visitor also accepts the positional form, so the pre-rename wire
+        // shape keeps deserializing. That is left alone deliberately: it is not something this
+        // struct introduces but how *every* derived `Deserialize` in this API behaves —
+        // `SessionClientRequest` itself accepts its own fields as a bare array — so singling
+        // this one out for a hand-written visitor would buy uniformity nowhere and cost the
+        // field-level error messages that make a 422 on this body readable.
+        assert_eq!(
+            serde_json::from_str::<PixSsaQuota>("[8, 4, 2]").expect("positional form still parses"),
+            quota(8, 4, 2)
+        );
+
+        // A misspelling is caught here rather than defaulting the dimension to zero.
+        let typo = serde_json::json!({"polysPerSSA": 8, "sharesPerPoly": 4, "surplusShares": 2});
+        assert!(serde_json::from_value::<PixSsaQuota>(typo).is_err());
+
+        // Every dimension is required: an omitted one is not a zero.
+        let short = serde_json::json!({"polysPerSsa": 8, "sharesPerPoly": 4});
+        assert!(serde_json::from_value::<PixSsaQuota>(short).is_err());
+    }
+
+    /// The published schema has to name the three dimensions, on both request types.
+    ///
+    /// Asserted on the schema rather than on the generated client, which is where the effect is
+    /// visible (a named `PixSsaQuota` struct instead of `Option<Vec<i32>>`): a test over
+    /// generated Rust would additionally fail on every progenitor or typify bump, and nothing
+    /// regenerates that file in CI anyway. Both request types are checked because the
+    /// explicit-path one never reaches `ApiDoc::openapi()` — only the spec served when
+    /// `enable_explicit_path_sessions` is on — so a spec-level test could not see it.
+    #[test]
+    fn pix_ssa_quota_schema_names_its_three_dimensions() {
+        let value = serde_json::to_value(<PixSsaQuota as utoipa::PartialSchema>::schema())
+            .expect("schema serializes");
+        assert_eq!(value["type"], "object");
+        let mut required: Vec<_> = value["required"]
+            .as_array()
+            .expect("all three dimensions are required")
+            .iter()
+            .map(|v| v.as_str().expect("field name").to_string())
+            .collect();
+        required.sort();
+        assert_eq!(required, ["polysPerSsa", "sharesPerPoly", "surplusShares"]);
+
+        // Each request type has to reference that component rather than inlining a shape of its
+        // own, or the two could drift apart while both look correct.
+        for (name, schema) in [
+            (
+                "SessionClientRequest",
+                <SessionClientRequest as utoipa::PartialSchema>::schema(),
+            ),
+            (
+                "SessionClientExplicitPathRequest",
+                <SessionClientExplicitPathRequest as utoipa::PartialSchema>::schema(),
+            ),
+        ] {
+            let value = serde_json::to_value(schema).expect("schema serializes");
+            let quota = serde_json::to_string(&value["properties"]["pixSsaQuota"])
+                .expect("property serializes");
+            assert!(
+                quota.contains("PixSsaQuota"),
+                "{name} should reference the PixSsaQuota component, got {quota}"
+            );
+        }
     }
 }

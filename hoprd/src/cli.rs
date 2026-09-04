@@ -209,8 +209,7 @@ pub struct CliArgs {
         help = "A REST API token and for user authentication",
         value_name = "TOKEN",
         value_parser = ValueParser::new(parse_api_token),
-        env = "HOPRD_API_TOKEN",
-        hide_env_values = true
+        env = "HOPRD_API_TOKEN"
     )]
     pub api_token: Option<String>,
 
@@ -218,8 +217,7 @@ pub struct CliArgs {
         long,
         env = "HOPRD_PASSWORD",
         help = "A password to encrypt your keys",
-        value_name = "PASSWORD",
-        hide_env_values = true
+        value_name = "PASSWORD"
     )]
     pub password: Option<String>,
 

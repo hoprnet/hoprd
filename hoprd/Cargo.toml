@@ -11,6 +11,12 @@ license.workspace = true
 build = "build.rs"
 
 [features]
+# No `strategy-pix-*` pairing here, deliberately. Each one pins `HoprPixSpec` to a different
+# deposit-address type, and a spec has exactly one — so the choice is exclusive *at this level*
+# even though `hopr-strategy` now compiles both pools together. Cargo unifies features across a
+# workspace build, so a default pairing would collide with the one `hoprd-localcluster` selects
+# for the pool it tests. An exclusive choice cannot have a default; it has to be named by whoever
+# builds.
 default = [
   "runtime-tokio",
   "telemetry",
@@ -32,6 +38,40 @@ runtime-tokio = [
   "hopr-strategy/strategy-channel-lifecycle",
   "hopr-transport-p2p/runtime-tokio",
 ]
+# === PIX deposit pool: pick exactly one ===
+#
+# NOTE: `CurvyDepositPool` is currently a stub whose methods panic. A build with this feature
+# starts and serves normally; it panics on the first PIX deposit, which only happens once a
+# `Pix` strategy stanza is in the config.
+strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
+# The plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
+# transfers. What the localcluster tests and the PIX demo run against, and currently the only pool
+# that is implemented.
+#
+# **For testing and development only.** Every deposit and sweep is linkable, so it offers no
+# anonymity at all. Named for that rather than for the curve, matching `hopr-strategy`'s own
+# `strategy-pix-test`: a pool that provides none of PIX's privacy should not be reachable in
+# production by asking for a curve. This was `strategy-pix-secp256k1` until hopr-strategy 4.0.0
+# renamed its half; the two are one name again.
+#
+# The curve has not moved and is not implied by the name — `hopr-lib/pix-secp256k1` below still
+# selects it, and `pix::pools::plain` still settles to an `Address`.
+#
+# `hopr-lib/pix-secp256k1` is stated positively rather than left to `default-features = false`,
+# because that opt-out only holds while every crate in the graph agrees to it — `hopr-utils-session`
+# pulling `hopr-lib` with defaults was enough to undo it, silently.
+strategy-pix-test = [
+  "pix",
+  "hopr-strategy/strategy-pix-test",
+  "hopr-lib/pix-secp256k1",
+]
+# "some PIX pool is selected", so the code that does not care which can gate on one name.
+# Pulls `runtime-tokio` because the PIX strategy needs the tokio runtime; enabling a pairing
+# without it would compile to a binary that silently has no PIX.
+#
+# Not meant to be enabled directly — on its own it selects no pool and `hopr_strategy::pix`
+# will not resolve.
+pix = ["runtime-tokio"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",

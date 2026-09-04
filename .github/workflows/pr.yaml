@@ -77,7 +77,20 @@ jobs:
           fi
   validate-release-branch-deps:
     name: Release branch dependencies
-    if: github.event_name == 'pull_request'
+    # Only PRs onto a `release/*` branch, which is where tracking a hoprnet release branch is the
+    # rule. Development elsewhere has to be able to pin a rev: hoprnet publishes neither `hopr-lib`
+    # nor `hopr-utils-session`, so work that depends on an unreleased change has a git rev and
+    # nothing else until a release branch carries it.
+    #
+    # This is a job-level `if`, not a workflow-level branch filter, and the difference matters
+    # because the check is required on the default branch: a conditionally skipped job still
+    # reports, whereas a workflow filtered out never does and would leave every PR waiting on a
+    # status that cannot arrive.
+    #
+    # Note the `release` ruleset does not list this check among its required ones, so with this
+    # condition it informs rather than gates. Making it gate again means adding it there.
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/')
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
@@ -229,6 +242,31 @@ jobs:
       docker_image_format: skopeo
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+  build-docker-pix-test:
+    name: Docker (pix-test)
+    needs: build-binaries
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      version_type: commit
+      concurrency_group_suffix: pix-test
+      build_matrix: >-
+        [
+          {
+            "runner": "depot-ubuntu-24.04-4",
+            "architecture": "x86_64-linux",
+            "build_command": "nix build -L .#docker-hoprd-pix-test-x86_64-linux"
+          }
+        ]
+      build_file: ./hoprd/Cargo.toml
+      docker_image_name: hoprd-pix-test
+      docker_image_format: skopeo
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
     name: Docs
     runs-on: depot-ubuntu-24.04-4
@@ -254,8 +292,11 @@ jobs:
     env:
       # Pinned by digest so a chain-image rebuild cannot silently break CI.
       # Keep in sync with localcluster/docker-compose.yml.
+      # Moved off 7b64692c because `hopr-types` 4.0.0 added a required `service_registry`
+      # contract address that image predates: the cluster aborts on startup with
+      # "contract addresses not a valid JSON: missing field `service_registry`".
       CHAIN_IMAGE: >-
-        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
+        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:32714eddb075c7eb781a4e5cc75c0e42a24ab8aa891f4749f7f49c5dcf1570f8
     steps:
       - name: Start a local cluster and verify it becomes usable
         uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1

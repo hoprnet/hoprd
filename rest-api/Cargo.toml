@@ -57,6 +57,7 @@ bimap = { workspace = true }
 futures = { workspace = true }
 mockall = { workspace = true }
 oas3 = { workspace = true }
+parking_lot = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower = { workspace = true, features = ["util"] }
