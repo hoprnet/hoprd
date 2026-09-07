@@ -308,8 +308,10 @@
           # `cargo check`, not Clippy — the point is to catch what does not compile. Promoting
           # it is a separate decision, once the lint backlog in that test code is known.
           localclusterTestCheckDerivation =
-            (rust-builder-local.callPackage nixLib.mkRustPackage (
-              localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+            (fixUtoipaEmbedPaths (
+              rust-builder-local.callPackage nixLib.mkRustPackage (
+                localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+              )
             )).overrideAttrs
               (_: {
                 pname = "hoprd-localcluster-test-check";

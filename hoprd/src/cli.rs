@@ -253,7 +253,7 @@ pub struct CliArgs {
         help = "Override the DNS resolution for the Blokli provider, in the format <IP_ADDRESS>[:<PORT>] (use [IPv6]:PORT for IPv6 with port, e.g. [2001:db8::1]:8080)",
         env = "HOPRD_BLOKLI_DNS_OVERRIDE",
         value_name = "BLOKLI_DNS_OVERRIDE",
-        value_parser = parse_blokli_dns_override,
+        value_parser = ValueParser::new(parse_blokli_dns_override),
     )]
     pub blokli_dns_override: Option<(IpAddr, Option<u16>)>,
 

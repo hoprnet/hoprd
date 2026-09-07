@@ -700,7 +700,7 @@ pub struct HoprdConfig {
     #[validate(url)]
     #[default(default_blokli_url())]
     pub blokli_url: String,
-    /// Optional override for the DNS resolution of the Blokli provider.
+    /// Optional override for the DNS resolution of the Blokli provider
     #[serde(default)]
     pub blokli_dns_override: Option<(IpAddr, Option<u16>)>,
     /// Configuration of underlying node behavior in the form strategies
