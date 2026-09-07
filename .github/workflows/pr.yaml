@@ -273,28 +273,15 @@ jobs:
               ./scripts/localcluster-smoke.sh
   integration-throughput:
     name: Integration throughput
-    # Two ways in, one job so there is a single check name to require:
-    #
-    #  * MERGE QUEUE (`merge_group`) — the gate. GitHub builds a candidate commit
-    #    (this PR merged into the target branch) and asks for checks on it; the PR
-    #    only merges if they pass. `merge_group.head_sha` IS that candidate, so this
-    #    tests the exact code that is about to land, base included — not the PR
-    #    branch in isolation.
-    #  * PR + `run-integration` label — opt-in, for exercising this before queueing.
-    #
-    # Scoped to one target branch — see the note per repo below.
-    #
-    # hoprd-test only supports the v4 line (its crate pins hoprnet `release/4.0`)
-    # and rejects a rev off it, so a candidate for `main` (v5) must NOT be gated on
-    # it. Keyed on `vars.MAINTENANCE_RELEASE_BRANCH` so a bump to `release/4.2`
-    # needs no edit here.
+    # Gates the merge queue; the label is an opt-in pre-queue run. Restricted to the
+    # v4 line because hoprd-test rejects a rev off it.
     if: >-
       (github.event_name == 'merge_group'
         && github.event.merge_group.base_ref == format('refs/heads/{0}', vars.MAINTENANCE_RELEASE_BRANCH))
       || (github.event_name == 'pull_request'
         && contains(github.event.pull_request.labels.*.name, 'run-integration'))
     runs-on: depot-ubuntu-24.04
-    # We now block on the dispatched run, so this has to outlast it (~30-40 min).
+    # Must outlast the dispatched run (~30-40 min).
     timeout-minutes: 120
     permissions:
       contents: read
@@ -307,13 +294,13 @@ jobs:
           private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
           owner: hoprnet
           repositories: hoprd-test
-      # A unique tag for THIS attempt. hoprd-test echoes it into its run name, which
-      # is how the wait step below finds the run it started — `repository_dispatch`
-      # returns nothing identifying, and "newest run" is a race because three repos
-      # dispatch there and its concurrency group makes runs queue.
+      # hoprd-test echoes this into its run name; it is how the wait step finds our
+      # run, since `repository_dispatch` returns nothing identifying.
       - name: Build a run marker
         id: marker
         run: echo "value=${GITHUB_REPOSITORY##*/}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
+      # rev: on merge_group `github.sha` is the queue candidate; on pull_request it is
+      # the test-merge commit. Both are "PR merged into base", which is the point.
       - name: Invoke integration test
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
@@ -326,9 +313,8 @@ jobs:
               "rev": "${{ github.sha }}",
               "marker": "${{ steps.marker.outputs.value }}"
             }
-      # Without this the job goes green the moment the dispatch is ACCEPTED, which is
-      # not the same as the test passing — a failed integration run left this check
-      # successful and the PR mergeable. Block on the run's conclusion instead.
+      # `repository_dispatch` is fire-and-forget, so without this the job goes green
+      # as soon as the event is accepted, whatever the test does.
       - name: Wait for the integration test to conclude
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token }}
@@ -336,18 +322,20 @@ jobs:
         run: |
           set -euo pipefail
           REPO=hoprnet/hoprd-test
+          # 5 min window: the run can sit queued behind hoprd-test's concurrency group.
           id=""
-          for _ in $(seq 1 60); do
+          for _ in $(seq 1 20); do
             id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 40 \
                    --json databaseId,displayTitle \
                    -q "[.[] | select(.displayTitle | contains(\"$MARKER\")) | .databaseId] | first // empty")
             [ -n "$id" ] && break
-            sleep 10
+            sleep 15
           done
           if [ -z "$id" ]; then
             echo "::error::dispatched the integration test but never found a run tagged $MARKER" >&2
             exit 1
           fi
+
           echo "Gating on https://github.com/$REPO/actions/runs/$id"
-          # --exit-status propagates the run's conclusion into this job.
-          gh run watch "$id" -R "$REPO" --exit-status
+          # --interval: `gh run watch` defaults to 3s, ~700 polls over a 40 min run.
+          gh run watch "$id" -R "$REPO" --interval 30 --exit-status
