@@ -126,16 +126,23 @@ pub(crate) struct ConnectedPeerResponse {
     #[serde(serialize_with = "checksum_address_serializer")]
     #[schema(value_type = String, example = "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe")]
     address: Address,
+    /// Average probe rate, if any probe has been measured.
+    ///
+    /// Nullable for the same reason as `average_latency` below, which this field now matches:
+    /// hopr-api 2.0 reports an unmeasured observation as absent rather than as zero. Serialising
+    /// the absent case as `0.0` would be indistinguishable from a peer measured at zero — a peer
+    /// nothing has been learned about yet would read as one known to be failing.
     #[schema(example = 0.476)]
-    probe_rate: f64,
+    probe_rate: Option<f64>,
     /// Epoch milliseconds of the last observation update.
     #[schema(example = 1690000000000_u128)]
     last_update: u128,
     /// Average latency in milliseconds, if available.
     #[schema(example = 100)]
     average_latency: Option<u128>,
+    /// Edge score, if one has been computed. Nullable as `probe_rate` above.
     #[schema(example = 0.7)]
-    score: f64,
+    score: Option<f64>,
 }
 
 /// Lists peers with immediate observation data from the network graph.
@@ -177,7 +184,11 @@ pub(super) async fn connected<
         let Some(imm) = obs.immediate_qos() else {
             continue;
         };
-        if !imm.is_connected() {
+        // `Some(true)` only: `is_connected` is now tri-state, and this endpoint reports peers known
+        // to be connected. Treating `None` as connected would list peers nothing is known about.
+        // Behaviour is unchanged — an unmeasured edge used to read as `false` and was skipped here
+        // too — but it is now skipped because it is unknown rather than because unknown meant no.
+        if imm.is_connected() != Some(true) {
             continue;
         }
 
@@ -377,16 +388,24 @@ pub(super) async fn graph<
     for (src, dst, obs) in &edges {
         let src_label = label(src);
         let dst_label = label(dst);
-        let mut attrs = vec![format!("score={:.2}", obs.score())];
+        // Every attribute is emitted only when measured, which `score` now joins: an edge with no
+        // score renders without the attribute rather than with a fabricated `score=0.00`.
+        let mut attrs = Vec::new();
+        if let Some(score) = obs.score() {
+            attrs.push(format!("score={score:.2}"));
+        }
         if let Some(imm) = obs.immediate_qos()
             && let Some(latency) = imm.average_latency()
         {
             attrs.push(format!("lat={}ms", latency.as_millis()));
         }
+        // `capacity` became `balance` in hopr-api 2.0, and changed meaning with the name: it was a
+        // count of remaining tickets, it is now the channel balance in base currency units. The
+        // ticket face value that related the two moves over time, so it is no longer folded in here.
         if let Some(inter) = obs.intermediate_qos()
-            && let Some(cap) = inter.capacity()
+            && let Some(balance) = inter.balance()
         {
-            attrs.push(format!("cap={cap}"));
+            attrs.push(format!("balance={balance}"));
         }
         use std::fmt::Write;
         let _ = writeln!(

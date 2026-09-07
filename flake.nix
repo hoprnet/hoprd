@@ -8,8 +8,9 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.4";
-    nix-lib.url = "github:hoprnet/nix-lib/v1.2.1";
-    hoprnet.url = "github:hoprnet/hoprnet/a511b8a88b297f47a15986573bf6db3ef7b95937";
+    nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
+    # No `hoprnet` input. It existed for one output — `binary-ticket-inspector` — which is now
+    # built here instead; see `ticketInspectorBuildArgs` for why and how.
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -40,7 +41,6 @@
       rust-overlay,
       crane,
       nix-lib,
-      hoprnet,
       foundry,
       pre-commit,
       ...
@@ -124,6 +124,7 @@
             inherit fs;
             extraFiles = [
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
+              ./deploy/nfpm/hoprd-sample.cfg.yaml
             ];
           };
           testSrc = nixLib.mkTestSrc {
@@ -131,6 +132,7 @@
             inherit fs;
             extraFiles = [
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
+              ./deploy/nfpm/hoprd-sample.cfg.yaml
               (fs.fileFilter (file: file.hasExt "snap") ./.)
             ];
           };
@@ -173,6 +175,68 @@
             ];
           };
 
+          # `ticket-inspector` is a diagnostic CLI for the node's tickets database. It is a binary
+          # target of `hopr-ticket-manager`, which this workspace already depends on — but as a
+          # registry crate, so `cargo build -p` cannot reach it from here and it needs a
+          # derivation of its own over the published tarball.
+          #
+          # It used to come from a `hoprnet` flake input. hoprnet extracted `hopr-ticket-manager`
+          # to `hopr-impls` and consumes it from crates.io itself now, but its flake still points
+          # `cargoToml` at the deleted `impls/ticket-manager/Cargo.toml`, so that output stopped
+          # evaluating ("unable to infer crate name and version"). Their own CI does not catch it:
+          # the only job that builds it is gated on a `build:candidate` label.
+          #
+          # Version and hash are read out of `Cargo.lock` rather than written down here, so the
+          # inspector is built from the exact bytes the node links and cannot drift from it. That
+          # invariant is the whole point — an inspector built against a different
+          # `hopr-ticket-manager` than the node writes with is reading someone else's schema — and
+          # deriving it is worth more than the comment that used to assert it.
+          #
+          # Two entries would mean the graph carries two majors and picking either one silently
+          # reintroduces exactly that mismatch, so this refuses rather than choosing.
+          ticketInspectorLockEntry =
+            let
+              lock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+              matches = lib.filter (p: p.name == "hopr-ticket-manager") lock.package;
+            in
+            if lib.length matches == 1 then
+              lib.head matches
+            else
+              throw "expected exactly one hopr-ticket-manager in Cargo.lock, found ${toString (lib.length matches)}";
+
+          # `fetchurl`, not `fetchCrate`: the latter unpacks via `fetchzip`, whose hash covers the
+          # extracted tree rather than the tarball, and so cannot be checked against the lock.
+          ticketInspectorSrc =
+            pkgs.runCommand "hopr-ticket-manager-${ticketInspectorLockEntry.version}-src" { }
+              ''
+                mkdir -p "$out"
+                tar -xzf ${
+                  pkgs.fetchurl {
+                    name = "hopr-ticket-manager-${ticketInspectorLockEntry.version}.tar.gz";
+                    url = "https://static.crates.io/crates/hopr-ticket-manager/${ticketInspectorLockEntry.version}/download";
+                    sha256 = ticketInspectorLockEntry.checksum;
+                  }
+                } --strip-components=1 -C "$out"
+              '';
+
+          ticketInspectorBuildArgs = {
+            inherit rev;
+            src = ticketInspectorSrc;
+            # The published tarball is a single self-contained package with its own `Cargo.lock`,
+            # so there is no larger tree to trim down to a dependency-only source, and no source
+            # churn for that trimming to buy anything against.
+            depsSrc = ticketInspectorSrc;
+            cargoToml = "${ticketInspectorSrc}/Cargo.toml";
+            # `cli` and `redb` are the binary's `required-features`; `serde` matches the feature
+            # set the workspace enables on the same crate in `Cargo.toml`.
+            cargoExtraArgs = "--bin ticket-inspector -F redb,serde,cli";
+            extraNativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
+            extraBuildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
+          };
+
           # Build args for the memory-profiling variant (Linux).
           # Linux gets full jemalloc profiling: stats + dump-on-interval.
           memprofBuildArgs = projectBuildArgs // {
@@ -195,15 +259,88 @@
             drv.overrideAttrs (old: {
               preBuild = ''
                 find target -name 'embed.rs' -path '*/utoipa-swagger-ui*/out/*' \
-                  -exec sed -i "s|/nix/var/nix/builds/[^/]*/source|$(pwd)|g" {} \;
+                  -exec sed -E -i "s|/nix/var/nix/builds/[^/]+/source|$PWD|g" {} +
                 if find target -name 'embed.rs' -path '*/utoipa-swagger-ui*/out/*' \
-                     -exec grep -l '/nix/var/nix/builds/' {} \; | grep -q .; then
+                     -exec grep -H '/nix/var/nix/builds/' {} + \
+                     | grep -Fv "$PWD" | grep -q .; then
                   echo "error: stale /nix/var/nix/builds/ paths remain in utoipa-swagger-ui embed.rs after substitution" >&2
                   exit 1
                 fi
               ''
               + (old.preBuild or "");
             });
+
+          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
+
+          clippyDerivation = rust-builder-local.callPackage nixLib.mkRustPackage (
+            projectBuildArgs
+            // {
+              runClippy = true;
+              cargoExtraArgs = qualityCargoExtraArgs;
+            }
+          );
+
+          # Reuse Clippy's dev-profile dependency artifacts for Cargo check.
+          checkDerivation = clippyDerivation.overrideAttrs (_: {
+            pname = "hoprd-check";
+            buildPhase = ''
+              runHook preBuild
+              cargo check ${qualityCargoExtraArgs}
+              runHook postBuild
+            '';
+            installPhase = ''
+              mkdir -p "$out"
+            '';
+          });
+
+          # Type-check the localcluster integration tests.
+          #
+          # `binary-hoprd-localcluster` builds only the binary, and the six integration test
+          # binaries under `localcluster/tests/` are `#[ignore]`d behind a chain container, so
+          # until this existed nothing in CI so much as compiled them — a rename in their
+          # shared `tests/common` module broke five files silently and stayed broken until
+          # somebody ran them by hand. Type-checking needs no container and no chain.
+          #
+          # Its own derivation rather than adding `--all-targets` to `qualityCargoExtraArgs`:
+          # that argument list carries hoprd's feature selection, which is not localcluster's,
+          # and widening it would also start linting test code in two other crates.
+          #
+          # `cargo check`, not Clippy — the point is to catch what does not compile. Promoting
+          # it is a separate decision, once the lint backlog in that test code is known.
+          localclusterTestCheckDerivation =
+            (rust-builder-local.callPackage nixLib.mkRustPackage (
+              localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+            )).overrideAttrs
+              (_: {
+                pname = "hoprd-localcluster-test-check";
+                # `cargo check` emits no binaries, so the install hook that would otherwise
+                # look for them in cargo's build log has nothing to find.
+                doNotPostBuildInstallCargoBinaries = true;
+                buildPhase = ''
+                  runHook preBuild
+                  cargo check -p hoprd-localcluster --all-targets
+                  runHook postBuild
+                '';
+                installPhase = ''
+                  mkdir -p "$out"
+                '';
+              });
+
+          # Documentation uses the same feature set and dependency artifacts as
+          # Clippy, while retaining strict rustdoc warnings.
+          docsDerivation = clippyDerivation.overrideAttrs (_: {
+            pname = "hoprd-docs";
+            buildPhase = ''
+              runHook preBuild
+              RUSTDOCFLAGS="-D warnings" cargo doc ${qualityCargoExtraArgs} \
+                --no-deps --document-private-items
+              runHook postBuild
+            '';
+            installPhase = ''
+              mkdir -p "$out/share/doc"
+              cp -r "target/''${CARGO_BUILD_TARGET}/doc/." "$out/share/doc/"
+            '';
+          });
 
           hoprdPackages = {
             binary-hoprd = rust-builder-local.callPackage nixLib.mkRustPackage projectBuildArgs;
@@ -217,9 +354,20 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
               }
             );
+            binary-hoprd-pix-test-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
+              }
+            );
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
+
+            # Diagnostic CLI over the tickets database, shipped in every hoprd image.
+            binary-ticket-inspector = rust-builder-local.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
+            binary-ticket-inspector-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
+            binary-ticket-inspector-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage ticketInspectorBuildArgs;
 
             binary-hoprd-profile-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
             binary-hoprd-profile-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage memprofBuildArgs;
@@ -294,37 +442,35 @@
                   '';
                 });
 
-            coverage-unit =
+            coverage =
               (fixUtoipaEmbedPaths (
                 rust-builder-local-coverage.callPackage nixLib.mkRustPackage (
                   projectBuildArgs
                   // {
                     src = testSrc;
-                    cargoExtraArgs = "-p hoprd -p hoprd-api";
+                    # nix-lib prepares instrumented dependencies workspace-wide.
+                    cargoExtraArgs = "";
                     runCoverage = true;
                     prependPackageName = false;
+                    cargoLlvmCovCommand = "nextest";
                     cargoLlvmCovExtraArgs = "--lcov --output-path $out --lib";
                     extraNativeBuildInputs = projectBuildArgs.extraNativeBuildInputs ++ [ pkgs.cargo-nextest ];
                   }
                 )
               )).overrideAttrs
                 (_: {
+                  # Retain hoprd's existing two-package unit-coverage scope.
                   buildPhase = ''
                     runHook preBuild
-                    cargo llvm-cov nextest --lcov --output-path $out --lib \
-                      ''${CARGO_PROFILE:+--cargo-profile $CARGO_PROFILE} \
-                      -p hoprd -p hoprd-api
+                    cargo llvm-cov nextest --cargo-profile test \
+                      -p hoprd -p hoprd-api --no-clean \
+                      --lcov --output-path "$out" --lib
                     runHook postBuild
                   '';
                 });
 
-            hoprd-clippy = rust-builder-local.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                runClippy = true;
-                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
-              }
-            );
+            check = checkDerivation;
+            clippy = clippyDerivation;
             binary-hoprd-dev = rust-builder-local.callPackage nixLib.mkRustPackage (
               projectBuildArgs
               // {
@@ -377,7 +523,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -403,7 +549,33 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-dev-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
+                pkgs.cacert
+                pkgs.curl
+              ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
+              Cmd = [ "hoprd" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
+            };
+            docker-hoprd-pix-test-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd-pix-test";
+              pathsToLink = [
+                "/bin"
+              ];
+              extraContents = [
+                dockerHoprdEntrypoint
+                pkgs.tini
+                hoprdPackages.binary-hoprd-pix-test-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -470,7 +642,7 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-aarch64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-aarch64-linux
+                hoprdPackages.binary-ticket-inspector-aarch64-linux
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -495,7 +667,7 @@
               extraContents = [
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
-                hoprnet.packages.${system}.binary-ticket-inspector-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
                 pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];
@@ -503,25 +675,7 @@
             };
           };
 
-          docs =
-            (rust-builder-local-nightly.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                buildDocs = true;
-                # Drop jemalloc default feature for docs: native lib fails to link in the docs sandbox.
-                # Must be applied here (not just in buildPhase) so cargoArtifacts/deps step also skips it.
-                cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
-              }
-            )).overrideAttrs
-              (_: {
-                buildPhase = ''
-                  runHook preBuild
-                  cargo doc -p hoprd -p hoprd-api --no-default-features \
-                    -F runtime-tokio,telemetry,transport-quic,session-server \
-                    --no-deps --document-private-items
-                  runHook postBuild
-                '';
-              });
+          docs = docsDerivation;
 
           pre-commit-lightweight = pkgs.pre-commit.overridePythonAttrs {
             nativeCheckInputs = [ ];
@@ -606,9 +760,21 @@
               envsubst
             ];
             shellHook = ''
+              # Runner-provided Nix binaries must not load libraries from this
+              # shell's newer glibc closure.
+              _hopr_ld_library_path="''${LD_LIBRARY_PATH-}"
+              unset LD_LIBRARY_PATH
+
               export GITHUB_TOKEN="''${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
               ${tokioUnstableHook}
               ${pre-commit-check.shellHook}
+
+              if [ -n "$_hopr_ld_library_path" ]; then
+                export LD_LIBRARY_PATH="$_hopr_ld_library_path"
+              else
+                unset LD_LIBRARY_PATH
+              fi
+              unset _hopr_ld_library_path
             '';
           };
 
@@ -649,6 +815,55 @@
           run-audit = nixLib.mkAuditApp {
             rustToolchainFile = ./rust-toolchain.toml;
           };
+
+          shellcheckDockerEntrypoint =
+            pkgs.runCommand "shellcheck-docker-entrypoint"
+              {
+                nativeBuildInputs = [ pkgs.shellcheck ];
+              }
+              ''
+                shellcheck ${./deploy/docker/docker-entrypoint.sh}
+                touch $out
+              '';
+
+          shellcheckLocalclusterSmoke =
+            pkgs.runCommand "shellcheck-localcluster-smoke"
+              {
+                nativeBuildInputs = [ pkgs.shellcheck ];
+              }
+              ''
+                shellcheck ${./scripts/localcluster-smoke.sh}
+                touch $out
+              '';
+
+          # Cacheable equivalent of the complete lint app: formatting, Cargo
+          # check, Clippy, and the Docker entrypoint shell check.
+          quick = pkgs.linkFarm "quick" [
+            {
+              name = "format";
+              path = config.treefmt.build.check self;
+            }
+            {
+              name = "check";
+              path = checkDerivation;
+            }
+            {
+              name = "clippy";
+              path = clippyDerivation;
+            }
+            {
+              name = "shellcheck-docker-entrypoint";
+              path = shellcheckDockerEntrypoint;
+            }
+            {
+              name = "shellcheck-localcluster-smoke";
+              path = shellcheckLocalclusterSmoke;
+            }
+            {
+              name = "localcluster-test-check";
+              path = localclusterTestCheckDerivation;
+            }
+          ];
         in
         {
           treefmt = {
@@ -711,16 +926,10 @@
           };
 
           checks = {
-            inherit (hoprdPackages) hoprd-clippy;
-            shellcheck-docker-entrypoint =
-              pkgs.runCommand "shellcheck-docker-entrypoint"
-                {
-                  nativeBuildInputs = [ pkgs.shellcheck ];
-                }
-                ''
-                  shellcheck ${./deploy/docker/docker-entrypoint.sh}
-                  touch $out
-                '';
+            inherit (hoprdPackages) check clippy;
+            shellcheck-docker-entrypoint = shellcheckDockerEntrypoint;
+            shellcheck-localcluster-smoke = shellcheckLocalclusterSmoke;
+            localcluster-test-check = localclusterTestCheckDerivation;
           };
 
           apps = {
@@ -735,6 +944,7 @@
               inherit docs;
               inherit pre-commit-check;
               inherit hoprd-man;
+              inherit quick;
               default = hoprdPackages.binary-hoprd;
               hoprd-candidate = (mkHoprdCandidate "-p hoprd -p hoprd-api");
             };

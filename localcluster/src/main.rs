@@ -151,10 +151,17 @@ async fn main() -> Result<()> {
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,
-            enable_channel_strategy: matches!(
-                args.channel_management,
-                cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
-            ),
+            strategies: identity::StrategySet {
+                channel_lifecycle: matches!(
+                    args.channel_management,
+                    cli::ChannelManagement::Strategy | cli::ChannelManagement::Both
+                ),
+                ..Default::default()
+            },
+            // The whole of `--enable-pix`: this writes the generator dimensions, the Exit-side
+            // admission policy, the `Pix` strategy stanza and the per-node wxHOPR float that
+            // pays for deposits. `PixSettings::default` documents the demo-scale values.
+            pix: args.enable_pix.then(identity::PixSettings::default),
             latency: args.latency.clone(),
             ..Default::default()
         };

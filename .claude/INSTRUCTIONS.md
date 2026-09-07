@@ -52,7 +52,7 @@ nix develop -c cargo nextest run -p <crate> --test <test_name> -j 1
 ### Coverage
 
 ```bash
-nix build -L .#coverage-unit     # LCOV report → ./result
+nix build -L .#coverage          # LCOV report → ./result
 ```
 
 ### Setup

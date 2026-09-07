@@ -103,6 +103,8 @@ fn default_api_host() -> HostConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use anyhow::Context;
     use hopr_lib::exports::transport::FlowControlConfig;
 
@@ -146,5 +148,31 @@ mod tests {
             SessionFlowControl::Robust.to_config(),
             Some(FlowControlConfig::robust())
         );
+    }
+
+    /// The bound comes from `FlowControlConfig::robust` upstream; this pins the value hoprd
+    /// actually ships with, so a change there does not silently alter node behaviour.
+    #[test]
+    fn robust_profile_should_bound_frame_age_at_two_seconds() -> anyhow::Result<()> {
+        let config = SessionFlowControl::Robust
+            .to_config()
+            .context("robust profile should carry a flow-control config")?;
+        assert_eq!(config.max_frame_age, Some(Duration::from_secs(2)));
+        Ok(())
+    }
+
+    /// The production default path: `api.session_flow_control` is `#[serde(default)]`, so a node
+    /// that never states it uses this profile, and it is what
+    /// `SessionClientRequest::into_protocol_session_config` receives as its fallback. Asserting
+    /// on `Robust` in isolation would not catch the default being changed out from under it.
+    #[test]
+    fn node_default_profile_should_be_robust_and_carry_its_bound() -> anyhow::Result<()> {
+        assert_eq!(SessionFlowControl::Robust, SessionFlowControl::default());
+
+        let config = SessionFlowControl::default()
+            .to_config()
+            .context("the node default must carry a flow-control config")?;
+        assert_eq!(config.max_frame_age, Some(Duration::from_secs(2)));
+        Ok(())
     }
 }

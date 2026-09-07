@@ -1,6 +1,6 @@
 [package]
 name = "hoprd"
-version = "4.0.3"
+version = "5.0.0-rc.1"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,7 @@ license.workspace = true
 build = "build.rs"
 
 [features]
+
 default = [
   "runtime-tokio",
   "telemetry",
@@ -32,6 +33,22 @@ runtime-tokio = [
   "hopr-strategy/strategy-channel-lifecycle",
   "hopr-transport-p2p/runtime-tokio",
 ]
+# === PIX deposit pool: pick exactly one ===
+#
+# Curvy pool: production deposit pool
+strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
+
+# Plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
+# transfers. What the localcluster tests and the PIX demo run against, and currently the only pool
+# that is implemented.
+strategy-pix-test = [
+  "pix",
+  "hopr-strategy/strategy-pix-test",
+  "hopr-lib/pix-secp256k1",
+]
+
+# Picked automatically once one of the above pools is selected.
+pix = ["runtime-tokio"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",

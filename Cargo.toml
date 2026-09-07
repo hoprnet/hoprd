@@ -3,7 +3,7 @@ resolver = "2"
 members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 
 [workspace.package]
-rust-version = "1.91"
+rust-version = "1.97"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
 license = "GPL-3.0-only"
@@ -15,23 +15,25 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-chain-connector = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937" }
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-hopr-network-graph = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-# `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
-hopr-strategy = { version = "0.22.0", default-features = false }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false, features = [
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
+
+# crates.io HOPR deps
+
+hopr-api = { version = "=4.3.0" }
+hopr-chain-connector = "0.26.0"
+hopr-ct-full-network = { version = "0.6.0", default-features = false }
+hopr-network-graph = { version = "0.7.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
+hopr-strategy = { version = "4.0.0", default-features = false }
+hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
-hopr-transport-p2p = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a511b8a88b297f47a15986573bf6db3ef7b95937", default-features = false }
-
-# crates.io HOPR deps
-hopr-api = { version = "=1.17.0" }
+# `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
+# the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
+hopr-transport-p2p = { version = "0.11.0", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
@@ -39,7 +41,7 @@ home = "0.5.12"
 async-signal = "0.2.14"
 async-trait = "0.1.91"
 axum = { version = "0.8.9", features = ["http2"] }
-base64 = "0.23.0"
+base64 = "0.23.1"
 bimap = "0.6.3"
 bytesize = { version = "2.7.0", features = ["serde"] }
 bytes = "1.12.1"
@@ -67,6 +69,7 @@ mimalloc = { version = "0.1.52", default-features = false, features = [
   "secure",
 ] }
 nix = { version = "0.31.3", features = ["fs", "signal"] }
+parking_lot = "0.12.5"
 rstest = "0.26.1"
 oas3 = "0.22.0"
 openapiv3 = "2.2.0"

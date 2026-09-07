@@ -28,7 +28,7 @@ use crate::{ApiError, ApiErrorStatus, BASE_PATH, InternalState, checksum_address
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
     "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
     "status": "Open",
     "balance": "10 wxHOPR"
 }))]
@@ -452,8 +452,7 @@ pub(super) async fn show_channel<
 #[serde_as]
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[schema(example = json!({
-        "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118",
-        "channelStatus": "PendingToClose"
+        "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
     }))]
 #[serde(rename_all = "camelCase")]
 /// Status of the channel after a close operation.
@@ -965,6 +964,53 @@ mod tests {
                 .len(),
             0
         );
+
+        Ok(())
+    }
+
+    /// The companion to the empty case above: with channels planted, each has to land on the
+    /// side that matches its direction relative to this node. An implementation that streamed
+    /// every channel into both lists — or into neither — passes the empty test unchanged.
+    #[tokio::test]
+    async fn list_channels_should_split_planted_channels_by_direction() -> anyhow::Result<()> {
+        let node = MockChainNode::random();
+        let me = node.identity.node_address;
+        let peer: Address = "0x188c4462b75e46f0c7262d7f48d182447b93a93c".parse()?;
+
+        let incoming = ChannelEntry::builder()
+            .between(peer, me)
+            .balance("10 wxHOPR".parse()?)
+            .status(ChannelStatus::Open)
+            .build()?;
+        let outgoing = ChannelEntry::builder()
+            .between(me, peer)
+            .balance("7 wxHOPR".parse()?)
+            .status(ChannelStatus::Open)
+            .build()?;
+
+        let node = MockChainNode {
+            chain: node.chain.with_channel(incoming).with_channel(outgoing),
+            ..node
+        };
+
+        let resp = channels_router(node)
+            .oneshot(Request::get("/channels").body(Body::empty())?)
+            .await?;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+        let json: serde_json::Value = serde_json::from_slice(&body)?;
+
+        let one = |side: &str| -> anyhow::Result<serde_json::Value> {
+            let list = json[side]
+                .as_array()
+                .with_context(|| format!("{side} should be an array"))?;
+            anyhow::ensure!(list.len() == 1, "{side} should hold exactly one channel");
+            Ok(list[0].clone())
+        };
+
+        assert_eq!(one("incoming")?["id"], incoming.get_id().to_string());
+        assert_eq!(one("outgoing")?["id"], outgoing.get_id().to_string());
 
         Ok(())
     }
