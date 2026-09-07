@@ -274,15 +274,16 @@ jobs:
   integration-throughput:
     name: Integration throughput
     # Gates the merge queue; the label is an opt-in pre-queue run. Restricted to the
-    # v4 line because hoprd-test rejects a rev off it.
+    # v4 line because hopr-integration-tests rejects a rev off it.
     if: >-
       (github.event_name == 'merge_group'
         && github.event.merge_group.base_ref == format('refs/heads/{0}', vars.MAINTENANCE_RELEASE_BRANCH))
       || (github.event_name == 'pull_request'
         && contains(github.event.pull_request.labels.*.name, 'run-integration'))
     runs-on: depot-ubuntu-24.04
-    # Must outlast the dispatched run (~30-40 min).
-    timeout-minutes: 120
+    # Must outlast the dispatched run, which is ~62 min now that every localcluster
+    # suite runs there (and is capped at 150).
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -293,8 +294,8 @@ jobs:
           client-id: ${{ vars.GH_APP_HOPRNET_BOT_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
           owner: hoprnet
-          repositories: hoprd-test
-      # hoprd-test echoes this into its run name; it is how the wait step finds our
+          repositories: hopr-integration-tests
+      # hopr-integration-tests echoes this into its run name; it is how the wait step finds our
       # run, since `repository_dispatch` returns nothing identifying.
       - name: Build a run marker
         id: marker
@@ -305,7 +306,7 @@ jobs:
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.bot-token.outputs.token }}
-          repository: hoprnet/hoprd-test
+          repository: hoprnet/hopr-integration-tests
           event-type: integration
           client-payload: |-
             {
@@ -321,8 +322,8 @@ jobs:
           MARKER: ${{ steps.marker.outputs.value }}
         run: |
           set -euo pipefail
-          REPO=hoprnet/hoprd-test
-          # 5 min window: the run can sit queued behind hoprd-test's concurrency group.
+          REPO=hoprnet/hopr-integration-tests
+          # 5 min window: the run can sit queued behind hopr-integration-tests's concurrency group.
           id=""
           for _ in $(seq 1 20); do
             id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 40 \
