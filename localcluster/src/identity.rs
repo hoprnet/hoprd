@@ -563,6 +563,7 @@ fn node_config(
             ..Default::default()
         },
         blokli_url: config.blokli_url.clone(),
+        blokli_dns_override: None,
         session_ip_forwarding: SessionIpForwardingConfig {
             use_target_allow_list: false,
             ..Default::default()
