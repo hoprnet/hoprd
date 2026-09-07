@@ -294,6 +294,8 @@ jobs:
       || (github.event_name == 'pull_request'
         && contains(github.event.pull_request.labels.*.name, 'run-integration'))
     runs-on: depot-ubuntu-24.04
+    # We now block on the dispatched run, so this has to outlast it (~30-40 min).
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
@@ -305,6 +307,13 @@ jobs:
           private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
           owner: hoprnet
           repositories: hoprd-test
+      # A unique tag for THIS attempt. hoprd-test echoes it into its run name, which
+      # is how the wait step below finds the run it started — `repository_dispatch`
+      # returns nothing identifying, and "newest run" is a race because three repos
+      # dispatch there and its concurrency group makes runs queue.
+      - name: Build a run marker
+        id: marker
+        run: echo "value=${GITHUB_REPOSITORY##*/}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
       - name: Invoke integration test
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
@@ -314,6 +323,31 @@ jobs:
           client-payload: |-
             {
               "project": "hoprd",
-              "rev": "${{ github.event.pull_request.head.ref }}",
-              "marker": ""
+              "rev": "${{ github.sha }}",
+              "marker": "${{ steps.marker.outputs.value }}"
             }
+      # Without this the job goes green the moment the dispatch is ACCEPTED, which is
+      # not the same as the test passing — a failed integration run left this check
+      # successful and the PR mergeable. Block on the run's conclusion instead.
+      - name: Wait for the integration test to conclude
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+          MARKER: ${{ steps.marker.outputs.value }}
+        run: |
+          set -euo pipefail
+          REPO=hoprnet/hoprd-test
+          id=""
+          for _ in $(seq 1 60); do
+            id=$(gh run list -R "$REPO" --workflow=integration.yaml -L 40 \
+                   --json databaseId,displayTitle \
+                   -q "[.[] | select(.displayTitle | contains(\"$MARKER\")) | .databaseId] | first // empty")
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          if [ -z "$id" ]; then
+            echo "::error::dispatched the integration test but never found a run tagged $MARKER" >&2
+            exit 1
+          fi
+          echo "Gating on https://github.com/$REPO/actions/runs/$id"
+          # --exit-status propagates the run's conclusion into this job.
+          gh run watch "$id" -R "$REPO" --exit-status
