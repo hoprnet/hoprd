@@ -142,6 +142,30 @@ async fn main() -> Result<()> {
         };
         summary.lock().await.blokli_url = Some(blokli_url.clone());
 
+        // Read before the cluster is built rather than lazily inside the config literal: a typo in
+        // the geometry should fail here, in a second, and not after a chain and a full mesh of
+        // nodes have been brought up against the wrong dimensions.
+        let pix_settings = match args.pix_config.as_deref() {
+            Some(path) => {
+                let yaml = std::fs::read_to_string(path)
+                    .with_context(|| format!("reading PIX config {}", path.display()))?;
+                let settings = identity::PixSettings::from_yaml(&yaml)
+                    .map_err(|e| anyhow::anyhow!("{e} (in {})", path.display()))?;
+                info!(
+                    path = %path.display(),
+                    num_ssa_parts = settings.num_ssa_parts,
+                    ssa_part_size = settings.ssa_part_size,
+                    additional_shares = settings.additional_shares,
+                    quota_per_ssa = settings.quota_per_ssa(),
+                    "PIX enabled with a configured geometry"
+                );
+                Some(settings)
+            }
+            // `--pix-config` implies `--enable-pix`, so the bare flag is only consulted when no
+            // file was given.
+            None => args.enable_pix.then(identity::PixSettings::default),
+        };
+
         let config = identity::GenerationConfig {
             blokli_url: blokli_url.clone(),
             num_nodes: args.size,
@@ -158,10 +182,10 @@ async fn main() -> Result<()> {
                 ),
                 ..Default::default()
             },
-            // The whole of `--enable-pix`: this writes the generator dimensions, the Exit-side
-            // admission policy, the `Pix` strategy stanza and the per-node wxHOPR float that
-            // pays for deposits. `PixSettings::default` documents the demo-scale values.
-            pix: args.enable_pix.then(identity::PixSettings::default),
+            // The whole of `--enable-pix` / `--pix-config`: this writes the generator dimensions,
+            // the Exit-side admission policy, the `Pix` strategy stanza and the per-node wxHOPR
+            // float that pays for deposits. `PixSettings::default` documents the demo-scale values.
+            pix: pix_settings,
             latency: args.latency.clone(),
             ..Default::default()
         };

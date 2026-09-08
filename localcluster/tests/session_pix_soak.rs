@@ -550,6 +550,12 @@ fn pix_settings(
         // front of the successor. One extra second of replies on top, so the bound is the drain
         // plus slack. `session_pix.rs` needs none of this: its buffer is ~16 SURBs.
         max_served_without_progress: surb_buffer_target() + packet_rate(),
+        // Upstream's three. The soak drives 4000 datagrams/s each way, so every cycle is finished
+        // by the application long before the deadline and fill contributes nothing — leaving it on
+        // is what keeps this run shaped like a deployed Exit rather than a special case.
+        max_recovery_time: identity::PixSettings::default().max_recovery_time,
+        fill_enabled: identity::PixSettings::default().fill_enabled,
+        fill_max_rate: identity::PixSettings::default().fill_max_rate,
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
