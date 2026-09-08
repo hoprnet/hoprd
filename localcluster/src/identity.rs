@@ -178,6 +178,36 @@ pub struct PixSettings {
     /// sizing a buffer for throughput has to size this against it. See `session_pix_soak.rs`, which
     /// derives both from the same rate.
     pub max_served_without_progress: u64,
+    /// Absolute per-cycle recovery deadline (`incoming_session_pix.max_recovery_time`).
+    ///
+    /// A resource backstop on the Session slot and the reconstructor state a cycle holds, and — now
+    /// that the Exit fills an idle cycle rather than letting it strand — also the idle tariff: a
+    /// Session with no application traffic completes its cycle at `0.75 × this` and pays for the
+    /// next one.
+    ///
+    /// It has to clear a whole cycle at the widest quota the node accepts, and the check is made
+    /// against `ASSUMED_SESSION_PACKET_RATE` (180 packets/s) rather than a measured rate, so the
+    /// floor is `quota_range_max / 1038 / 180`. A configuration below it is refused at load.
+    ///
+    /// A `PixSettings` field rather than a pinned default because a test geometry is orders of
+    /// magnitude smaller than the production window upstream's two hours was chosen for, and a
+    /// two-hour idle tariff is not something a test can wait out.
+    pub max_recovery_time: std::time::Duration,
+    /// Whether the Exit sends its own keep-alives to finish a funded cycle the application is not
+    /// finishing (`incoming_session_pix.fill_enabled`).
+    ///
+    /// On by default upstream. Turning it off is how a run measures what fill contributes: without
+    /// it, a Session whose return traffic averages below `E / max_recovery_time` strands its
+    /// deposit, which is the failure the mechanism exists to prevent.
+    pub fill_enabled: bool,
+    /// Ceiling on the Exit's self-generated fill traffic, in packets per second
+    /// (`incoming_session_pix.fill_max_rate`).
+    ///
+    /// Validated against the widest accepted quota: it must clear
+    /// `quota_range_max / 1038 × 1.05 / (0.75 × max_recovery_time)`, or the configuration is
+    /// refused at load. Sizing this is therefore paired with [`Self::max_recovery_time`] and
+    /// [`Self::quota_range_max`] rather than chosen alone.
+    pub fill_max_rate: u32,
     /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
     /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
@@ -241,6 +271,124 @@ impl PixSettings {
             * (self.ssa_part_size + self.additional_shares) as u64
             * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
     }
+
+    /// Load overrides from YAML, leaving anything unnamed at [`Default`].
+    ///
+    /// This is what `--pix-config` reads, and it exists because the CLI's `--enable-pix` is a bare
+    /// flag: it selects the demo geometry and nothing else, so any caller wanting a geometry sized
+    /// against a workload — a soak, a traffic-shape scenario, an operator reproducing a deployment
+    /// — had to link this crate as a library to reach [`PixSettings`] at all.
+    ///
+    /// Every field is optional and merges onto the default, so a file naming only the dimensions is
+    /// valid and the settlement values stay consistent with them. Balances are the same
+    /// `"<amount> <CURRENCY>"` strings the generated node config uses, and durations the same
+    /// humantime forms (`"30s"`, `"12min"`), so a value can be moved between the two files without
+    /// translation.
+    pub fn from_yaml(s: &str) -> Result<Self, String> {
+        let raw: RawPixSettings =
+            serde_saphyr::from_str(s).map_err(|e| format!("invalid PIX config: {e}"))?;
+        let d = Self::default();
+
+        let balance = |field: &str, given: Option<String>, fallback: HoprBalance| {
+            given
+                .map(|v| {
+                    v.parse::<HoprBalance>()
+                        .map_err(|e| format!("invalid PIX config: {field} ({v}): {e}"))
+                })
+                .transpose()
+                .map(|parsed| parsed.unwrap_or(fallback))
+        };
+
+        Ok(Self {
+            num_ssa_parts: raw.num_ssa_parts.unwrap_or(d.num_ssa_parts),
+            ssa_part_size: raw.ssa_part_size.unwrap_or(d.ssa_part_size),
+            additional_shares: raw.additional_shares.unwrap_or(d.additional_shares),
+            quota_range_min: raw.quota_range_min.unwrap_or(d.quota_range_min),
+            quota_range_max: raw.quota_range_max.unwrap_or(d.quota_range_max),
+            max_ssa_delivery_time: raw.max_ssa_delivery_time.unwrap_or(d.max_ssa_delivery_time),
+            max_deposit_wait: raw.max_deposit_wait.unwrap_or(d.max_deposit_wait),
+            enforce_on_nodes: raw.enforce_on_nodes.unwrap_or(d.enforce_on_nodes),
+            ssas_per_request: raw.ssas_per_request.unwrap_or(d.ssas_per_request),
+            max_ssas_per_request: raw.max_ssas_per_request.unwrap_or(d.max_ssas_per_request),
+            allow_dynamic_ssa_batches: raw
+                .allow_dynamic_ssa_batches
+                .unwrap_or(d.allow_dynamic_ssa_batches),
+            max_served_without_progress: raw
+                .max_served_without_progress
+                .unwrap_or(d.max_served_without_progress),
+            max_recovery_time: raw.max_recovery_time.unwrap_or(d.max_recovery_time),
+            fill_enabled: raw.fill_enabled.unwrap_or(d.fill_enabled),
+            fill_max_rate: raw.fill_max_rate.unwrap_or(d.fill_max_rate),
+            safe_deposit_float: balance(
+                "safe_deposit_float",
+                raw.safe_deposit_float,
+                d.safe_deposit_float,
+            )?,
+            price_per_byte: balance("price_per_byte", raw.price_per_byte, d.price_per_byte)?,
+            max_ssa_allocation: balance(
+                "max_ssa_allocation",
+                raw.max_ssa_allocation,
+                d.max_ssa_allocation,
+            )?,
+            max_spend_per_window: balance(
+                "max_spend_per_window",
+                raw.max_spend_per_window,
+                d.max_spend_per_window,
+            )?,
+            spend_window: raw.spend_window.unwrap_or(d.spend_window),
+            max_deposit_tracking_time: raw
+                .max_deposit_tracking_time
+                .unwrap_or(d.max_deposit_tracking_time),
+            gas_xdai_per_sweep: raw
+                .gas_xdai_per_sweep
+                .map(|v| {
+                    v.parse::<XDaiBalance>()
+                        .map_err(|e| format!("invalid PIX config: gas_xdai_per_sweep ({v}): {e}"))
+                })
+                .transpose()?
+                .unwrap_or(d.gas_xdai_per_sweep),
+        })
+    }
+}
+
+/// Wire form of [`PixSettings`], as `--pix-config` accepts it.
+///
+/// Separate from the domain type rather than a `Deserialize` derive on it, for the reason
+/// [`crate::latency::LatencyConfig`] keeps `RawLatencyConfig`: the fields an operator writes are
+/// strings and humantime durations, while the domain type holds parsed balances and
+/// `std::time::Duration`. `deny_unknown_fields` so a typo is an error rather than a silently
+/// ignored override — which on a geometry field would mean a run measuring something other than
+/// what it says it does.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawPixSettings {
+    num_ssa_parts: Option<usize>,
+    ssa_part_size: Option<usize>,
+    additional_shares: Option<usize>,
+    quota_range_min: Option<u64>,
+    quota_range_max: Option<u64>,
+    #[serde(with = "humantime_serde::option")]
+    max_ssa_delivery_time: Option<std::time::Duration>,
+    #[serde(with = "humantime_serde::option")]
+    max_deposit_wait: Option<std::time::Duration>,
+    enforce_on_nodes: Option<Vec<usize>>,
+    ssas_per_request: Option<usize>,
+    max_ssas_per_request: Option<usize>,
+    allow_dynamic_ssa_batches: Option<bool>,
+    max_served_without_progress: Option<u64>,
+    #[serde(with = "humantime_serde::option")]
+    max_recovery_time: Option<std::time::Duration>,
+    fill_enabled: Option<bool>,
+    fill_max_rate: Option<u32>,
+    safe_deposit_float: Option<String>,
+    price_per_byte: Option<String>,
+    max_ssa_allocation: Option<String>,
+    max_spend_per_window: Option<String>,
+    #[serde(with = "humantime_serde::option")]
+    spend_window: Option<std::time::Duration>,
+    #[serde(with = "humantime_serde::option")]
+    max_deposit_tracking_time: Option<std::time::Duration>,
+    gas_xdai_per_sweep: Option<String>,
 }
 
 /// Demo-scale dimensions for `hoprd-localcluster --enable-pix`, where no caller sizes the
@@ -289,6 +437,13 @@ impl Default for PixSettings {
             // Upstream's default, which the interactive cluster's small response buffer leaves
             // ample room under — see the field.
             max_served_without_progress: 2048,
+            // Upstream's own three. The demo quota is ~33.2 kB, so the two-hour deadline is far
+            // above its floor of `quota_range_max / 1038 / 180` and nothing here needs it shorter:
+            // an interactive cluster is not waiting on an idle tariff. Fill stays on so the
+            // interactive cluster behaves like a deployed Exit.
+            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
+            fill_enabled: UserIncomingSessionPixConfig::default().fill_enabled,
+            fill_max_rate: UserIncomingSessionPixConfig::default().fill_max_rate,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
             // ~3.32 wxHOPR per SSA deposit against the dimensions above.
             price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
@@ -345,13 +500,15 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             ssas_per_request: pix.ssas_per_request,
             allow_dynamic_ssa_batches: pix.allow_dynamic_ssa_batches,
             max_served_without_progress: pix.max_served_without_progress,
-            // Not [`PixSettings`] fields, because nothing here has a reason to move them: both are
+            max_recovery_time: pix.max_recovery_time,
+            fill_enabled: pix.fill_enabled,
+            fill_max_rate: pix.fill_max_rate,
+            // Not a [`PixSettings`] field, because nothing here has a reason to move it: it is
             // sized against `quota_range_max`, and every configuration in this crate sits orders of
-            // magnitude below the production window those defaults were chosen for. They are named
+            // magnitude below the production window that default was chosen for. It is named
             // rather than defaulted for the same reason the rest are — a `..Default::default()`
             // here would take an upstream addition silently.
             max_live_cycle_bytes: UserIncomingSessionPixConfig::default().max_live_cycle_bytes,
-            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -1132,6 +1289,95 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file naming only the geometry leaves every settlement value consistent with the default.
+    ///
+    /// This is the property that makes `--pix-config` usable at all: a caller sizing a cycle
+    /// against a workload should not also have to restate the price, the float and the four
+    /// deadlines to avoid silently taking a zero for each.
+    #[test]
+    fn a_partial_pix_config_merges_onto_the_defaults() -> anyhow::Result<()> {
+        let parsed = PixSettings::from_yaml(
+            r#"
+num_ssa_parts: 1024
+ssa_part_size: 64
+additional_shares: 16
+"#,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+        assert_eq!(1024, parsed.num_ssa_parts);
+        assert_eq!(64, parsed.ssa_part_size);
+        assert_eq!(16, parsed.additional_shares);
+        assert_eq!(1024 * 80 * 1038, parsed.quota_per_ssa());
+
+        let d = PixSettings::default();
+        assert_eq!(d.price_per_byte, parsed.price_per_byte);
+        assert_eq!(d.max_deposit_wait, parsed.max_deposit_wait);
+        assert_eq!(d.max_recovery_time, parsed.max_recovery_time);
+        assert_eq!(d.fill_enabled, parsed.fill_enabled);
+        Ok(())
+    }
+
+    /// Balances and durations parse from the same forms the generated node config uses.
+    #[test]
+    fn pix_config_reads_balances_and_humantime_durations() -> anyhow::Result<()> {
+        let parsed = PixSettings::from_yaml(
+            r#"
+max_recovery_time: 12min
+max_deposit_wait: 30s
+price_per_byte: "0.0000000533 wxHOPR"
+max_spend_per_window: "500 wxHOPR"
+gas_xdai_per_sweep: "0.02 xDai"
+fill_enabled: false
+fill_max_rate: 300
+enforce_on_nodes: [2]
+"#,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+        assert_eq!(
+            std::time::Duration::from_secs(720),
+            parsed.max_recovery_time
+        );
+        assert_eq!(std::time::Duration::from_secs(30), parsed.max_deposit_wait);
+        assert_eq!(
+            "0.0000000533 wxHOPR".parse::<HoprBalance>()?,
+            parsed.price_per_byte
+        );
+        assert_eq!(
+            "500 wxHOPR".parse::<HoprBalance>()?,
+            parsed.max_spend_per_window
+        );
+        assert_eq!(
+            "0.02 xDai".parse::<XDaiBalance>()?,
+            parsed.gas_xdai_per_sweep
+        );
+        assert!(!parsed.fill_enabled);
+        assert_eq!(300, parsed.fill_max_rate);
+        assert_eq!(vec![2], parsed.enforce_on_nodes);
+        Ok(())
+    }
+
+    /// A misspelled key is an error, not a silently ignored override.
+    ///
+    /// On a geometry field that distinction is the whole point: a run that quietly kept the demo
+    /// dimensions would report success against a cycle 2 500 times smaller than the one it claims
+    /// to be measuring.
+    #[test]
+    fn an_unknown_pix_config_key_is_rejected() {
+        let err = PixSettings::from_yaml("num_ssa_part: 1024\n")
+            .expect_err("a typo in a geometry field must not be ignored");
+        assert!(err.contains("invalid PIX config"), "{err}");
+    }
+
+    /// An unparseable balance names the field it came from.
+    #[test]
+    fn a_bad_pix_config_balance_names_its_field() {
+        let err = PixSettings::from_yaml("price_per_byte: \"not a balance\"\n")
+            .expect_err("an unparseable balance must be rejected");
+        assert!(err.contains("price_per_byte"), "{err}");
+    }
 
     /// The frozen secrets are static, so a `HoprKeys` construction failure would break every
     /// non-random cluster run. Guard all of them here instead of at startup.

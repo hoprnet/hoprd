@@ -166,8 +166,23 @@ pub struct Args {
     ///
     /// Each node will participate in PIX as both entry and exit, handling
     /// deposit addresses and sweeps.
+    ///
+    /// Selects the demo geometry documented on `PixSettings::default` — a cycle of a handful of
+    /// seconds, sized for interactive use rather than for any measured workload. Use
+    /// `--pix-config` to name a geometry instead.
     #[arg(long)]
     pub enable_pix: bool,
+
+    /// Enable the PIX strategy with the settings in this YAML file.
+    ///
+    /// Implies `--enable-pix`. Every field is optional and merges onto the demo defaults, so a
+    /// file naming only `num_ssa_parts` / `ssa_part_size` / `additional_shares` is valid — though
+    /// a geometry moved far from the default usually has to move `quota_range_*` with it, since
+    /// the Exit refuses a Session whose offered quota falls outside that window.
+    ///
+    /// e.g. `--pix-config profiles/traffic-shapes.yaml`
+    #[arg(long, value_name = "PATH")]
+    pub pix_config: Option<PathBuf>,
 }
 
 impl Args {
