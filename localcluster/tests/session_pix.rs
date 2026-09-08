@@ -350,6 +350,12 @@ fn pix_settings(
         // `PIX_POLYS x PIX_ADDITIONAL_SHARES` = 16-share tail upstream credits after a recovery,
         // so the drain never reaches this. `session_pix_soak.rs` is where it does.
         max_served_without_progress: 2048,
+        // Upstream's three, so this file goes on measuring the batched exchange and nothing else.
+        // Fill cannot bind here anyway: a cycle is 32 packets and the traffic finishes it long
+        // before any deadline, so the planner never has a shortfall to make up.
+        max_recovery_time: identity::PixSettings::default().max_recovery_time,
+        fill_enabled: identity::PixSettings::default().fill_enabled,
+        fill_max_rate: identity::PixSettings::default().fill_max_rate,
         safe_deposit_float: DEPOSIT_BUDGET.parse().context("parsing deposit float")?,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
