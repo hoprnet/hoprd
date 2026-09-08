@@ -681,6 +681,14 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_share_order_sample: supervision_defaults.min_share_order_sample,
                         max_predeposit_packets: supervision_defaults.max_predeposit_packets,
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
+                        // Also upstream's, and for the same reason as the group above: it is an
+                        // idle timer governing how promptly the Exit re-asks for commitments it
+                        // never received, and it bounds nothing on its own —
+                        // `max_ssa_delivery_time` remains the absolute deadline, and the number of
+                        // asks is capped by count rather than by this interval. So there is no
+                        // exposure or cost for an operator to trade off here.
+                        commitment_recommit_interval: supervision_defaults
+                            .commitment_recommit_interval,
                         fill: PixFillConfig {
                             enabled: value.network.incoming_session_pix.fill_enabled,
                             max_rate: value.network.incoming_session_pix.fill_max_rate,
