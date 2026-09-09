@@ -9,7 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
-        session::{IncomingSessionPixConfig, SupervisorConfig},
+        session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
@@ -391,6 +391,30 @@ pub struct UserIncomingSessionPixConfig {
     #[default(default_pix_allow_dynamic_ssa_batches())]
     #[serde(default = "default_pix_allow_dynamic_ssa_batches")]
     pub allow_dynamic_ssa_batches: bool,
+    /// Keep spending buffered SURBs on a funded cycle after the Session has closed at this Exit.
+    ///
+    /// Upstream's `fill.drain_after_close`, hoisted like the rest of this block. A Session can end
+    /// long before the cycle it was paid for does — the forwarder closing it, an operator closing
+    /// it, or the peer reporting an error — and the deposit that cycle carries is only released once
+    /// its whole emission has ridden back to the Entry. Since the deposit address derives from both
+    /// nodes' commitments, a cycle abandoned midway strands money both sides have already parted
+    /// with. With this on, the Exit answers such a close by keeping its keep-alive stream running
+    /// until the cycle recovers, spending SURBs it already holds on shares it has already been paid
+    /// for.
+    ///
+    /// It is entered only when the SURBs the Exit still has, net of the reserve fill must leave
+    /// behind, cover the cycle's whole remaining emission — a drain that runs out partway spends the
+    /// reserve and recovers nothing. It is bounded by the same ceiling and reserve as ordinary fill,
+    /// and ended by [`max_recovery_time`](Self::max_recovery_time) whether or not it succeeds.
+    ///
+    /// The rate law behind it is not exposed here for the reason the supervision deadlines above are
+    /// not: it is sized against the reconstructor and the SURB buffer, neither of which hoprd
+    /// surfaces. Turning this off restores the immediate teardown on every close path.
+    ///
+    /// Default is upstream's, on.
+    #[default(default_pix_drain_after_close())]
+    #[serde(default = "default_pix_drain_after_close")]
+    pub drain_after_close: bool,
 }
 
 // Every default below is read from upstream rather than restated, and the `#[default]` attributes
@@ -426,6 +450,9 @@ fn default_pix_max_served_without_progress() -> u64 {
 }
 fn default_pix_allow_dynamic_ssa_batches() -> bool {
     SupervisorConfig::default().allow_dynamic_ssa_batches
+}
+fn default_pix_drain_after_close() -> bool {
+    SupervisorConfig::default().fill.drain_after_close
 }
 
 /// Subset of various selected HOPR library network-related configuration options.
@@ -643,6 +670,23 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_share_order_sample: supervision_defaults.min_share_order_sample,
                         max_predeposit_packets: supervision_defaults.max_predeposit_packets,
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
+                        commitment_recommit_interval: supervision_defaults
+                            .commitment_recommit_interval,
+                        // Only the post-close drain is a hoprd dial. The rest of the fill law prices
+                        // one idle Session's traffic against the SURB buffer and the reconstructor,
+                        // and both of those are pinned to upstream's defaults above — so moving a
+                        // rate here without being able to move what it is sized against is the same
+                        // trap the supervision deadlines are left alone to avoid. Named rather than
+                        // `..Default::default()`, for the reason every literal in this block is.
+                        fill: PixFillConfig {
+                            drain_after_close: value.network.incoming_session_pix.drain_after_close,
+                            enabled: supervision_defaults.fill.enabled,
+                            heartbeat: supervision_defaults.fill.heartbeat,
+                            finish_fraction: supervision_defaults.fill.finish_fraction,
+                            loss_margin: supervision_defaults.fill.loss_margin,
+                            max_rate: supervision_defaults.fill.max_rate,
+                            min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
+                        },
                     },
                 },
                 path_planner: Default::default(),

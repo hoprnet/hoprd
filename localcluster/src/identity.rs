@@ -352,6 +352,10 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             // here would take an upstream addition silently.
             max_live_cycle_bytes: UserIncomingSessionPixConfig::default().max_live_cycle_bytes,
             max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
+            // Left at upstream's default (on) rather than made a [`PixSettings`] field: a drain only
+            // engages on a Session that closes mid-cycle holding SURBs enough to finish it, which no
+            // scenario here sets up on purpose. Named for the same reason as everything above it.
+            drain_after_close: UserIncomingSessionPixConfig::default().drain_after_close,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
