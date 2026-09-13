@@ -51,6 +51,9 @@ pub const DEPLOYER_KEY_ENV: &str = "HOPRD_DEPLOYER_PRIVATE_KEY";
 pub const NODE_TOKEN_TARGET_ENV: &str = "HOPRD_NODE_TOKEN_TARGET";
 /// Per-node xDai the deployer tops each node up to (default: 1 xDai).
 pub const NODE_NATIVE_TARGET_ENV: &str = "HOPRD_NODE_NATIVE_TARGET";
+/// Comma-separated node ids whose Safes receive the PIX float (`safe_deposit_float`); unset,
+/// every node's does. The soak's Entry is node 0 and is the only one that deposits.
+pub const PIX_FLOAT_NODE_IDS_ENV: &str = "HOPRD_PIX_FLOAT_NODE_IDS";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
 pub const MAX_NUM_NODES: usize = 5;
@@ -538,12 +541,36 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     // Summed rather than compared: the stake is already there, so a target of just the float
     // would be met by the stake alone and transfer nothing — the float would silently be a slice
     // of the stake, and whichever of channels or deposits spent first would starve the other.
-    let pix_safe_target: HoprBalance = initial_token_balance
-        + config
-            .pix
-            .as_ref()
-            .map(|pix| pix.safe_deposit_float)
-            .unwrap_or_default();
+    let pix_float: HoprBalance = config
+        .pix
+        .as_ref()
+        .map(|pix| pix.safe_deposit_float)
+        .unwrap_or_default();
+    // Which nodes' Safes carry the float. Only a node that deposits (the soak's Entry) spends it;
+    // on Anvil handing it to every Safe costs nothing, on a real chain it is wxHOPR parked in
+    // three Safes that never deposit. Unset: every node, as before.
+    let float_node_ids: Option<Vec<usize>> = match std::env::var(PIX_FLOAT_NODE_IDS_ENV) {
+        Ok(raw) => Some(
+            raw.split(',')
+                .filter(|part| !part.trim().is_empty())
+                .map(|part| {
+                    part.trim().parse::<usize>().with_context(|| {
+                        format!("{PIX_FLOAT_NODE_IDS_ENV} must list node ids, got {raw:?}")
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
+        ),
+        Err(_) => None,
+    };
+    let pix_safe_target_for = |id: usize| -> HoprBalance {
+        // Summed rather than compared: the stake is already there, so a target of just the
+        // float would be met by the stake alone and transfer nothing.
+        if float_node_ids.as_ref().is_none_or(|ids| ids.contains(&id)) {
+            initial_token_balance + pix_float
+        } else {
+            initial_token_balance
+        }
+    };
     let p2p_host = &config.p2p_host;
     debug!(
         token_balance = %initial_token_balance,
@@ -675,6 +702,16 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         info!(node_id = %id, address = %node_address, "node identity");
         eprintln!("Node {id}: Address {node_address}");
 
+        // Persist the identity *before* anything is funded or deployed for it. Everything below
+        // moves tokens to this key's account and Safe; if the process dies mid-way — it did, on a
+        // real chain — a key that only ever lived in memory takes those tokens with it.
+        let id_file = home_path.join(format!("node_id_{id}.id"));
+        let id_file_str = id_file
+            .to_str()
+            .ok_or(anyhow::anyhow!("Invalid path"))?
+            .to_owned();
+        kp.write_eth_keystore(&id_file_str, &config.identity_password)?;
+
         let node_connector = std::sync::Arc::new(
             create_trustful_safeless_hopr_blokli_connector(
                 &kp.chain_key,
@@ -803,6 +840,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         // no xDai; this cluster now looks the same.
         if config.pix.is_some() {
             let safe_token_balance: HoprBalance = node_connector.balance(safe.address).await?;
+            let pix_safe_target = pix_safe_target_for(id);
             if safe_token_balance < pix_safe_target {
                 let top_up = pix_safe_target - safe_token_balance;
                 if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
@@ -885,12 +923,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             Err(e) => return Err(anyhow::anyhow!("pre-announce failed: {e}")),
         }
 
-        let id_file = home_path.join(format!("node_id_{id}.id"));
-        let id_file_str = id_file
-            .to_str()
-            .ok_or(anyhow::anyhow!("Invalid path"))?
-            .to_owned();
-
         let node_cfg = node_config(
             id,
             config,
@@ -909,7 +941,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             .ok_or(anyhow::anyhow!("Invalid path"))?
             .to_owned();
         std::fs::write(&cfg_file, serde_saphyr::to_string(&node_cfg)?)?;
-        kp.write_eth_keystore(&id_file_str, &config.identity_password)?;
 
         eprintln!("\x1b[2K\rNode {id}: Node config written to {cfg_file}");
 
