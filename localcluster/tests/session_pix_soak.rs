@@ -899,6 +899,9 @@ struct NodeMetrics {
     deposits: u64,
     deposits_rejected: u64,
     deposits_failed: u64,
+    /// Deposits the Entry refused itself because they would cross its rolling spend limit —
+    /// the way a Curvy-pool run ends, since the budget lives in the strategy, not in the Safe.
+    deposits_over_budget: u64,
     deposits_confirmed: u64,
     deposits_timed_out: u64,
     keys_recovered: u64,
@@ -938,6 +941,7 @@ impl NodeMetrics {
             deposits: m.sum("hopr_strategy_pix_deposits_total") as u64,
             deposits_rejected: m.sum("hopr_strategy_pix_deposits_rejected_total") as u64,
             deposits_failed: m.sum("hopr_strategy_pix_deposits_failed_total") as u64,
+            deposits_over_budget: m.sum("hopr_strategy_pix_deposits_over_budget_total") as u64,
             deposits_confirmed: tracking("confirmed"),
             deposits_timed_out: tracking("timeout"),
             keys_recovered: m.sum("hopr_strategy_pix_keys_recovered_total") as u64,
@@ -1443,19 +1447,21 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // whose deposit *failed* for want of funds has nothing to sweep by construction, and
     // traffic keeps flowing through the kill-switch fuse, so its shares usually finish
     // anyway. On top of that one SSA is normally in flight at any instant.
-    let unswept_allowance =
-        exit_metrics.sweeps + entry_metrics.deposits_failed + MAX_SSAS_IN_FLIGHT;
+    // A deposit the Entry refused for its budget is unfunded just the same as one that failed
+    // for want of Safe funds: with the Curvy pool that refusal is how the run is meant to end.
+    let unfunded = entry_metrics.deposits_failed + entry_metrics.deposits_over_budget;
+    let unswept_allowance = exit_metrics.sweeps + unfunded + MAX_SSAS_IN_FLIGHT;
     assert!(
         exit_metrics.keys_recovered <= unswept_allowance,
-        "the Exit recovered {} keys but swept only {}, beyond the {} unfunded ({} failed \
-         deposits) and {MAX_SSAS_IN_FLIGHT} in-flight SSAs that may legitimately have no \
+        "the Exit recovered {} keys but swept only {}, beyond the {} unfunded ({} failed or \
+         over-budget deposits) and {MAX_SSAS_IN_FLIGHT} in-flight SSAs that may legitimately have no \
          sweep. The excess is funds stranded at stealth addresses: shares completed before \
          the deposit was mined. Lower HOPRD_PIX_SOAK_RATE or widen the SSA so a cycle \
          outlasts a deposit.",
         exit_metrics.keys_recovered,
         exit_metrics.sweeps,
-        entry_metrics.deposits_failed + MAX_SSAS_IN_FLIGHT,
-        entry_metrics.deposits_failed
+        unfunded + MAX_SSAS_IN_FLIGHT,
+        unfunded
     );
 
     // The Entry spent its budget down to what it could no longer afford. That the Safe delta is
