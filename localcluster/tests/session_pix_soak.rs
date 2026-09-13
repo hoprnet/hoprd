@@ -210,6 +210,27 @@ use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
 use hoprd_localcluster::{client_helper, identity};
 use tokio::net::UdpSocket;
 
+/// Attempts a balance read gets across transient chain-read failures (a 429 from the RPC behind
+/// Blokli surfaces as a 5xx from the node API) before the run is called off.
+const BALANCE_READ_ATTEMPTS: u32 = 5;
+
+async fn balances_with_retries(
+    api: &client_helper::HoprdApiClient,
+) -> anyhow::Result<client_helper::NodeBalances> {
+    let mut last = None;
+    for attempt in 1..=BALANCE_READ_ATTEMPTS {
+        match api.balances().await {
+            Ok(balances) => return Ok(balances),
+            Err(error) => {
+                tracing::warn!(attempt, %error, "balance read failed; retrying");
+                last = Some(error);
+                tokio::time::sleep(Duration::from_secs(2 * u64::from(attempt))).await;
+            }
+        }
+    }
+    Err(last.expect("at least one attempt ran"))
+}
+
 const NUM_NODES: usize = 4;
 const ENTRY: usize = 0;
 /// Both are candidates for every packet — see the module docs.
@@ -1227,14 +1248,12 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     loop {
         tokio::time::sleep(REPORT_INTERVAL).await;
 
-        let exit_now = exit_node
-            .api
-            .balances()
+        // A balance read goes node -> Blokli -> RPC, and a public RPC answers a burst with 429
+        // now and then; that is not the run failing, so give it a few tries before it is.
+        let exit_now = balances_with_retries(&exit_node.api)
             .await
             .context("polling exit balances")?;
-        let entry_now = entry
-            .api
-            .balances()
+        let entry_now = balances_with_retries(&entry.api)
             .await
             .context("polling entry balances")?;
         recovered = exit_now.safe_hopr - exit_before.safe_hopr;
