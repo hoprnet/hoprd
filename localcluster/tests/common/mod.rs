@@ -82,19 +82,49 @@ impl ClusterEnv {
     }
 }
 
-/// A temporary localcluster working directory. Owned by [`Cluster`].
+/// Environment variable naming a directory under which the cluster's working directory is
+/// created and **kept** instead of a temporary one that is deleted on drop.
+///
+/// The node identities live there (`node_id_<i>.id`, encrypted with
+/// [`identity::DEFAULT_IDENTITY_PASSWORD`]). On Anvil they are worthless once the chain
+/// container is gone; on a real chain they own Safes holding real wxHOPR, and deleting them
+/// strands every token the run put on chain.
+pub const KEEP_CLUSTER_DIR_ENV: &str = "HOPRD_KEEP_CLUSTER_DIR";
+
+/// A localcluster working directory. Owned by [`Cluster`]. Temporary unless
+/// [`KEEP_CLUSTER_DIR_ENV`] says otherwise.
 struct TempCluster {
-    /// Kept alive for the lifetime of the cluster; dropped last to clean up
-    /// the on-disk directory tree.
-    _temp_dir: tempfile::TempDir,
+    /// Kept alive for the lifetime of the cluster; dropped last to clean up the on-disk
+    /// directory tree. `None` when the directory is kept.
+    _temp_dir: Option<tempfile::TempDir>,
     data_dir: PathBuf,
     log_dir: PathBuf,
 }
 
 impl TempCluster {
     fn new() -> Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let data_dir = temp_dir.path().to_path_buf();
+        let (temp_dir, data_dir) = match std::env::var(KEEP_CLUSTER_DIR_ENV) {
+            Ok(base) if !base.trim().is_empty() => {
+                let base = PathBuf::from(base.trim());
+                std::fs::create_dir_all(&base).with_context(|| {
+                    format!("creating {KEEP_CLUSTER_DIR_ENV}={}", base.display())
+                })?;
+                let kept = tempfile::Builder::new()
+                    .prefix("cluster-")
+                    .tempdir_in(&base)?
+                    .keep();
+                eprintln!(
+                    "{KEEP_CLUSTER_DIR_ENV} is set: keeping the cluster directory (identities included) at {}",
+                    kept.display()
+                );
+                (None, kept)
+            }
+            _ => {
+                let temp_dir = tempfile::tempdir()?;
+                let data_dir = temp_dir.path().to_path_buf();
+                (Some(temp_dir), data_dir)
+            }
+        };
         let log_dir = data_dir.join("logs");
         std::fs::create_dir_all(&log_dir)?;
         Ok(Self {
