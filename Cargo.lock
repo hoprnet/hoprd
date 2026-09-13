@@ -3177,7 +3177,7 @@ dependencies = [
 [[package]]
 name = "curvy-abi"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "alloy 1.8.3",
  "anyhow",
@@ -3189,7 +3189,7 @@ dependencies = [
 [[package]]
 name = "curvy-chain-api"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "async-trait",
  "curvy-types",
@@ -3199,7 +3199,7 @@ dependencies = [
 [[package]]
 name = "curvy-chain-blokli"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "async-trait",
  "curvy-chain-api",
@@ -3257,7 +3257,7 @@ dependencies = [
 [[package]]
 name = "curvy-sdk"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -3277,7 +3277,7 @@ dependencies = [
 [[package]]
 name = "curvy-types"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "serde",
 ]
@@ -3300,7 +3300,7 @@ dependencies = [
 [[package]]
 name = "curvy-witnesscalc"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -6035,7 +6035,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "5.0.0"
-source = "git+https://github.com/0xCurvy/hopr-strategy?rev=017dae6eb5f474e0070cb730d496b1ee780a1813#017dae6eb5f474e0070cb730d496b1ee780a1813"
+source = "git+https://github.com/0xCurvy/hopr-strategy?rev=e212cfe78388619dd246cfccef2237d2e5b34c0d#e212cfe78388619dd246cfccef2237d2e5b34c0d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6720,7 +6720,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -9153,7 +9153,7 @@ dependencies = [
  "quinn-udp 0.5.15",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -9193,7 +9193,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9206,7 +9206,7 @@ checksum = "76150b617afc75e6e21ac5f39bc196e80b65415ae48d62dbef8e2519d040ce42"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "windows-sys 0.61.2",
 ]
 
@@ -12415,4 +12415,4 @@ dependencies = [
 [[patch.unused]]
 name = "curvy-chain-rpc"
 version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52#ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52"
+source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
