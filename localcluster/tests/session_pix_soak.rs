@@ -1251,8 +1251,18 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // The Exit's tracker timing out is the definitive end signal: it means a deposit it
     // was promised never arrived, which is what arms the kill switch. The deadline below
     // is a safety net for the case where that never happens.
-    let deadline =
-        Instant::now() + Duration::from_secs(funded_cycles * MAX_SECS_PER_CYCLE) + KILL_SWITCH_TAIL;
+    //
+    // With the Curvy pool on a real chain the first allocation can wait the whole deposit
+    // budget for the batch prover to commit the funding note, so that budget is part of the
+    // ceiling rather than something a healthy run trips over.
+    let deposit_wait = match pool {
+        Pool::Test => Duration::ZERO,
+        Pool::Curvy => curvy_max_deposit_wait()?,
+    };
+    let deadline = Instant::now()
+        + Duration::from_secs(funded_cycles * MAX_SECS_PER_CYCLE)
+        + KILL_SWITCH_TAIL
+        + deposit_wait;
     let traffic_started = Instant::now();
     let mut recovered;
     let mut exit_metrics;
