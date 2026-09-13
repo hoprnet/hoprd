@@ -58,6 +58,28 @@ ALL_IDXS=("$ENTRY_IDX" "${RELAY_IDXS[@]}" "$EXIT_IDX")
 STATE_DIR="$PIX_DEMO_STATE_DIR"
 : "${PIX_BLOKLI_URL:=http://127.0.0.1:8080}"
 : "${PIX_CHAIN_CONTAINER:=hopr-chain}"
+# Where `cast` reads the chain from. Unset: inside the Anvil container, as before. Set to a JSON-RPC
+# URL (a real chain): `cast` runs on this host against it, and the container is not consulted.
+: "${PIX_RPC_URL:=}"
+# First block the raw-log scans look at. Anvil starts at 0; a real chain wants the cluster's start.
+: "${PIX_CHAIN_FROM_BLOCK:=0}"
+# Run `cast` (or a shell script that calls it) where the chain is: on the host against PIX_RPC_URL,
+# or inside the chain container against its Anvil. Extra `-e VAR=val` args precede the command.
+chain_exec() {
+  local envs=()
+  while [ "${1:-}" = "-e" ]; do
+    envs+=("$2")
+    shift 2
+  done
+  if [ -n "$PIX_RPC_URL" ]; then
+    env FOUNDRY_DISABLE_NIGHTLY_WARNING=1 RPC_URL="$PIX_RPC_URL" "${envs[@]}" "$@"
+  else
+    local dargs=(-e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 -e RPC_URL=http://127.0.0.1:8545)
+    local e
+    for e in "${envs[@]}"; do dargs+=(-e "$e"); done
+    docker exec "${dargs[@]}" "$PIX_CHAIN_CONTAINER" "$@"
+  fi
+}
 LOG_COPY_DIR=/tmp/pix-soak-logs
 REFRESH=2
 # anvil's account 0: the localcluster's deployer and faucet, and in this demo the Curvy operator.
@@ -207,9 +229,9 @@ transfers() {
     return 0
   fi
   printf '%s\n' "$now" >"$stamp"
-  cache_json transfers timeout 15 docker exec -e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 "$PIX_CHAIN_CONTAINER" \
-    cast logs --rpc-url http://127.0.0.1:8545 --from-block 0 --address "$token" \
-    'Transfer(address indexed from, address indexed to, uint256 value)' --json
+  cache_json transfers timeout 15 chain_exec sh -c \
+    'cast logs --rpc-url "$RPC_URL" --from-block "$0" --address "$1" "Transfer(address indexed from, address indexed to, uint256 value)" --json' \
+    "$PIX_CHAIN_FROM_BLOCK" "$token"
 }
 
 # ── the Curvy transactions, as the RPC returns them ─────────────────────────────
@@ -240,8 +262,8 @@ tx_summary() {
     RPC_FETCH_BUDGET=$((RPC_FETCH_BUDGET - 1))
     # `--async`: `cast receipt` otherwise waits for the transaction to be mined, which a hash the
     # chain has never seen (a log line from a previous run) turns into a hang.
-    timeout 15 docker exec -e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 "$PIX_CHAIN_CONTAINER" sh -c \
-      "cast receipt $hash --async --rpc-url http://127.0.0.1:8545 --json; cast tx $hash --rpc-url http://127.0.0.1:8545 --json" 2>/dev/null |
+    timeout 15 chain_exec sh -c \
+      "cast receipt $hash --async --rpc-url \"\$RPC_URL\" --json; cast tx $hash --rpc-url \"\$RPC_URL\" --json" 2>/dev/null |
       jq -rs '
         def hex: ltrimstr("0x") | explode | map(if . >= 97 then . - 87 elif . >= 65 then . - 55 else . - 48 end) | reduce .[] as $d (0; . * 16 + $d);
         .[0] as $r | (.[1].data // .[1]) as $t
@@ -524,7 +546,7 @@ gas_scan() { # blocks-per-call [timeout-secs]
   # The single quotes are deliberate: it is the container's sh that expands these.
   # shellcheck disable=SC2016
   local script='
-rpc=http://127.0.0.1:8545
+rpc=$RPC_URL
 h=$(cast block-number --rpc-url $rpc) || exit 1
 to=$((FROM + BUDGET - 1)); [ "$to" -gt "$h" ] && to=$h
 echo "head $h"
@@ -541,8 +563,7 @@ done
 echo "scanned $to"'
   # Megabytes of block JSON on a long run: kept on disk, not in a variable.
   out="${CACHE}_gas_scan.tmp"
-  timeout "$secs" docker exec -e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 -e FROM="$next" -e BUDGET="$budget" \
-    "$PIX_CHAIN_CONTAINER" sh -c "$script" >"$out" 2>/dev/null || {
+  timeout "$secs" chain_exec -e FROM="$next" -e BUDGET="$budget" sh -c "$script" >"$out" 2>/dev/null || {
     rm -f "$out"
     return 0
   }
@@ -1061,7 +1082,7 @@ done
 
 case "${1:-}" in
 --dashboard)
-  render "blokli: $PIX_BLOKLI_URL/graphql · chain: docker exec $PIX_CHAIN_CONTAINER cast …"
+  render "blokli: $PIX_BLOKLI_URL/graphql · chain: ${PIX_RPC_URL:-docker exec $PIX_CHAIN_CONTAINER} cast …"
   exit 0
   ;;
 --ledger)

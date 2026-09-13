@@ -614,7 +614,8 @@ cargo nextest --version >/dev/null 2>&1 || {
 # The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
 # whose own command line contains the pattern; without it the script SIGTERMs itself.
 reset_cluster() {
-  docker rm -f hopr-chain >/dev/null 2>&1
+  # An external chain (HOPRD_CHAIN_URL) has no container of ours to remove.
+  [ -n "${HOPRD_CHAIN_URL:-}" ] || docker rm -f hopr-chain >/dev/null 2>&1
   local i
   for i in "${ALL_IDXS[@]}"; do
     pkill -f "hoprd .*--apiPort[ ]$((API_PORT_BASE + i))" >/dev/null 2>&1
@@ -623,8 +624,14 @@ reset_cluster() {
 }
 
 : "${HOPRD_BIN:=$REPO_ROOT/target/release/hoprd}"
-: "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
-export HOPRD_BIN HOPRD_CHAIN_IMAGE
+# HOPRD_CHAIN_URL names an already-running Blokli (a real chain, say) and skips the container;
+# otherwise the Anvil image is started as before.
+if [ -n "${HOPRD_CHAIN_URL:-}" ]; then
+  export HOPRD_BIN HOPRD_CHAIN_URL
+else
+  : "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
+  export HOPRD_BIN HOPRD_CHAIN_IMAGE
+fi
 [ -n "${PIX_DEMO_FLOAT:-}" ] && export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 [ -n "${PIX_DEMO_RATE:-}" ] && export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 
