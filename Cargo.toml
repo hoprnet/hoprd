@@ -282,7 +282,7 @@ ignored = ["hopr-api"]
 # Curvy crates to their crates.io releases and deleted `vendor/`. Drop this whole section once
 # hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "92558c28f2c1dc0c14b18d4d81cd207fe660cbcb" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c0c7b077f8bd62a134d49f683fa302964ca99a2a" }
 # hopr-strategy's Curvy pool needs rs-sdk changes not yet on crates.io (see its own
 # [patch.crates-io]); a dependency's patches do not apply here, so the root must repeat them.
 curvy-abi = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
