@@ -449,6 +449,10 @@ const CHANNEL_STAKE: &str = "300 wxHOPR";
 /// Environment variable overriding [`CHANNEL_STAKE`], as a wxHOPR amount. Anvil mints tokens for
 /// free; a real chain does not, and a full mesh of four nodes at 300 wxHOPR a channel is 3600.
 const CHANNEL_STAKE_ENV: &str = "HOPRD_PIX_SOAK_CHANNEL_STAKE";
+/// Set when the Curvy pool's state file already holds a committed funding note, so the run
+/// shields nothing and the Entry Safe need not cover the shield. Pair it with an empty
+/// `HOPRD_PIX_FLOAT_NODE_IDS` so no Safe is topped up with a float nobody spends.
+const POOL_PREFUNDED_ENV: &str = "HOPRD_PIX_SOAK_POOL_PREFUNDED";
 
 /// [`CHANNEL_STAKE`], unless the environment says otherwise.
 fn channel_stake() -> String {
@@ -1130,13 +1134,25 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // it holds some exact figure. It holds the float plus whatever the channel stakes left, and
     // an equality here would be asserting the arithmetic of the stakes rather than anything
     // about PIX.
-    assert!(
-        entry_before.safe_hopr >= safe_outlay,
-        "the Entry Safe holds {} against the {safe_outlay} it has to pay out for a {float} \
-         deposit budget, so it would run dry before the budget bound and the run would end for \
-         the wrong reason",
-        entry_before.safe_hopr
-    );
+    //
+    // A Curvy pool that already holds a committed funding note (its state file survived an
+    // earlier run) pays nothing out of the Safe, so the Safe need not hold the outlay at all;
+    // [`POOL_PREFUNDED_ENV`] says so, since the harness cannot see inside the pool's state.
+    if pool == Pool::Curvy && std::env::var_os(POOL_PREFUNDED_ENV).is_some() {
+        tracing::info!(
+            entry_safe_hopr = %entry_before.safe_hopr,
+            "{POOL_PREFUNDED_ENV} is set: the pool is expected to reuse its funding note, so the \
+             Entry Safe is not required to cover the {safe_outlay} shield"
+        );
+    } else {
+        assert!(
+            entry_before.safe_hopr >= safe_outlay,
+            "the Entry Safe holds {} against the {safe_outlay} it has to pay out for a {float} \
+             deposit budget, so it would run dry before the budget bound and the run would end for \
+             the wrong reason",
+            entry_before.safe_hopr
+        );
+    }
     tracing::info!(
         entry_safe_hopr = %entry_before.safe_hopr,
         exit_safe_hopr = %exit_before.safe_hopr,
