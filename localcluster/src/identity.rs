@@ -43,6 +43,14 @@ pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
 pub const DEFAULT_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
+/// Overrides the deployer/faucet key (default: Anvil account 0). A live chain has no Anvil
+/// account 0; whoever runs the cluster there funds the nodes from a key of their own.
+pub const DEPLOYER_KEY_ENV: &str = "HOPRD_DEPLOYER_PRIVATE_KEY";
+/// Per-node wxHOPR the deployer tops each node up to before it deploys its Safe (default:
+/// 1000 wxHOPR). Sized for Anvil, where tokens are free; a live chain wants far less.
+pub const NODE_TOKEN_TARGET_ENV: &str = "HOPRD_NODE_TOKEN_TARGET";
+/// Per-node xDai the deployer tops each node up to (default: 1 xDai).
+pub const NODE_NATIVE_TARGET_ENV: &str = "HOPRD_NODE_NATIVE_TARGET";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
 pub const MAX_NUM_NODES: usize = 5;
@@ -288,7 +296,8 @@ impl Default for GenerationConfig {
     fn default() -> Self {
         Self {
             blokli_url: DEFAULT_BLOKLI_URL.to_string(),
-            private_key: DEFAULT_PRIVATE_KEY.to_string(),
+            private_key: std::env::var(DEPLOYER_KEY_ENV)
+                .unwrap_or_else(|_| DEFAULT_PRIVATE_KEY.to_string()),
             num_nodes: DEFAULT_NUM_NODES,
             config_home: PathBuf::from(DEFAULT_CONFIG_HOME),
             identity_password: DEFAULT_IDENTITY_PASSWORD.to_string(),
@@ -512,8 +521,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     anvil_connector.connect().await?;
     info!(deployer = %anvil_connector.me(), "connected to blokli as deployer account");
 
-    let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
-    let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
+    let initial_token_balance: HoprBalance = std::env::var(NODE_TOKEN_TARGET_ENV)
+        .unwrap_or_else(|_| "1000 wxHOPR".to_string())
+        .parse()
+        .with_context(|| format!("{NODE_TOKEN_TARGET_ENV} must be a wxHOPR amount"))?;
+    let initial_native_balance: XDaiBalance = std::env::var(NODE_NATIVE_TARGET_ENV)
+        .unwrap_or_else(|_| "1 xDai".to_string())
+        .parse()
+        .with_context(|| format!("{NODE_NATIVE_TARGET_ENV} must be an xDai amount"))?;
     // What the Safe must hold for PIX, *on top of* the channel stake `deploy_safe` sweeps into
     // it. The Safe and not the node account: `hopr-types` 4.0.0 routes
     // `SafePayloadGenerator::transfer` through the Safe module, so the pool's `withdraw` debits
@@ -760,6 +775,22 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             }
             poll_handle.await??
         };
+
+        // A direct Curvy shield is the Safe calling the aggregator through its module, and the
+        // module forwards only to scoped targets. The Anvil image scopes it at deployment; a
+        // real chain does not, so a fresh Safe there needs the grant once — see `curvy_grant`.
+        if let Some(aggregator) = crate::curvy_grant::aggregator_from_env()? {
+            eprint!("\x1b[2K\rNode {id}: Scoping the Curvy aggregator into the Safe module...");
+            crate::curvy_grant::scope_aggregator(
+                &blokli_client,
+                &kp.chain_key,
+                safe.address,
+                safe.module,
+                aggregator,
+            )
+            .await
+            .with_context(|| format!("Node {id}: granting the Safe the Curvy aggregator target"))?;
+        }
 
         // Only PIX needs this top-up, and it is an extra transaction per node — skip it when the
         // strategy is off so other clusters bootstrap as fast as before.

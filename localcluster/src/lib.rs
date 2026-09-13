@@ -2,6 +2,7 @@ pub mod blokli_helper;
 pub mod cli;
 pub mod client_helper;
 pub mod control;
+pub mod curvy_grant;
 pub mod identity;
 pub mod latency;
 pub mod lock;

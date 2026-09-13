@@ -28,6 +28,7 @@ hoprd = { workspace = true, features = [
   "strategy-pix-test",
 ] }
 hopr-chain-connector = { workspace = true }
+curvy-abi = { workspace = true }
 hopr-strategy = { workspace = true, features = [
   "runtime-tokio",
   "strategy-auto-redeeming",

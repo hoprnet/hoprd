@@ -425,6 +425,14 @@ const GAS_XDAI_PER_SWEEP: &str = "0.01 xdai";
 /// rather than a cut — the forward leg now splits across two relays, so a channel carries about
 /// half the tickets it used to for three quarters of the stake.
 const CHANNEL_STAKE: &str = "300 wxHOPR";
+/// Environment variable overriding [`CHANNEL_STAKE`], as a wxHOPR amount. Anvil mints tokens for
+/// free; a real chain does not, and a full mesh of four nodes at 300 wxHOPR a channel is 3600.
+const CHANNEL_STAKE_ENV: &str = "HOPRD_PIX_SOAK_CHANNEL_STAKE";
+
+/// [`CHANNEL_STAKE`], unless the environment says otherwise.
+fn channel_stake() -> String {
+    std::env::var(CHANNEL_STAKE_ENV).unwrap_or_else(|_| CHANNEL_STAKE.to_string())
+}
 
 // ── Exit deadlines ──────────────────────────────────────────────────────────────
 
@@ -483,7 +491,26 @@ const CURVY_SHIELD_FEE_CEILING_BPS: u64 = 100;
 /// 2–10 s the 20 s fuse was sized for. The same rule, 2× the observed worst case, rounded up.
 /// As `max_deposit_tracking_time` it also bounds how long a sweep waits for its note to be
 /// committed.
+///
+/// Sized for anvil. A real chain confirms in blocks, not milliseconds — Gnosis `finalized` is
+/// minutes — so [`CURVY_MAX_DEPOSIT_WAIT_ENV`] overrides it, in seconds.
 const CURVY_MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(45);
+/// Environment variable overriding [`CURVY_MAX_DEPOSIT_WAIT`], as a number of seconds.
+const CURVY_MAX_DEPOSIT_WAIT_ENV: &str = "HOPRD_PIX_SOAK_DEPOSIT_WAIT_SECS";
+
+/// [`CURVY_MAX_DEPOSIT_WAIT`], unless the environment says otherwise.
+fn curvy_max_deposit_wait() -> anyhow::Result<Duration> {
+    match std::env::var(CURVY_MAX_DEPOSIT_WAIT_ENV) {
+        Ok(raw) => raw
+            .trim()
+            .parse::<u64>()
+            .map(Duration::from_secs)
+            .with_context(|| {
+                format!("{CURVY_MAX_DEPOSIT_WAIT_ENV} must be a number of seconds, got {raw:?}")
+            }),
+        Err(_) => Ok(CURVY_MAX_DEPOSIT_WAIT),
+    }
+}
 
 /// Per-SSA quota in bytes implied by the dimensions above.
 ///
@@ -699,7 +726,7 @@ fn pix_settings(
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: match pool {
             Pool::Test => MAX_DEPOSIT_WAIT,
-            Pool::Curvy => CURVY_MAX_DEPOSIT_WAIT,
+            Pool::Curvy => curvy_max_deposit_wait()?,
         },
         enforce_on_nodes: vec![EXIT],
         safe_deposit_float,
@@ -715,7 +742,7 @@ fn pix_settings(
         spend_window: Duration::from_secs(24 * 3600),
         max_deposit_tracking_time: match pool {
             Pool::Test => MAX_DEPOSIT_TRACKING_TIME,
-            Pool::Curvy => CURVY_MAX_DEPOSIT_WAIT,
+            Pool::Curvy => curvy_max_deposit_wait()?,
         },
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
     })
@@ -1004,7 +1031,9 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     })
     .await?;
     cluster.wait_ready(WAIT_TIMEOUT).await?;
-    cluster.open_channels(CHANNEL_STAKE, SETUP_TIMEOUT).await?;
+    cluster
+        .open_channels(&channel_stake(), SETUP_TIMEOUT)
+        .await?;
     cluster.wait_channels(SETUP_TIMEOUT).await?;
     cluster.wait_reachable(SETUP_TIMEOUT).await?;
     tracing::info!("channels ready after {:?}", t0.elapsed());
