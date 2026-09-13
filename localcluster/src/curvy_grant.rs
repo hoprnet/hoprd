@@ -20,6 +20,7 @@
 //! reference vectors produced with `cast`, so the tests check the encoding rather than the code.
 
 use anyhow::Context;
+use hopr_chain_connector::reexports::chain::exports::alloy::hex;
 use hopr_chain_connector::{
     Address, ChainKeypair,
     blokli_client::{BlokliQueryClient, BlokliTransactionClient},
@@ -31,6 +32,15 @@ use tracing::info;
 /// no grant is made, which is right for the Anvil image (already granted) and for the plain pool.
 pub const SCOPE_AGGREGATOR_ENV: &str = "HOPRD_CURVY_SCOPE_AGGREGATOR";
 
+/// Environment variable naming a JSON-RPC endpoint used to ask the module, before granting,
+/// whether the aggregator is already scoped (`tryGetTarget`). Blokli offers no generic
+/// `eth_call`, and a re-run against the same Safe — identities repeat across runs — otherwise
+/// pays for a transaction the module reverts with `TargetIsScoped()`, which Blokli reports only
+/// as "execution failed". Unset: no pre-check, the grant is simply attempted.
+pub const SCOPE_RPC_URL_ENV: &str = "HOPRD_CURVY_SCOPE_RPC_URL";
+
+/// `keccak256("tryGetTarget(address)")[..4]` on `HoprNodeManagementModule`: `(bool, uint256)`.
+const TRY_GET_TARGET_SELECTOR: [u8; 4] = [0xdf, 0x4e, 0x6f, 0x8a];
 /// `keccak256("scopeTargetToken(uint256)")[..4]` on `HoprNodeManagementModule`.
 const SCOPE_TARGET_TOKEN_SELECTOR: [u8; 4] = [0xa7, 0x6c, 0x9a, 0x2f];
 /// `keccak256("execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)")[..4]`.
@@ -129,6 +139,65 @@ pub fn encode_exec_transaction(to: Address, data: &[u8], signatures: &[u8]) -> V
     out
 }
 
+/// `tryGetTarget(address)` calldata for the module.
+pub fn encode_try_get_target(target: Address) -> Vec<u8> {
+    let mut data = Vec::with_capacity(36);
+    data.extend_from_slice(&TRY_GET_TARGET_SELECTOR);
+    let address: [u8; 20] = target.into();
+    data.extend_from_slice(&[0u8; 12]);
+    data.extend_from_slice(&address);
+    data
+}
+
+/// The `bool` of a `tryGetTarget` return value (`(bool, uint256)` ABI-encoded).
+pub fn decode_try_get_target(returned: &str) -> anyhow::Result<bool> {
+    let hex = returned.strip_prefix("0x").unwrap_or(returned);
+    anyhow::ensure!(
+        hex.len() >= 128,
+        "tryGetTarget returned {} hex chars, expected 128",
+        hex.len()
+    );
+    let word = &hex[..64];
+    anyhow::ensure!(
+        word.bytes().all(|b| b.is_ascii_hexdigit()),
+        "tryGetTarget returned non-hex data"
+    );
+    Ok(word.trim_start_matches('0') == "1")
+}
+
+/// Asks the module over JSON-RPC whether `aggregator` is already among its targets.
+async fn already_scoped_on_chain(
+    rpc_url: &str,
+    module: Address,
+    aggregator: Address,
+) -> anyhow::Result<bool> {
+    let module: [u8; 20] = module.into();
+    let body = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+        "params": [{
+            "to": format!("0x{}", hex::encode(module)),
+            "data": format!("0x{}", hex::encode(encode_try_get_target(aggregator))),
+        }, "latest"],
+    });
+    let response: serde_json::Value = reqwest::Client::new()
+        .post(rpc_url)
+        .json(&body)
+        .send()
+        .await
+        .context("eth_call tryGetTarget")?
+        .json()
+        .await
+        .context("reading eth_call response")?;
+    if let Some(error) = response.get("error") {
+        anyhow::bail!("eth_call tryGetTarget: {error}");
+    }
+    let result = response
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("eth_call tryGetTarget: no result in {response}"))?;
+    decode_try_get_target(result)
+}
+
 /// Whether a submission error says the target is already in the module's set — the module's
 /// `TargetIsScoped()` revert — which is the outcome we wanted, reached earlier.
 fn is_already_scoped(message: &str) -> bool {
@@ -149,6 +218,12 @@ pub async fn scope_aggregator<C>(
 where
     C: BlokliQueryClient + BlokliTransactionClient + Send + Sync,
 {
+    if let Ok(rpc_url) = std::env::var(SCOPE_RPC_URL_ENV) {
+        if already_scoped_on_chain(rpc_url.trim(), module, aggregator).await? {
+            info!(%safe, %module, %aggregator, "the Curvy aggregator is already scoped; nothing to grant");
+            return Ok(());
+        }
+    }
     let owner = owner_key.public().to_address();
     let scope = encode_scope_target_token(encode_target(aggregator));
     let calldata = encode_exec_transaction(module, &scope, &prevalidated_signature(owner));
@@ -264,6 +339,20 @@ mod tests {
         let actual =
             encode_exec_transaction(addr(0x11), &scope, &prevalidated_signature(addr(0xaa)));
         assert_eq!(hex(&actual), expected);
+    }
+
+    #[test]
+    fn try_get_target_calldata_and_decoding_match_cast() {
+        // cast sig 'tryGetTarget(address)' → 0xdf4e6f8a; argument is one padded address word.
+        assert_eq!(
+            hex(&encode_try_get_target(addr(0x5f))),
+            format!("df4e6f8a{}{}", "0".repeat(24), "5f".repeat(20))
+        );
+        let scoped = format!("0x{}{}", format!("{:0>64}", "1"), "0".repeat(64));
+        let unscoped = format!("0x{}{}", "0".repeat(64), "0".repeat(64));
+        assert!(decode_try_get_target(&scoped).unwrap());
+        assert!(!decode_try_get_target(&unscoped).unwrap());
+        assert!(decode_try_get_target("0x00").is_err());
     }
 
     #[test]
