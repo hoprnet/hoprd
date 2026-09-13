@@ -110,6 +110,9 @@ hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
 #   - Both builders now call `StrategyError::validate_config` before constructing anything, so a
 #     bad stanza fails at `build_strategies` instead of at the first deposit.
 hopr-strategy = { version = "5.0.0", default-features = false }
+# Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
+# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
+curvy-abi = "=0.1.0-rc.6"
 # Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
 # `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
 # feature the rest of the workspace expects.
@@ -279,4 +282,13 @@ ignored = ["hopr-api"]
 # Curvy crates to their crates.io releases and deleted `vendor/`. Drop this whole section once
 # hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c16ecebb0062af3293a1b535f6307d3633bb90bf" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "6bd9dae41bba48dae74e021f58680b4c218caa26" }
+# hopr-strategy's Curvy pool needs rs-sdk changes not yet on crates.io (see its own
+# [patch.crates-io]); a dependency's patches do not apply here, so the root must repeat them.
+curvy-abi = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-chain-api = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-chain-blokli = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-chain-rpc = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-sdk = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-types = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
+curvy-witnesscalc = { git = "https://github.com/0xCurvy/rs-sdk", rev = "ab1e214d55a3e9d30790fd0ba38a3bb3bf110e52" }
