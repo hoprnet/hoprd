@@ -393,10 +393,11 @@ const MAX_SECS_PER_CYCLE: u64 = 60;
 const KILL_SWITCH_TAIL: Duration = Duration::from_secs(180);
 /// After the kill switch trips, how long to keep polling for in-flight sweeps to land.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
-/// Wall-clock ceiling for a run at the default float, bootstrap included.
+/// Wall-clock ceiling for a run at the default float and packet rate, bootstrap included.
 ///
-/// Only enforced when `HOPRD_PIX_SOAK_FLOAT` is unset: runtime scales with the float by
-/// design, so a deliberately larger one is expected to take longer.
+/// Only enforced when `HOPRD_PIX_SOAK_FLOAT` is unset and the packet rate is the default:
+/// a larger float or a lower offered rate is expected to take longer. Custom runs still
+/// have the traffic-phase safety deadline derived from their funded cycle count.
 ///
 /// The traffic phase does not care how many relays there are — it is the same aggregate rate over
 /// the same geometry — but the bootstrap does, and it is the larger half of a default run. The
@@ -1579,8 +1580,9 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         100 - MIN_DELIVERED_PERCENT
     );
 
-    // Runtime is a function of the float, so this only binds the default.
-    if !float_overridden {
+    // This timing target was measured at the default float and packet rate. A custom
+    // rate changes cycle duration; its run is still bounded by the safety deadline above.
+    if !float_overridden && rate == DEFAULT_PACKET_RATE {
         assert!(
             t0.elapsed() <= DEFAULT_RUN_BUDGET,
             "a default run took {:?}, over its {DEFAULT_RUN_BUDGET:?} budget: {cycles} cycles \
