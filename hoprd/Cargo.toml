@@ -65,6 +65,24 @@ transport-quic = [
   "hopr-transport-p2p/transport-quic",
   "hopr-lib/transport-announce-quic",
 ]
+# Negotiates `/plaintext/2.0.0` instead of `noise` on p2p connections, leaving their traffic
+# readable on the wire.
+#
+# For running a local cluster under a protocol dissector: HOPR's onion encryption sits underneath
+# the transport's, so with noise in the way a capture is unreadable even to someone holding every
+# node's packet key. See `hopr-transport-p2p`'s `insecure-plaintext`, and the `hopr-wireshark`
+# dissector for what it is for.
+#
+# **Never build a node for a real network with this.** Every packet it sends — tickets,
+# acknowledgements, SURBs, session payloads — is readable by anyone on the path. Build it as:
+#
+#     cargo build -p hoprd --no-default-features \
+#       --features runtime-tokio,session-server,strategy-pix-test,insecure-plaintext
+#
+# `transport-quic` must stay out of that set: QUIC has no unencrypted mode, and the combination is
+# a compile error. Leaving it out also makes the node announce `/ip4/.../tcp/<port>`, which is what
+# the dissector reads.
+insecure-plaintext = ["hopr-transport-p2p/insecure-plaintext"]
 capture = ["hopr-lib/capture"]
 # To use profiling:
 # 1. Set RUSTFLAGS="--cfg tokio_unstable" before building

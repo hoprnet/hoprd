@@ -33,7 +33,10 @@ hopr-ticket-manager = { version = "0.7.0", default-features = false, features = 
 ] }
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
-hopr-transport-p2p = { version = "0.11.0", features = ["transport-quic"] }
+# `transport-quic` is selected by hoprd's own `transport-quic` feature rather than pinned here.
+# Pinning it made the choice unexpressible: it is mutually exclusive with `insecure-plaintext`,
+# and a feature forced on the workspace dependency cannot be turned off by anything downstream.
+hopr-transport-p2p = { version = "0.11.0" }
 
 # Third-party deps
 anyhow = "1.0.104"
@@ -185,3 +188,14 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# `hopr-transport-p2p`'s `insecure-plaintext` feature is not released yet, and cargo resolves a
+# feature's dependencies whether or not the feature is enabled — so the forwarding line in
+# `hoprd/Cargo.toml` cannot be conditional on it.
+#
+# Pinned to a rev rather than the branch it came from: the branch disappears when
+# hoprnet/hopr-impls#21 merges, and a rebuild should not depend on a ref that moves. That PR
+# releases the crate as 0.11.1, which satisfies the `^0.11.0` above, so once it is published this
+# whole section is deleted and nothing else changes.
+[patch.crates-io]
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hopr-impls", rev = "ca39f1b1024d8fcbfb0887d77393c6c46e72c44c" }
