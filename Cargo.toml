@@ -34,8 +34,8 @@ hopr-ticket-manager = { version = "0.7.0", default-features = false, features = 
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
 # `transport-quic` is selected by hoprd's own `transport-quic` feature rather than pinned here.
-# Pinning it made the choice unexpressible: it is mutually exclusive with `insecure-plaintext`,
-# and a feature forced on the workspace dependency cannot be turned off by anything downstream.
+# Pinning it left no way to build a TCP-only node, because a feature forced on the workspace
+# dependency cannot be turned off by anything downstream.
 hopr-transport-p2p = { version = "0.11.0" }
 
 # Third-party deps
