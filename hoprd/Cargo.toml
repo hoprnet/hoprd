@@ -79,10 +79,10 @@ transport-quic = [
 #     cargo build -p hoprd --no-default-features \
 #       --features runtime-tokio,session-server,strategy-pix-test,insecure-plaintext
 #
-# `transport-quic` must stay out of that set. Not a build error — `insecure-plaintext` simply does
-# not reach QUIC, whose TLS 1.3 is part of the transport — but a node talking QUIC produces a
-# capture nothing can read. Leaving it out makes the node announce `/ip4/.../tcp/<port>`, which is
-# what the dissector reads.
+# `transport-quic` must stay out of that set. Not a build error — it simply takes precedence, and
+# the node keeps noise and says so on start, because QUIC's TLS 1.3 is part of the transport and
+# could not be read anyway. Leaving it out is therefore what makes the capture readable, and it
+# makes the node announce `/ip4/.../tcp/<port>`, which is what the dissector reads.
 insecure-plaintext = ["hopr-transport-p2p/insecure-plaintext"]
 capture = ["hopr-lib/capture"]
 # To use profiling:
