@@ -73,7 +73,7 @@ hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
 #
 # 5.0.0 is the first release whose Curvy deposit pool (`strategy-pix-curvy`) builds from
 # crates.io alone: the Curvy SDK crates (`curvy-sdk`, `curvy-chain-blokli` and the ones beneath
-# them, 0.1.0-rc.6) are published, `curvy-core` 0.1.0-rc.6 asks for `thiserror` as a caret range
+# them, 0.1.0-rc.7) are published, `curvy-core` 0.1.0-rc.6 asks for `thiserror` as a caret range
 # that agrees with `hopr-api`'s, and the `vendor/` copies and the `[patch.crates-io]` lines every
 # consumer had to repeat are gone with it. Until hoprnet publishes 5.0.0 the crate is taken from
 # the `[patch.crates-io]` at the bottom of this manifest, pinned to a rev; the patch has to
@@ -112,7 +112,7 @@ hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
 hopr-strategy = { version = "5.0.0", default-features = false }
 # Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
 # Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
-curvy-abi = "=0.1.0-rc.6"
+curvy-abi = "=0.1.0-rc.7"
 # Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
 # `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
 # feature the rest of the workspace expects.
@@ -279,16 +279,7 @@ ignored = ["hopr-api"]
 # `hopr-strategy` 5.0.0 is not on crates.io yet: it is the Curvy PIX branch, under review as a
 # PR against hoprnet/hopr-strategy. Pinned to a rev on the fork it is reviewed from, so a rebuild
 # is reproducible and moving it is a reviewable change; the rev is the commit that switched the
-# Curvy crates to their crates.io releases and deleted `vendor/`. Drop this whole section once
+# Curvy crates to their crates.io releases (rs-sdk 0.1.0-rc.7). Drop this whole section once
 # hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "bac179915e96ccd8f62e7cc2b71ebaa62cf964b1" }
-# hopr-strategy's Curvy pool needs rs-sdk changes not yet on crates.io (see its own
-# [patch.crates-io]); a dependency's patches do not apply here, so the root must repeat them.
-curvy-abi = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-chain-api = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-chain-blokli = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-chain-rpc = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-sdk = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-types = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
-curvy-witnesscalc = { git = "https://github.com/0xCurvy/rs-sdk", rev = "b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "8b6493c" }

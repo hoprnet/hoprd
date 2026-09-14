@@ -3176,8 +3176,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-abi"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f46804539674dbf15dcc7b628ac65309e54f345730466bd59090de2c4d0013c1"
 dependencies = [
  "alloy 1.8.3",
  "anyhow",
@@ -3188,8 +3189,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-chain-api"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1667b3b0b7943d3de82f63e7b2f857bd0de4a26d036164dd4f34d279bf2e4d46"
 dependencies = [
  "async-trait",
  "curvy-types",
@@ -3198,8 +3200,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-chain-blokli"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd473b49e8d26f9716706ece84ce22ed6e6fcbcd8acf255c3bf8d2244e821150"
 dependencies = [
  "async-trait",
  "curvy-chain-api",
@@ -3256,8 +3259,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-sdk"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60000dcac1d9385b7fec38e875e5c1abfc52c213a83deb662cc374b86096ce63"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -3276,8 +3280,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-types"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38df86046b919eadd003ef16f62e4e9de79d9b154db990fb318a04c5474b4c19"
 dependencies = [
  "serde",
 ]
@@ -3299,8 +3304,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-witnesscalc"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
+version = "0.1.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f30dda0cbfc8aeff8db0f7d285262516cd3d2765d25d6de0b75f5ea20b63743b"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -6035,7 +6041,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "5.0.0"
-source = "git+https://github.com/0xCurvy/hopr-strategy?rev=bac179915e96ccd8f62e7cc2b71ebaa62cf964b1#bac179915e96ccd8f62e7cc2b71ebaa62cf964b1"
+source = "git+https://github.com/0xCurvy/hopr-strategy?rev=8b6493c#8b6493c64c951b24c42c57da105c658d4b031b0a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12411,8 +12417,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "curvy-chain-rpc"
-version = "0.1.0-rc.6"
-source = "git+https://github.com/0xCurvy/rs-sdk?rev=b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312#b59f36f2ebdc175d9e3edeeaae9e0bfdd9e9f312"
