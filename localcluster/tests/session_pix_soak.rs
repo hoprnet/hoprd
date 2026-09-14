@@ -728,6 +728,34 @@ async fn curvy_vault_fees(blokli_url: &str) -> anyhow::Result<(u64, u64)> {
     Ok((bps("depositFee")?, bps("withdrawalFee")?))
 }
 
+/// The vault's per-token withdrawal gas fee, in wei of that token: a flat amount the vault keeps
+/// on every withdrawal on top of its basis-point fee, so a sweep credits the deposit less both.
+async fn curvy_withdrawal_gas_fee(blokli_url: &str, token_id: &str) -> anyhow::Result<U256> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    let body = serde_json::json!({
+        "query": format!(
+            "{{ curvyVaultToken(tokenId: \"{token_id}\") {{ ... on CurvyVaultToken {{ gasFees {{ withdrawal }} }} \
+             ... on QueryFailedError {{ message }} }} }}"
+        )
+    });
+    let reply: serde_json::Value = client
+        .post(format!("{blokli_url}/graphql"))
+        .json(&body)
+        .send()
+        .await
+        .context("querying Blokli for the Curvy vault token")?
+        .error_for_status()?
+        .json()
+        .await
+        .context("decoding the Curvy vault token")?;
+    let fee = reply["data"]["curvyVaultToken"]["gasFees"]["withdrawal"]
+        .as_str()
+        .with_context(|| format!("no withdrawal gas fee for vault token {token_id} in Blokli's reply: {reply}"))?;
+    U256::from_dec_str(fee).with_context(|| format!("withdrawal gas fee {fee:?} is not a number"))
+}
+
 /// `budget` is what actually ends the run: the strategy refuses the deposit that would cross it,
 /// which starves the Session exactly as an empty account used to. `safe_deposit_float` is sized
 /// to cover it with room to spare, so the Safe's balance is never what binds — see
@@ -1083,11 +1111,16 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
                  {CURVY_SHIELD_FEE_CEILING_BPS} bps the {safe_outlay} shield is sized for; the \
                  last of the {funded_cycles} deposits would fail for want of funds"
             );
-            let per_sweep = less_fee(per_cycle, withdrawal_fee_bps);
+            // The vault also keeps a flat per-token gas fee on each withdrawal (the same token
+            // id the nodes are configured with), so a sweep credits a few gwei less than the
+            // basis points alone would say.
+            let token_id = std::env::var("HOPRD_CURVY_TOKEN").unwrap_or_else(|_| "3".to_owned());
+            let withdrawal_gas_fee = curvy_withdrawal_gas_fee(cluster.blokli_url(), &token_id).await?;
+            let per_sweep = HoprBalance::from(less_fee(per_cycle, withdrawal_fee_bps).amount() - withdrawal_gas_fee);
             tracing::info!(
-                %pool, shield = %safe_outlay, deposit_fee_bps, withdrawal_fee_bps, %per_sweep,
+                %pool, shield = %safe_outlay, deposit_fee_bps, withdrawal_fee_bps, %withdrawal_gas_fee, %per_sweep,
                 "Curvy pool: the Entry shields once, gross of the deposit fee, and each sweep \
-                 credits the Exit the deposit less the withdrawal fee"
+                 credits the Exit the deposit less the withdrawal fee and the withdrawal gas fee"
             );
             per_sweep
         }
