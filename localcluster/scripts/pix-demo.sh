@@ -2,6 +2,10 @@
 #
 # Live dashboard for the PIX Session soak test.
 #
+# For a complete local Curvy setup with direct shielding, use:
+#   ./localcluster/scripts/curvy-localcluster.sh
+# It prepares the chain permissions and environment, then invokes this dashboard.
+#
 # Runs `session_pix_soak` against a throwaway 4-node localcluster — an Entry, two relays and
 # an Exit — and renders what all four are doing while it happens: traffic crossing the Session
 # over both relays, SSA cycles advancing through deposit → confirmation → key recovery → sweep,

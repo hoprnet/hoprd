@@ -159,6 +159,51 @@ HOPRD_CHAIN_IMAGE=<chain-image> \
 
 ---
 
+## Curvy PIX soak test (direct shielding)
+
+On an x86_64 Linux dev box with Nix and Docker, run from the repository root:
+
+```bash
+./localcluster/scripts/curvy-localcluster.sh
+```
+
+This enters the Nix development shell, builds the Curvy release binary and proving
+artifacts if their `result-curvy` / `result-curvy-keys` links are missing, and starts
+a fresh local chain. It enables `directShieldEnabled` on the Curvy aggregator,
+grants that aggregator to every node's Safe module, and runs the four-node PIX
+soak test with the live dashboard. Direct shielding and operator submission are
+selected explicitly. The chain container is removed when the run exits.
+
+`HOPRD_BIN` and `CURVY_ZK_KEYS_DIR` can select existing builds. Rebuild the binary
+after changing its source; an existing binary is reused. Use `--no-dashboard` to
+print nextest output instead of the dashboard. Over SSH, run in tmux to keep the
+test alive when the connection drops. No port forwarding is needed.
+
+The default offered load is 4,000 datagrams/second in each direction. On a smaller
+dev box, select a lower rate; the test scales its return buffer and still checks all
+ten funded deposits:
+
+```bash
+PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
+```
+
+The runner owns its fresh `hopr-chain` container and requires port 8080 to be free.
+It refuses to replace an existing container or use `HOPRD_CHAIN_URL`. For an
+existing chain, use `pix-demo.sh` with that deployment's settings instead.
+
+The two permissions are independent: scoping the aggregator into each Safe does
+not enable direct shielding on the aggregator. The pinned development image starts
+with direct shielding disabled. Without enabling it, the Safe's inner call fails
+with `DirectShieldDisabled()` (`0x0b51292d`); a subsequent commitment may misleadingly
+fail with `NoteNotScheduledForDeposit()` (`0xa18652d5`). The runner sets and reads
+back the direct-shield flag before starting the test.
+
+Node logs are preserved in `/tmp/pix-soak-logs`; the dashboard's test log is
+`/tmp/pix-demo/test.log` unless `PIX_DEMO_STATE_DIR` is set. The runner prints the
+directory containing its chain log and the receipt for enabling direct shielding.
+
+---
+
 ## Machine-readable status
 
 For CI and integration tooling, query the structured status instead of scraping stdout. A running cluster serves its **live** state on a unix domain socket at `<data-dir>/cluster.sock`. The `status` subcommand connects to it and prints the current snapshot as JSON:
