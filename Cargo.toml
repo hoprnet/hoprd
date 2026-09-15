@@ -26,20 +26,16 @@ hoprd-api-client = { path = "rest-api-client" }
 # silently between one `cargo update` and the next. The `rev` is what makes a rebuild
 # reproducible, and moving it is a reviewable change.
 #
-# `3188d8ee` is the current `master` head and a plain fast-forward from the `7b46149b` it
-# replaces — four commits, all reachable, so `git log 7b46149b..master` is the whole diff. The
-# two earlier moves needed a content diff to establish that relationship because their PR had
-# squash-merged; this one does not.
-#
-# What those four commits carry: `f7c32948` reworks the Start protocol's `deposit_data` into one
-# entry per SSA sourced from the deposit pool (and caps `MAX_SSA_BATCH_SIZE` to 9), `3188d8ee`
-# bumps the published `hopr-api` stack to 4.1.0 / `hopr-types` 4.0.0, `ac40eff5` quiets
-# ERROR-spam on inbound packets to torn-down sessions, and `bb7bc621` is a flake-input bump.
+# `85e698a7` is where `main` pins them, taken over as-is in the merge that brought the PIX
+# supervisor (#143) and per-target PIX admission (#147) in: `hopr-lib`'s `SupervisorConfig` is
+# what `hoprd/src/config.rs` now flattens, and `hopr-api` 4.3.0 is the published stack that rev
+# builds against. The Curvy `hopr-strategy` below asks for `hopr-api` as a caret range from 4.1,
+# so the two agree on one 4.3.0.
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
 # the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e07d505527253b278fc7372b9601afb921d2", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "85e698a726710e205e8f76f4df7ad52debd2ff86", default-features = false }
 
 # crates.io HOPR deps
 #
@@ -62,11 +58,11 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "87f0e0
 # why the PIX deposit-address assertion still holds either way and does not catch this. When
 # `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
 # hoprnet followed; this line is where that agreement is written down.
-hopr-api = { version = "=4.1.0" }
+hopr-api = { version = "=4.3.0" }
 hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
-hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 # A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
 # only job is to document a version; this is a real dependency the resolver acts on, and pinning
 # it exactly would conflict with any other crate in the graph asking for a later 4.x.
@@ -84,8 +80,9 @@ hopr-session-server-forwarder = { version = "0.3.0", default-features = false }
 # with each rs-sdk release; the `hoprd-pix-curvy` image in `flake.nix` carries them and sets the
 # variable, anything else has to provide both.
 #
-# Still on `hopr-api` 4.1, so the `=4.1.0` line above and the `hopr-lib` rev stay. What the
-# earlier majors changed for this workspace is recorded below because the code still reflects it.
+# Asks for `hopr-api` 4.1 as a caret range, which the `=4.3.0` line above satisfies, so the
+# `hopr-lib` rev is `main`'s. What the earlier majors changed for this workspace is recorded
+# below because the code still reflects it.
 #
 # What 4.0.0 changed (2.0.0 moved to `hopr-api` 3.0 and 3.0.0 to `hopr-api` 4.1; `hopr-api`
 # majors cannot coexist across this boundary, see the `hopr-api` line above):
