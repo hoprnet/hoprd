@@ -47,6 +47,31 @@ pub enum Command {
     /// Always exits 0 with a parseable answer: the live state of a running/starting
     /// cluster, or `not_running` when nothing is listening on the control socket.
     Status(StatusArgs),
+    /// Move every Safe's wxHOPR of a kept cluster directory to one address.
+    ///
+    /// For clusters run against a real chain with `HOPRD_KEEP_CLUSTER_DIR`: reads each
+    /// `node_id_<i>.id` and the Safe/module its `hoprd_cfg_<i>.yaml` names, and withdraws the
+    /// Safe's whole wxHOPR balance through the node's module. Stop the cluster first.
+    SweepSafes(SweepArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct SweepArgs {
+    /// The kept cluster directory (holds node_id_<i>.id and hoprd_cfg_<i>.yaml).
+    #[arg(long)]
+    pub cluster_dir: PathBuf,
+
+    /// Recipient of every Safe's wxHOPR.
+    #[arg(long)]
+    pub to: String,
+
+    /// Blokli the sweep submits through.
+    #[arg(long, env = "HOPRD_CHAIN_URL", default_value = "http://127.0.0.1:8080")]
+    pub blokli_url: String,
+
+    /// Password the identities were encrypted with.
+    #[arg(long, default_value = "password")]
+    pub identity_password: String,
 }
 
 #[derive(Parser, Debug)]

@@ -2,6 +2,10 @@
 #
 # Live dashboard for the PIX Session soak test.
 #
+# For a complete local Curvy setup with direct shielding, use:
+#   ./localcluster/scripts/curvy-localcluster.sh
+# It prepares the chain permissions and environment, then invokes this dashboard.
+#
 # Runs `session_pix_soak` against a throwaway 4-node localcluster — an Entry, two relays and
 # an Exit — and renders what all four are doing while it happens: traffic crossing the Session
 # over both relays, SSA cycles advancing through deposit → confirmation → key recovery → sweep,
@@ -14,6 +18,7 @@
 #   ./localcluster/scripts/pix-demo.sh                  # ~7 minutes
 #   PIX_DEMO_FLOAT="150 wxHOPR" ./localcluster/scripts/pix-demo.sh    # more cycles
 #   PIX_DEMO_RATE=6000 ./localcluster/scripts/pix-demo.sh             # faster
+#   PIX_POOL=curvy CURVY_ZK_KEYS_DIR=~/curvy-zk-keys ./localcluster/scripts/pix-demo.sh
 #
 # The flow was measured to sustain 6000 datagrams/s each way and to saturate by 6500; the
 # committed default is 4000, for the margin reasons on `DEFAULT_PACKET_RATE` in the test.
@@ -24,14 +29,17 @@
 #
 #   watch -n 2 -c ./localcluster/scripts/pix-demo.sh --dashboard
 #
-# Requires curl, jq, bc, docker and cargo-nextest, so run it inside `nix develop`. Plus a
+# Direct runs require curl, jq, bc, docker and cargo-nextest (`nix develop`). The
+# Curvy launcher supplies PIX_DEMO_TEST_RUNNER, bypassing Cargo and local binary
+# checks because it validates/runs a prebuilt executable. Direct runs also need a
 # release `hoprd` at HOPRD_BIN (default `target/release/hoprd`) and HOPRD_CHAIN_IMAGE — see
 # the test's module docs.
 #
 # The hoprd binary carries exactly one deposit pool, chosen at build time by a `strategy-pix-*`
 # feature; `PIX_POOL` (default `test`) says which one this run expects, and the binary is
-# checked against it before the cluster is started. `PIX_POOL=curvy` selects the Baby JubJub pool,
-# which is currently a stub that panics — it exists so the wiring can be exercised end to end.
+# checked against it before the cluster is started. `PIX_POOL=curvy` selects the Curvy privacy
+# pool, which needs `CURVY_ZK_KEYS_DIR` pointing at the proving keys (see *Curvy runs* in the
+# test's docs) and pairs with `curvy-demo.sh`, which shows the same run from the chain's side.
 #
 # Safe to re-run: a stale chain container or leftover nodes from an interrupted attempt are
 # cleared on the way in, and Ctrl-C tears the cluster down on the way out.
@@ -364,6 +372,10 @@ render() {
   entry_float=$(balance "$ENTRY_IDX" safeHopr)
   local per_cycle
   per_cycle=$(from_log "per_cycle")
+  # What one sweep credits the Exit: the deposit itself, or with the Curvy pool the deposit less
+  # the vault's withdrawal fee, which the test announces once it has read the fee off the chain.
+  local per_sweep
+  per_sweep=$(from_log "per_sweep")
   local funded
   funded=$(from_log "funded_cycles")
   # The run's fixed parameters, announced once in the test's startup banner. All empty when
@@ -487,9 +499,9 @@ render() {
   # soon as the withdrawal call returns, so it can lead the Safe balance by a block or two,
   # and pairing the two would print an equation that does not hold.
   if [ -n "$per_cycle" ]; then
-    local landed
-    landed=$(echo "scale=0; $recovered / $per_cycle" | bc -l 2>/dev/null)
-    printf '  %s= %s × %s%s' "$C_DIM" "${landed:-0}" "$per_cycle" "$C_RESET"
+    local credit=${per_sweep:-$per_cycle} landed
+    landed=$(echo "scale=0; $recovered / $credit" | bc -l 2>/dev/null)
+    printf '  %s= %s × %s%s' "$C_DIM" "${landed:-0}" "$credit" "$C_RESET"
   fi
   printf '\n'
   # What actually limits deposits is the rolling spend budget, not the balance — the Safe keeps
@@ -589,10 +601,17 @@ command -v bc >/dev/null || {
   echo "pix-demo needs bc"
   exit 1
 }
-cargo nextest --version >/dev/null 2>&1 || {
-  echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
-  exit 1
-}
+if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  [ -x "$PIX_DEMO_TEST_RUNNER" ] || {
+    echo "PIX_DEMO_TEST_RUNNER must name an executable"
+    exit 1
+  }
+else
+  cargo nextest --version >/dev/null 2>&1 || {
+    echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
+    exit 1
+  }
+fi
 
 # Tear down whatever a previous run left behind. This is not hygiene, it is the difference
 # between a rehearsal and the live run working: the chain container is a fixed name and the
@@ -608,7 +627,11 @@ cargo nextest --version >/dev/null 2>&1 || {
 # The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
 # whose own command line contains the pattern; without it the script SIGTERMs itself.
 reset_cluster() {
-  docker rm -f hopr-chain >/dev/null 2>&1
+  # The pull-only launcher owns its runner process/container and the entire stack.
+  # Do not kill host processes or remove its chain from the dashboard.
+  [ -z "${PIX_DEMO_TEST_RUNNER:-}" ] || return 0
+  # An external chain (HOPRD_CHAIN_URL) has no container of ours to remove.
+  [ -n "${HOPRD_CHAIN_URL:-}" ] || docker rm -f hopr-chain >/dev/null 2>&1
   local i
   for i in "${ALL_IDXS[@]}"; do
     pkill -f "hoprd .*--apiPort[ ]$((API_PORT_BASE + i))" >/dev/null 2>&1
@@ -617,53 +640,66 @@ reset_cluster() {
 }
 
 : "${HOPRD_BIN:=$REPO_ROOT/target/release/hoprd}"
-: "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
-export HOPRD_BIN HOPRD_CHAIN_IMAGE
+# HOPRD_CHAIN_URL names an already-running Blokli (a real chain, say) and skips the container;
+# otherwise the Anvil image is started as before.
+if [ -n "${HOPRD_CHAIN_URL:-}" ]; then
+  export HOPRD_BIN HOPRD_CHAIN_URL
+else
+  : "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
+  export HOPRD_BIN HOPRD_CHAIN_IMAGE
+fi
 [ -n "${PIX_DEMO_FLOAT:-}" ] && export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 [ -n "${PIX_DEMO_RATE:-}" ] && export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 
 # The deposit pool is a *build-time* choice in the binary, and this script runs a prebuilt one.
-# A binary built with the other pairing starts and bootstraps normally, then either never
-# deposits (wrong curve) or panics (curvy, whose pool is a stub) — several minutes in, with the
-# audience watching. So check it before spending that time.
+# A binary built with the other pairing starts and bootstraps normally, then settles in a way
+# the test's accounting for this pool rejects — several minutes in, with the audience watching.
+# So check it before spending that time.
 #
 # `POOL` in `hoprd::strategy` is a `&str` compiled into the binary for exactly this, and for the
-# `pool=` field of the node's "enabling the PIX strategy" log line.
+# `pool=` field of the node's "enabling the PIX strategy" log line. Only the test pool's is a
+# usable marker: `hopr-strategy` compiles both pools into either binary and the feature merely
+# selects one, so "curvy" is in both. Its absence is what says curvy (as it would for a binary
+# with no PIX at all, which then fails at startup on the `Pix` stanza rather than mid-run).
+# `session_pix_soak` makes the same call the same way.
 : "${PIX_POOL:=test}"
 case "$PIX_POOL" in
-# The marker is the pool's own description, which still names the curve it settles on — only
-# the *feature* was renamed. `hoprd::strategy::POOL` is where it comes from.
-test) POOL_MARKER="non-anonymous-secp256k1" ;;
-curvy) POOL_MARKER="curvy" ;;
+test | curvy) ;;
 *)
   echo "PIX_POOL must be 'test' or 'curvy', got '$PIX_POOL'"
   exit 1
   ;;
 esac
+TEST_POOL_MARKER="non-anonymous-secp256k1"
 # Additive to the default feature set: neither pairing is default, so this is the only flag.
 BUILD_CMD="cargo build --release -p hoprd --features strategy-pix-$PIX_POOL"
 
-if [ ! -x "$HOPRD_BIN" ]; then
-  echo "no hoprd binary at $HOPRD_BIN — build it first:"
-  echo "    $BUILD_CMD"
-  exit 1
-fi
+if [ -z "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  if [ ! -x "$HOPRD_BIN" ]; then
+    echo "no hoprd binary at $HOPRD_BIN — build it first:"
+    echo "    $BUILD_CMD"
+    exit 1
+  fi
 
-if ! grep -qa "$POOL_MARKER" "$HOPRD_BIN"; then
-  echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
-  echo "Rebuild it:"
-  echo "    $BUILD_CMD"
-  echo
-  echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
-  echo " binary carries exactly one.)"
-  exit 1
-fi
+  if grep -qa "$TEST_POOL_MARKER" "$HOPRD_BIN"; then BIN_POOL="test"; else BIN_POOL="curvy"; fi
+  if [ "$BIN_POOL" != "$PIX_POOL" ]; then
+    echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
+    echo "Rebuild it:"
+    echo "    $BUILD_CMD"
+    echo
+    echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
+    echo " binary carries exactly one.)"
+    exit 1
+  fi
 
-if [ "$PIX_POOL" = "curvy" ]; then
-  echo "PIX_POOL=curvy selects CurvyDepositPool, whose methods are unimplemented and panic."
-  echo "The cluster will bootstrap and then die on the first deposit. This is expected until"
-  echo "the Baby JubJub pool is implemented; use PIX_POOL=test for a run that completes."
-  echo
+  # The Curvy pool proves in-process and needs the zkeys on disk; the test refuses to start
+  # without them, but only after nextest has compiled. The harness also validates
+  # the selected submission mode and sizes the direct shield.
+  if [ "$PIX_POOL" = "curvy" ] && [ ! -d "${CURVY_ZK_KEYS_DIR:-}" ]; then
+    echo "PIX_POOL=curvy needs CURVY_ZK_KEYS_DIR pointing at a directory with the five Curvy .zkey"
+    echo "proving keys; see 'Curvy runs' in localcluster/tests/session_pix_soak.rs."
+    exit 1
+  fi
 fi
 
 # Everything cached from a previous run has to go: `scrape`/`balance` deliberately keep the
@@ -687,8 +723,16 @@ date +%s >"$STATE_DIR/started"
 
 echo "starting the localcluster (chain, 4 nodes, 12 channels) — this takes a few minutes"
 echo "full test output: $TEST_LOG"
-(cd "$REPO_ROOT" && cargo nextest run -p hoprd-localcluster --test session_pix_soak \
-  --run-ignored ignored-only -j 1 --no-capture) >"$TEST_LOG" 2>&1 &
+run_test() {
+  if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+    exec "$PIX_DEMO_TEST_RUNNER"
+  else
+    cd "$REPO_ROOT" || exit 1
+    exec cargo nextest run -p hoprd-localcluster --test session_pix_soak \
+      --run-ignored ignored-only -j 1 --no-capture
+  fi
+}
+run_test >"$TEST_LOG" 2>&1 &
 TEST_PID=$!
 
 # Killing the nextest process alone is not enough: the four `hoprd` children and the chain

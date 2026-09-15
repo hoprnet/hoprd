@@ -280,8 +280,8 @@ pub mod types {
     ///  "description": "Standardized error response for the API",
     ///  "examples": [
     ///    {
-    ///      "error": "Invalid value passed in parameter 'XYZ'",
-    ///      "status": "INVALID_INPUT"
+    ///      "status": "INVALID_INPUT",
+    ///      "error": "Invalid value passed in parameter 'XYZ'"
     ///    }
     ///  ],
     ///  "type": "object",

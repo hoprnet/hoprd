@@ -159,6 +159,35 @@ HOPRD_CHAIN_IMAGE=<chain-image> \
 
 ---
 
+## Curvy PIX soak test (direct shielding)
+
+The Curvy publishing pipeline supplies prebuilt PostgreSQL, indexer, relayer,
+batch-prover and supporting images. The launcher starts them with a fresh chain
+and database, configures local chain 31337, and runs the PIX soak. It performs
+no image builds or schema migrations.
+
+Build hoprd and the soak executable on Linux, set `HOPRD_BIN` and
+`HOPRD_PIX_SOAK_BIN`, then run with the checked-in image manifest:
+
+```bash
+PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
+```
+
+The default manifest pulls images by digest and downloads verified proving files
+from the public rs-sdk release. The gateway serves the local fee collector's
+public keys; no metadata container is needed. Use `--release` to select another
+manifest, `--offline` with the prepared image archive's manifest after loading its
+images, or `--no-dashboard` to stream test output. The Entry shields directly
+from its Safe; all nodes submit through the shared relayer, and the batch prover
+has a separate funded signer. The full ten-deposit assertions remain unchanged.
+
+See [the runtime configuration and Linux commands](../../localcluster/curvy/README.md).
+Logs remain in `/tmp/pix-demo/test.log`, `/tmp/pix-soak-logs`, and the printed
+`/tmp/hopr-curvy.XXXXXX` directory. The launcher removes only its own containers
+and temporary database volume on exit.
+
+---
+
 ## Machine-readable status
 
 For CI and integration tooling, query the structured status instead of scraping stdout. A running cluster serves its **live** state on a unix domain socket at `<data-dir>/cluster.sock`. The `status` subcommand connects to it and prints the current snapshot as JSON:

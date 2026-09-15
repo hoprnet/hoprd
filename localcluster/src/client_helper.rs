@@ -488,6 +488,13 @@ pub struct NodeStartConfig<'a> {
     pub p2p_port_base: u16,
     pub identity_password: &'a str,
     pub api_token: Option<String>,
+    /// Extra environment for every node process, on top of what it inherits.
+    ///
+    /// A test that runs a deposit pool with knobs of its own — the Curvy pool reads its funding
+    /// and operator key from the environment — sets them here rather than in its own process
+    /// environment. The nodes would inherit that too, but writing it from a multi-threaded test
+    /// is a data race, and stating it per cluster keeps it out of every other suite.
+    pub env: &'a [(String, String)],
 }
 
 /// Spawn `config.num_nodes` hoprd processes and return their handles.
@@ -556,6 +563,7 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             )
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
+        cmd.envs(config.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
 
         if let Some(token) = &config.api_token {
             cmd.arg("--apiToken").arg(token);

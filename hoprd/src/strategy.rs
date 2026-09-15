@@ -484,6 +484,7 @@ where
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_curvy::<_, SpecDepositAddress>(
                         Arc::clone(&node),
+                        chain_key.clone(),
                         sub_cfg.pool.clone(),
                     )?;
                 strategies.push(built);

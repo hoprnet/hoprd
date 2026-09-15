@@ -19,6 +19,7 @@ use std::{fs, net::SocketAddr, sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use clap::Parser;
 use futures::stream::{FuturesUnordered, StreamExt};
+use hopr_chain_connector::api::HoprBalance;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper, control,
     control::{ControlServer, SharedSummary},
@@ -26,6 +27,7 @@ use hoprd_localcluster::{
     lock::ClusterLock,
     relay::{self, RelayConfig, RelayHandle},
     summary::{ClusterState, ClusterSummary, NodeState},
+    sweep,
 };
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
@@ -83,6 +85,21 @@ async fn main() -> Result<()> {
     if let Some(cli::Command::Status(status)) = &cli.command {
         let json = control::query(&status.socket_path()).await?;
         println!("{json}");
+        return Ok(());
+    }
+    if let Some(cli::Command::SweepSafes(sweep)) = &cli.command {
+        let to = sweep.to.parse().context("--to must be an EVM address")?;
+        let moved = sweep::sweep_safes(
+            &sweep.cluster_dir,
+            &sweep.identity_password,
+            &sweep.blokli_url,
+            to,
+        )
+        .await?;
+        let total: HoprBalance = moved
+            .iter()
+            .fold(HoprBalance::zero(), |acc, (_, _, b)| acc + *b);
+        println!("swept {total} from {} Safe(s) to {to}", moved.len());
         return Ok(());
     }
 
@@ -225,6 +242,7 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
+            env: &[],
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

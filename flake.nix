@@ -362,6 +362,17 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
               }
             );
+            # The production PIX pool. Same binary shape as `pix-test`; the proving artifacts the pool
+            # needs at run time are not in the binary, the `hoprd-pix-curvy` image adds them.
+            binary-hoprd-pix-curvy-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
+              }
+            );
+            # The artifacts on their own, for a deployment that is not the image: `nix build
+            # .#curvy-zk-artifacts` and point `CURVY_ZK_KEYS_DIR` at `result/app/hoprd/curvy-zk-keys`.
+            curvy-zk-artifacts = curvyZkArtifacts;
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-aarch64-darwin = rust-builder-aarch64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
@@ -515,6 +526,57 @@
             description = "HOPR node executable";
           };
 
+          # The Curvy Groth16 proving artifacts: five zkeys and five witness graphs, one pair per
+          # circuit, which `curvy-sdk` reads from `CURVY_ZK_KEYS_DIR` and digest-checks on load. They
+          # are too large for a crate (the zkeys alone are ~290 MB), so they ship as assets of the
+          # rs-sdk release the pinned `curvy-*` crates were published from, and are fetched here by
+          # hash: one fixed-output fetch per file, the hashes copied from the release's `SHA256SUMS`,
+          # which are the same digests `curvy-witnesscalc` compiles in. A wrong or stale file fails at
+          # build time here, or at load time in the node — never as a bad proof.
+          #
+          # Assembled under `/app/hoprd/curvy-zk-keys` so the path in the image is stable and can be
+          # named in documentation; the `hoprd-pix-curvy` image links it in and sets the variable.
+          # Moving to a new rs-sdk release means updating the tag, the file list and the hashes here
+          # together with the `curvy-*` versions in `hopr-strategy`.
+          curvyZkArtifacts =
+            let
+              release = "v0.1.0-rc.6";
+              files = {
+                "aggregation-2-3-30.signet.zst" =
+                  "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386";
+                "pending-5-30.signet.zst" = "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0";
+                "pix-aggregation-2-9-30.signet.zst" =
+                  "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a";
+                "pix-withdrawal-10-30.signet.zst" =
+                  "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56";
+                "withdrawal-2-30.signet.zst" = "04b2fa84394548a971c757c61280b81fb7699a367eeb45834201675f8a0aad74";
+                "verifyPendingNotesCommitment_5_30_0001.zkey" =
+                  "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847";
+                "verifyPixAggregation_2_9_30_evaluation.zkey" =
+                  "b4fced8a3c183d25a13a24c9ee7234ec96b77f87f688992ee07144f23ace6750";
+                "verifyPixMultiOwnerWithdrawal_10_30_evaluation.zkey" =
+                  "e18f0fdd40aa2643c31c3a02ef0a508b5c7580a436abcae88e364ee86be6a95b";
+                "verifySingleAggregationNoHashing_2_3_30_0001.zkey" =
+                  "88a85746f60820712199a60ee13241181658250ba9855af61503d306c52ba4e6";
+                "verifySingleWithdrawalNoHashing_2_30_0001.zkey" =
+                  "c91d9fdbea6edde296e9676bdb97959f6acb5f32360b5490c01cea9814844716";
+              };
+              fetch =
+                name: sha256:
+                pkgs.fetchurl {
+                  inherit name sha256;
+                  url = "https://github.com/0xCurvy/rs-sdk/releases/download/${release}/${name}";
+                };
+            in
+            pkgs.runCommand "curvy-zk-artifacts-${release}" { } ''
+              mkdir -p "$out/app/hoprd/curvy-zk-keys"
+              ${lib.concatStringsSep "\n" (
+                lib.mapAttrsToList (
+                  name: sha256: ''ln -s "${fetch name sha256}" "$out/app/hoprd/curvy-zk-keys/${name}"''
+                ) files
+              )}
+            '';
+
           hoprdDocker = {
             docker-hoprd-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd";
@@ -592,6 +654,36 @@
                 "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+              ];
+            };
+            # the environment at run time (`HOPRD_CURVY_OPERATOR_PRIVATE_KEY` by default).
+            docker-hoprd-pix-curvy-x86_64-linux = nixLib.mkDockerImage {
+              name = "hoprd-pix-curvy";
+              pathsToLink = [
+                "/bin"
+                "/app/hoprd/curvy-zk-keys"
+              ];
+              extraContents = [
+                dockerHoprdEntrypoint
+                pkgs.tini
+                hoprdPackages.binary-hoprd-pix-curvy-x86_64-linux
+                hoprdPackages.binary-ticket-inspector-x86_64-linux
+                curvyZkArtifacts
+                pkgs.cacert
+                pkgs.curl
+              ];
+              Entrypoint = [
+                "/bin/tini"
+                "--"
+                "/bin/docker-entrypoint.sh"
+              ];
+              Cmd = [ "hoprd" ];
+              env = [
+                "TMPDIR=/app/.tmp"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
+                "CURVY_ZK_KEYS_DIR=/app/hoprd/curvy-zk-keys"
               ];
             };
             docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
@@ -760,6 +852,8 @@
               foundry-bin
               nfpm
               envsubst
+              # localcluster/scripts/pix-demo.sh does its arithmetic with bc
+              bc
             ];
             shellHook = ''
               # Runner-provided Nix binaries must not load libraries from this
