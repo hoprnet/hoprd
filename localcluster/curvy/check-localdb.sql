@@ -17,8 +17,7 @@ SELECT jsonb_build_object(
   'schemas_present',
     to_regclass('indexer.notes') IS NOT NULL AND
     to_regclass('relayer.relay_submissions') IS NOT NULL AND
-    to_regclass('batch_prover.batch_runs') IS NOT NULL AND
-    to_regclass('metadata.users') IS NOT NULL,
+    to_regclass('batch_prover.batch_runs') IS NOT NULL,
   'pending', (
     SELECT to_jsonb(c) FROM reference.circuit_configs c
     JOIN localnet n ON n.id = c.network_id

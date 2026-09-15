@@ -94,20 +94,6 @@ services:
       db:
         condition: service_healthy
 
-  metadata:
-    image: ${CURVY_METADATA_IMAGE:?release manifest required}
-    platform: ${CURVY_PLATFORM}
-    environment:
-      <<: *service-env
-      DB_SCHEMA: metadata
-      PORT: "4100"
-      BASE_URL: http://127.0.0.1:3000
-      JWT_SECRET: localcluster-only-jwt
-      TOTP_SECRET: localcluster-only-totp
-    depends_on:
-      db:
-        condition: service_healthy
-
   gateway:
     image: ${CURVY_GATEWAY_IMAGE:?release manifest required}
     platform: ${CURVY_PLATFORM}
@@ -115,9 +101,8 @@ services:
       - "127.0.0.1:3000:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./protocol.json:/usr/share/nginx/html/protocol.json:ro
     depends_on:
-      metadata:
-        condition: service_started
       relayer:
         condition: service_started
       indexer:
