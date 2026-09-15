@@ -29,7 +29,7 @@ hoprd-api-client = { path = "rest-api-client" }
 # `85e698a7` is where `main` pins them, taken over as-is in the merge that brought the PIX
 # supervisor (#143) and per-target PIX admission (#147) in: `hopr-lib`'s `SupervisorConfig` is
 # what `hoprd/src/config.rs` now flattens, and `hopr-api` 4.3.0 is the published stack that rev
-# builds against. The Curvy `hopr-strategy` below asks for `hopr-api` as a caret range from 4.1,
+# builds against. The Curvy `hopr-strategy` below asks for `hopr-api` as a caret range from 4.3,
 # so the two agree on one 4.3.0.
 #
 # These two stay on git because hoprnet does not publish them. Everything it does publish is in
@@ -80,7 +80,7 @@ hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 # with each rs-sdk release; the `hoprd-pix-curvy` image in `flake.nix` carries them and sets the
 # variable, anything else has to provide both.
 #
-# Asks for `hopr-api` 4.1 as a caret range, which the `=4.3.0` line above satisfies, so the
+# Asks for `hopr-api` 4.3 as a caret range, which the `=4.3.0` line above satisfies, so the
 # `hopr-lib` rev is `main`'s. What the earlier majors changed for this workspace is recorded
 # below because the code still reflects it.
 #
@@ -275,8 +275,11 @@ ignored = ["hopr-api"]
 
 # `hopr-strategy` 5.0.0 is not on crates.io yet: it is the Curvy PIX branch, under review as a
 # PR against hoprnet/hopr-strategy. Pinned to a rev on the fork it is reviewed from, so a rebuild
-# is reproducible and moving it is a reviewable change; the rev is the commit that switched the
-# Curvy crates to their crates.io releases (rs-sdk 0.1.0-rc.7). Drop this whole section once
-# hoprnet releases 5.0.0.
+# is reproducible and moving it is a reviewable change. `8eb34e0` is the merge that brings the
+# fork up to upstream `main`: `hopr-api` 4.3.0 and `hopr-utilities` 0.14.0 (its
+# `TestChainConnector` now lives there, behind the `testing` feature), plus
+# `build_curvy_with_pool` for a connector-provided Curvy pool, which hoprd does not call yet —
+# it still constructs the bundled pool through `build_curvy`. The Curvy crates themselves stay
+# on crates.io at rs-sdk 0.1.0-rc.7. Drop this whole section once hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c641347" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "8eb34e0" }
