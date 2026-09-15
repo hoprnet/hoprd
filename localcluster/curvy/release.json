@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "platform": "linux/amd64",
+  "images": {
+    "chain": "europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:32714eddb075c7eb781a4e5cc75c0e42a24ab8aa891f4749f7f49c5dcf1570f8",
+    "localdb": "public.ecr.aws/f2n2s2w2/hopr-localcluster-pg@sha256:d833b161b7b0e4e5cd0bd5028127472d9e25a643aa2803a014215085dacb9022",
+    "indexer": "public.ecr.aws/f2n2s2w2/staging-indexer@sha256:4c0be3af7381ffebcc417723a83c56c736e12d73496d28bb6b7eccec57250c54",
+    "relayer": "public.ecr.aws/f2n2s2w2/staging-relayer@sha256:86cd994685ed5102bba32087465f267f442a6a96b4e5e540eeafd5a2de50df4d",
+    "batch_prover": "public.ecr.aws/f2n2s2w2/staging-batch-prover@sha256:acb005abee2c64b7acfc72ef780330098e90fd189c8ac7464715a7d5cb1c8acd",
+    "gateway": "docker.io/library/nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c",
+  },
+  "database": {
+    "pgdata": "/var/lib/postgresql/cluster",
+    "configure_localnet": true
+  }
+}

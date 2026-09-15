@@ -161,46 +161,29 @@ HOPRD_CHAIN_IMAGE=<chain-image> \
 
 ## Curvy PIX soak test (direct shielding)
 
-On an x86_64 Linux dev box with Nix and Docker, run from the repository root:
+The Curvy publishing pipeline supplies prebuilt PostgreSQL, indexer, relayer,
+batch-prover and supporting images. The launcher starts them with a fresh chain
+and database, configures local chain 31337, and runs the PIX soak. It performs
+no image builds or schema migrations.
 
-```bash
-./localcluster/scripts/curvy-localcluster.sh
-```
-
-This enters the Nix development shell, builds the Curvy release binary and proving
-artifacts if their `result-curvy` / `result-curvy-keys` links are missing, and starts
-a fresh local chain. It enables `directShieldEnabled` on the Curvy aggregator,
-grants that aggregator to every node's Safe module, and runs the four-node PIX
-soak test with the live dashboard. Direct shielding and operator submission are
-selected explicitly. The chain container is removed when the run exits.
-
-`HOPRD_BIN` and `CURVY_ZK_KEYS_DIR` can select existing builds. Rebuild the binary
-after changing its source; an existing binary is reused. Use `--no-dashboard` to
-print nextest output instead of the dashboard. Over SSH, run in tmux to keep the
-test alive when the connection drops. No port forwarding is needed.
-
-The default offered load is 4,000 datagrams/second in each direction. On a smaller
-dev box, select a lower rate; the test scales its return buffer and still checks all
-ten funded deposits:
+Build hoprd and the soak executable on Linux, set `HOPRD_BIN` and
+`HOPRD_PIX_SOAK_BIN`, then run with the checked-in image manifest:
 
 ```bash
 PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
 ```
 
-The runner owns its fresh `hopr-chain` container and requires port 8080 to be free.
-It refuses to replace an existing container or use `HOPRD_CHAIN_URL`. For an
-existing chain, use `pix-demo.sh` with that deployment's settings instead.
+The default manifest pulls images by digest. Its metadata and proving-artifact
+entries must be completed once their public images are published. Use `--release`
+to select another manifest. Use `--offline` with the prepared image archive's manifest after loading its
+images, or `--no-dashboard` to stream test output. The Entry shields directly
+from its Safe; all nodes submit through the shared relayer, and the batch prover
+has a separate funded signer. The full ten-deposit assertions remain unchanged.
 
-The two permissions are independent: scoping the aggregator into each Safe does
-not enable direct shielding on the aggregator. The pinned development image starts
-with direct shielding disabled. Without enabling it, the Safe's inner call fails
-with `DirectShieldDisabled()` (`0x0b51292d`); a subsequent commitment may misleadingly
-fail with `NoteNotScheduledForDeposit()` (`0xa18652d5`). The runner sets and reads
-back the direct-shield flag before starting the test.
-
-Node logs are preserved in `/tmp/pix-soak-logs`; the dashboard's test log is
-`/tmp/pix-demo/test.log` unless `PIX_DEMO_STATE_DIR` is set. The runner prints the
-directory containing its chain log and the receipt for enabling direct shielding.
+See [the runtime configuration and Linux commands](../../localcluster/curvy/README.md).
+Logs remain in `/tmp/pix-demo/test.log`, `/tmp/pix-soak-logs`, and the printed
+`/tmp/hopr-curvy.XXXXXX` directory. The launcher removes only its own containers
+and temporary database volume on exit.
 
 ---
 

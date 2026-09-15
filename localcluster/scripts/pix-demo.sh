@@ -29,7 +29,9 @@
 #
 #   watch -n 2 -c ./localcluster/scripts/pix-demo.sh --dashboard
 #
-# Requires curl, jq, bc, docker and cargo-nextest, so run it inside `nix develop`. Plus a
+# Direct runs require curl, jq, bc, docker and cargo-nextest (`nix develop`). The
+# Curvy launcher supplies PIX_DEMO_TEST_RUNNER, bypassing Cargo and local binary
+# checks because it validates/runs a prebuilt executable. Direct runs also need a
 # release `hoprd` at HOPRD_BIN (default `target/release/hoprd`) and HOPRD_CHAIN_IMAGE — see
 # the test's module docs.
 #
@@ -599,10 +601,17 @@ command -v bc >/dev/null || {
   echo "pix-demo needs bc"
   exit 1
 }
-cargo nextest --version >/dev/null 2>&1 || {
-  echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
-  exit 1
-}
+if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  [ -x "$PIX_DEMO_TEST_RUNNER" ] || {
+    echo "PIX_DEMO_TEST_RUNNER must name an executable"
+    exit 1
+  }
+else
+  cargo nextest --version >/dev/null 2>&1 || {
+    echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
+    exit 1
+  }
+fi
 
 # Tear down whatever a previous run left behind. This is not hygiene, it is the difference
 # between a rehearsal and the live run working: the chain container is a fixed name and the
@@ -618,6 +627,9 @@ cargo nextest --version >/dev/null 2>&1 || {
 # The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
 # whose own command line contains the pattern; without it the script SIGTERMs itself.
 reset_cluster() {
+  # The pull-only launcher owns its runner process/container and the entire stack.
+  # Do not kill host processes or remove its chain from the dashboard.
+  [ -z "${PIX_DEMO_TEST_RUNNER:-}" ] || return 0
   # An external chain (HOPRD_CHAIN_URL) has no container of ours to remove.
   [ -n "${HOPRD_CHAIN_URL:-}" ] || docker rm -f hopr-chain >/dev/null 2>&1
   local i
@@ -662,30 +674,32 @@ TEST_POOL_MARKER="non-anonymous-secp256k1"
 # Additive to the default feature set: neither pairing is default, so this is the only flag.
 BUILD_CMD="cargo build --release -p hoprd --features strategy-pix-$PIX_POOL"
 
-if [ ! -x "$HOPRD_BIN" ]; then
-  echo "no hoprd binary at $HOPRD_BIN — build it first:"
-  echo "    $BUILD_CMD"
-  exit 1
-fi
+if [ -z "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  if [ ! -x "$HOPRD_BIN" ]; then
+    echo "no hoprd binary at $HOPRD_BIN — build it first:"
+    echo "    $BUILD_CMD"
+    exit 1
+  fi
 
-if grep -qa "$TEST_POOL_MARKER" "$HOPRD_BIN"; then BIN_POOL="test"; else BIN_POOL="curvy"; fi
-if [ "$BIN_POOL" != "$PIX_POOL" ]; then
-  echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
-  echo "Rebuild it:"
-  echo "    $BUILD_CMD"
-  echo
-  echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
-  echo " binary carries exactly one.)"
-  exit 1
-fi
+  if grep -qa "$TEST_POOL_MARKER" "$HOPRD_BIN"; then BIN_POOL="test"; else BIN_POOL="curvy"; fi
+  if [ "$BIN_POOL" != "$PIX_POOL" ]; then
+    echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
+    echo "Rebuild it:"
+    echo "    $BUILD_CMD"
+    echo
+    echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
+    echo " binary carries exactly one.)"
+    exit 1
+  fi
 
-# The Curvy pool proves in-process and needs the zkeys on disk; the test refuses to start
-# without them, but only after nextest has compiled. The operator key it also needs
-# defaults to the localcluster deployer inside the test, and the shield is sized there too.
-if [ "$PIX_POOL" = "curvy" ] && [ ! -d "${CURVY_ZK_KEYS_DIR:-}" ]; then
-  echo "PIX_POOL=curvy needs CURVY_ZK_KEYS_DIR pointing at a directory with the five Curvy .zkey"
-  echo "proving keys; see 'Curvy runs' in localcluster/tests/session_pix_soak.rs."
-  exit 1
+  # The Curvy pool proves in-process and needs the zkeys on disk; the test refuses to start
+  # without them, but only after nextest has compiled. The harness also validates
+  # the selected submission mode and sizes the direct shield.
+  if [ "$PIX_POOL" = "curvy" ] && [ ! -d "${CURVY_ZK_KEYS_DIR:-}" ]; then
+    echo "PIX_POOL=curvy needs CURVY_ZK_KEYS_DIR pointing at a directory with the five Curvy .zkey"
+    echo "proving keys; see 'Curvy runs' in localcluster/tests/session_pix_soak.rs."
+    exit 1
+  fi
 fi
 
 # Everything cached from a previous run has to go: `scrape`/`balance` deliberately keep the
@@ -709,8 +723,16 @@ date +%s >"$STATE_DIR/started"
 
 echo "starting the localcluster (chain, 4 nodes, 12 channels) — this takes a few minutes"
 echo "full test output: $TEST_LOG"
-(cd "$REPO_ROOT" && cargo nextest run -p hoprd-localcluster --test session_pix_soak \
-  --run-ignored ignored-only -j 1 --no-capture) >"$TEST_LOG" 2>&1 &
+run_test() {
+  if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+    exec "$PIX_DEMO_TEST_RUNNER"
+  else
+    cd "$REPO_ROOT" || exit 1
+    exec cargo nextest run -p hoprd-localcluster --test session_pix_soak \
+      --run-ignored ignored-only -j 1 --no-capture
+  fi
+}
+run_test >"$TEST_LOG" 2>&1 &
 TEST_PID=$!
 
 # Killing the nextest process alone is not enough: the four `hoprd` children and the chain

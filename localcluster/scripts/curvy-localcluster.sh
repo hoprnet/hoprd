@@ -1,121 +1,252 @@
 #!/usr/bin/env bash
-# Run the Curvy PIX soak test against a fresh Anvil chain with direct shielding.
-# Usage: ./localcluster/scripts/curvy-localcluster.sh [--no-dashboard]
-# Missing release binaries/proving artifacts are built with Nix. The chain is
-# owned by this script; its direct-shield flag and each Safe's grant are set up
-# before traffic starts. An existing chain is never reconfigured or removed.
+# Pull a Curvy release stack and run the PIX soak with direct Safe shielding.
+# No Nix, Cargo, Docker builds, or source checkouts are used at launch time.
 set -euo pipefail
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SCRIPT="$REPO_ROOT/localcluster/scripts/curvy-localcluster.sh"
-if [[ -z ${IN_NIX_SHELL:-} ]]; then
-  exec nix develop "$REPO_ROOT" -c "$SCRIPT" "$@"
-fi
-cd "$REPO_ROOT"
-
-die() {
-  echo "curvy-localcluster: $*" >&2
-  exit 1
-}
-[[ $# == 0 || ($# == 1 && $1 == --no-dashboard) ]] ||
-  die "usage: $SCRIPT [--no-dashboard]"
-[[ -z ${HOPRD_CHAIN_URL:-} ]] ||
-  die "this runner creates a fresh local chain; unset HOPRD_CHAIN_URL first"
-
-for cmd in docker curl jq setsid; do
+CONFIG_DIR="$REPO_ROOT/localcluster/curvy"
+die() { echo "curvy-localcluster: $*" >&2; exit 1; }
+RELEASE="${CURVY_LOCALCLUSTER_RELEASE:-$CONFIG_DIR/release.json}"
+DASHBOARD=true
+OFFLINE=false
+while (($#)); do
+  case "$1" in
+    --release) (($# >= 2)) || die "--release needs a JSON file"; RELEASE=$2; shift 2 ;;
+    --no-dashboard) DASHBOARD=false; shift ;;
+    --offline) OFFLINE=true; shift ;;
+    *) die "usage: $0 [--release release.json] [--offline] [--no-dashboard]" ;;
+  esac
+done
+[[ $(uname -s) == Linux ]] || die "the soak runner requires Linux (shared host loopback)"
+[[ -z ${HOPRD_CHAIN_URL:-} ]] || die "unset HOPRD_CHAIN_URL; this runner owns a fresh chain"
+[[ -f $RELEASE ]] || die "set --release or CURVY_LOCALCLUSTER_RELEASE to a published release manifest; see localcluster/curvy/README.md"
+for cmd in docker curl jq sha256sum setsid; do
   command -v "$cmd" >/dev/null || die "$cmd is required"
 done
+if $DASHBOARD; then
+  command -v bc >/dev/null || die "bc is required for the dashboard; or use --no-dashboard"
+fi
+missing=$(jq -r '.images | to_entries[] | select((.value // "") | startswith("REPLACE_WITH_")) | .key' "$RELEASE")
+[[ -z $missing ]] || die "release needs published image digests for: $(echo "$missing" | tr '\n' ' '); update $RELEASE"
+jq -e -f "$CONFIG_DIR/validate-release.jq" "$RELEASE" >/dev/null ||
+  die "invalid release manifest: use published digests or an archive manifest with saved image IDs"
+if [[ $(jq -r '.source // "registry"' "$RELEASE") == archive ]]; then
+  $OFFLINE || die "archive releases require --offline after loading images.tar.gz"
+elif $OFFLINE; then
+  die "--offline requires the archive manifest supplied with the image bundle"
+fi
+# Read JSON as data, never as shell code or a sourced .env file.
+read_release() { jq -er "$1" "$RELEASE"; }
+export CURVY_PLATFORM="$(read_release .platform)"
+case "$(uname -m):$CURVY_PLATFORM" in
+  x86_64:linux/amd64 | aarch64:linux/arm64) ;;
+  *) die "release platform $CURVY_PLATFORM does not match this host; use native images for proving" ;;
+esac
+export CURVY_CHAIN_IMAGE="$(read_release .images.chain)"
+export CURVY_LOCALDB_IMAGE="$(read_release .images.localdb)"
+export CURVY_PGDATA="$(read_release '.database.pgdata // "/var/lib/postgresql/data"')"
+export CURVY_INDEXER_IMAGE="$(read_release .images.indexer)"
+export CURVY_RELAYER_IMAGE="$(read_release .images.relayer)"
+export CURVY_BATCH_PROVER_IMAGE="$(read_release .images.batch_prover)"
+export CURVY_METADATA_IMAGE="$(read_release .images.metadata)"
+export CURVY_GATEWAY_IMAGE="$(read_release .images.gateway)"
+export CURVY_PENDING_GRAPH="$(read_release .pending.graph)"
+export CURVY_PENDING_GRAPH_SHA256="$(read_release .pending.graph_sha256)"
+export CURVY_PENDING_ZKEY="$(read_release .pending.zkey)"
+export CURVY_PENDING_ZKEY_SHA256="$(read_release .pending.zkey_sha256)"
+[[ -x ${HOPRD_BIN:-} && -x ${HOPRD_PIX_SOAK_BIN:-} ]] ||
+  die "set HOPRD_BIN and HOPRD_PIX_SOAK_BIN to the Linux-built executables"
+export HOPRD_BIN="$(realpath "$HOPRD_BIN")"
+export HOPRD_PIX_SOAK_BIN="$(realpath "$HOPRD_PIX_SOAK_BIN")"
 docker info >/dev/null
-if docker container inspect hopr-chain >/dev/null 2>&1; then
-  die "hopr-chain already exists; stop that cluster before starting a new one"
+docker compose version >/dev/null
+if $OFFLINE; then
+  bash "$CONFIG_DIR/verify-local-images.sh" "$RELEASE" || die "offline image verification failed"
 fi
+docker container inspect hopr-chain >/dev/null 2>&1 &&
+  die "hopr-chain already exists; stop that cluster first"
 
-if [[ -z ${HOPRD_BIN:-} ]]; then
-  [[ -x result-curvy/bin/hoprd ]] ||
-    nix build -L .#binary-hoprd-pix-curvy-x86_64-linux --out-link result-curvy
-  export HOPRD_BIN="$REPO_ROOT/result-curvy/bin/hoprd"
-fi
-if [[ -z ${CURVY_ZK_KEYS_DIR:-} ]]; then
-  [[ -d result-curvy-keys/app/hoprd/curvy-zk-keys ]] ||
-    nix build -L .#curvy-zk-artifacts --out-link result-curvy-keys
-  export CURVY_ZK_KEYS_DIR="$REPO_ROOT/result-curvy-keys/app/hoprd/curvy-zk-keys"
-fi
-[[ -x $HOPRD_BIN ]] || die "HOPRD_BIN is not executable: $HOPRD_BIN"
-[[ -d $CURVY_ZK_KEYS_DIR ]] || die "CURVY_ZK_KEYS_DIR is not a directory"
-
-# The image's Curvy deployment defaults to directShieldEnabled=false. Granting
-# the Safe the aggregator target is necessary too, but does not enable shielding.
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:32714eddb075c7eb781a4e5cc75c0e42a24ab8aa891f4749f7f49c5dcf1570f8
-docker pull --platform linux/amd64 "$CHAIN_IMAGE" >/dev/null
 RUN_DIR=$(mktemp -d /tmp/hopr-curvy.XXXXXX)
-CONTAINER_ID=""
+export CURVY_RUN_DIR="$RUN_DIR"
+PROJECT="hopr-curvy-$(basename "$RUN_DIR" | tr '[:upper:].' '[:lower:]-')"
+COMPOSE=(docker compose --env-file /dev/null --project-name "$PROJECT" -f "$CONFIG_DIR/compose.yml")
+compose() { "${COMPOSE[@]}" "$@"; }
+COMPOSE_STARTED=false
+CHAIN_ID=""
+ASSETS_ID=""
 TEST_PID=""
-# Invoked by the EXIT trap, including after the signal traps call exit.
-# shellcheck disable=SC2329
 cleanup() {
   local status=$?
   trap - EXIT INT TERM
   if [[ -n $TEST_PID ]]; then
-    # Both runner modes get their own process group, including all hoprd children.
     kill -TERM -- "-$TEST_PID" 2>/dev/null || true
     wait "$TEST_PID" 2>/dev/null || true
   fi
-  if [[ -n $CONTAINER_ID ]]; then
-    docker logs "$CONTAINER_ID" >"$RUN_DIR/chain.log" 2>&1 || true
-    docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true
+  if $COMPOSE_STARTED; then
+    for service in chain db indexer relayer batch-prover metadata gateway; do
+      compose logs --no-color --no-log-prefix "$service" >"$RUN_DIR/$service.log" 2>&1 || true
+    done
+    compose down --volumes --timeout 15 >/dev/null 2>&1 || true
   fi
-  echo "curvy-localcluster: chain log saved to $RUN_DIR/chain.log"
+  [[ -z $ASSETS_ID ]] || docker rm -f "$ASSETS_ID" >/dev/null 2>&1 || true
+  echo "curvy-localcluster: logs and release manifest saved to $RUN_DIR"
   exit "$status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-CONTAINER_ID=$(docker run --detach --name hopr-chain --platform linux/amd64 \
-  -p 127.0.0.1:8080:8080 "$CHAIN_IMAGE")
-export HOPRD_CHAIN_URL=http://127.0.0.1:8080
+cp "$RELEASE" "$RUN_DIR/release.json"
+mkdir -p "$RUN_DIR/keys" "$RUN_DIR/tmp"
+# Deterministic, test-only service signers. Never exported to hoprd processes.
+printf -v CURVY_RELAYER_KEY '0x%064x' $((0xc001))
+printf -v CURVY_PROVER_KEY '0x%064x' $((0xc002))
+export CURVY_RELAYER_KEY CURVY_PROVER_KEY
+compose config --quiet
+if ! $OFFLINE; then
+  while IFS= read -r image; do
+    echo "curvy-localcluster: pulling $image"
+    docker pull --platform "$CURVY_PLATFORM" "$image" >>"$RUN_DIR/pull.log" 2>&1 ||
+      die "cannot pull $image; see $RUN_DIR/pull.log"
+  done < <(jq -r '.images | [.[] | select(. != null)] | unique[]' "$RELEASE")
+fi
 
-echo "curvy-localcluster: waiting for the local chain"
+# Dereference artifact symlinks inside the image (including Nix store links).
+ASSETS_ID=$(docker create --pull never --platform "$CURVY_PLATFORM" --user "$(id -u):$(id -g)" \
+  --volume "$RUN_DIR/keys:/export" --entrypoint /bin/sh \
+  "$(read_release .images.artifacts)" -ec 'cp -RL "$1"/. /export/' sh \
+  "$(read_release .artifacts_directory)")
+docker start -a "$ASSETS_ID" >"$RUN_DIR/artifacts.log" 2>&1 || die "artifact extraction failed"
+[[ $(docker inspect --format '{{.State.ExitCode}}' "$ASSETS_ID") == 0 ]] || die "artifact extraction failed"
+for kind in graph zkey; do
+  artifact=$(read_release ".pending.$kind")
+  checksum=$(read_release ".pending.${kind}_sha256")
+  printf '%s  %s\n' "$checksum" "$RUN_DIR/keys/$artifact" | sha256sum -c - > /dev/null ||
+    die "pending-note $kind does not match the release manifest"
+done
+
+COMPOSE_STARTED=true
+compose up -d --no-build --pull never chain db
+CHAIN_ID=$(compose ps -q chain)
+export HOPRD_CHAIN_URL=http://127.0.0.1:8080
+assert_running() {
+  local service id
+  for service in "$@"; do
+    id=$(compose ps -a -q "$service")
+    [[ -n $id && $(docker inspect --format '{{.State.Running}}' "$id") == true ]] ||
+      die "$service exited; its log will be saved under $RUN_DIR"
+  done
+}
+wait_http() {
+  local url=$1 deadline=$((SECONDS + 180)); shift
+  until curl -fsS --max-time 3 "$url" >"$RUN_DIR/ready.json" 2>/dev/null; do
+    assert_running "$@"
+    ((SECONDS < deadline)) || die "readiness timed out: $url"
+    sleep 2
+  done
+}
+wait_http "$HOPRD_CHAIN_URL/readyz" chain
+chain_cast() {
+  docker exec -e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 "$CHAIN_ID" \
+    cast "$@" --rpc-url http://127.0.0.1:8545
+}
+[[ $(chain_cast chain-id) == 31337 ]] || die "expected local Anvil chain 31337"
+AGGREGATOR=$(docker exec "$CHAIN_ID" cat /data/curvy_deployed_addresses.json |
+  jq -er '.["CurvyAggregator#CurvyAggregatorAlphaV2"] // .["CurvyAggregator#ERC1967Proxy"]')
+[[ $AGGREGATOR =~ ^0x[[:xdigit:]]{40}$ ]] || die "invalid Curvy aggregator address"
+VAULT=$(chain_cast call "$AGGREGATOR" 'curvyVault()(address)')
+OWNER=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
+AUTHORITY=$(chain_cast call "$AGGREGATOR" 'AUTHORITY_ROLE()(bytes32)')
+[[ $(chain_cast call "$AGGREGATOR" 'hasRole(bytes32,address)(bool)' "$AUTHORITY" "$OWNER") == true ]] ||
+  die "local deployer has no authority on this Curvy deployment"
+chain_cast send --unlocked --from "$OWNER" "$AGGREGATOR" \
+  'setDirectShieldEnabled(bool)' true --json >"$RUN_DIR/enable-direct-shield.json"
+[[ $(chain_cast call "$AGGREGATOR" 'directShieldEnabled()(bool)') == true ]] || die "direct shielding was not enabled"
+OPERATOR_ROLE=$(chain_cast call "$AGGREGATOR" 'OPERATOR_ROLE()(bytes32)')
+for service in relayer prover; do
+  if [[ $service == relayer ]]; then key=$CURVY_RELAYER_KEY; else key=$CURVY_PROVER_KEY; fi
+  address=$(docker exec "$CHAIN_ID" cast wallet address --private-key "$key")
+  chain_cast send --unlocked --from "$OWNER" "$address" --value 10ether --json >"$RUN_DIR/fund-$service.json"
+  chain_cast send --unlocked --from "$OWNER" "$AGGREGATOR" \
+    'grantRole(bytes32,address)' "$OPERATOR_ROLE" "$address" --json >"$RUN_DIR/grant-$service.json"
+  [[ $(chain_cast balance "$address") == 10000000000000000000 ]] || die "$service funding failed"
+  [[ $(chain_cast call "$AGGREGATOR" 'hasRole(bytes32,address)(bool)' "$OPERATOR_ROLE" "$address") == true ]] ||
+    die "$service role grant failed"
+  echo "curvy-localcluster: $service signer $address funded and authorized"
+done
+
+# hopr-localcluster-pg already contains schemas/users. Configure the local
+# fixture only on this run's fresh, private database volume when requested.
+# Wait for TCP and verify the same credentials the services will use.
 deadline=$((SECONDS + 180))
-until curl -fsS --max-time 2 "$HOPRD_CHAIN_URL/readyz" >/dev/null 2>&1; do
-  [[ $(docker inspect --format '{{.State.Running}}' "$CONTAINER_ID") == true ]] ||
-    die "chain container exited; inspect $RUN_DIR/chain.log"
-  ((SECONDS < deadline)) || die "chain readiness timed out"
+until compose exec -T db pg_isready -h 127.0.0.1 -U curvy -d curvy >/dev/null 2>&1; do
+  assert_running db
+  ((SECONDS < deadline)) || die "database initialization timed out"
+  sleep 2
+done
+if [[ $(jq -r '.database.configure_localnet // false' "$RELEASE") == true ]]; then
+  deployment=$(docker exec "$CHAIN_ID" cat /data/curvy_deployed_addresses.json)
+  FACTORY=$(jq -er '.["PortalFactory#PortalFactory"]' <<<"$deployment")
+  MULTICALL=$(jq -er '.["Devenv#Multicall3"]' <<<"$deployment")
+  TOKEN=$(docker exec "$CHAIN_ID" cat /config.toml | sed -nE 's/^token *= *"(0x[[:xdigit:]]{40})".*/\1/p')
+  for address in "$VAULT" "$FACTORY" "$MULTICALL" "$TOKEN"; do
+    [[ $address =~ ^0x[[:xdigit:]]{40}$ ]] || die "invalid local fixture address: $address"
+  done
+  compose exec -T -e PGPASSWORD=curvy db \
+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U curvy -d curvy \
+    -v aggregator="$AGGREGATOR" -v vault="$VAULT" -v factory="$FACTORY" \
+    -v multicall="$MULTICALL" -v token="$TOKEN" \
+    -v graph="$CURVY_PENDING_GRAPH" -v graph_sha256="$CURVY_PENDING_GRAPH_SHA256" \
+    -v zkey="$CURVY_PENDING_ZKEY" -v zkey_sha256="$CURVY_PENDING_ZKEY_SHA256" \
+    <"$CONFIG_DIR/configure-localdb.sql" >"$RUN_DIR/configure-localdb.log"
+fi
+compose exec -T -e PGPASSWORD=curvy db \
+  psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U curvy -d curvy -At \
+  <"$CONFIG_DIR/check-localdb.sql" >"$RUN_DIR/localdb.json"
+jq -e --arg aggregator "${AGGREGATOR,,}" --arg vault "${VAULT,,}" \
+  --arg graph "$CURVY_PENDING_GRAPH_SHA256" --arg zkey "$CURVY_PENDING_ZKEY_SHA256" '
+  .networks == 1 and (.aggregator | ascii_downcase) == $aggregator and
+  (.vault | ascii_downcase) == $vault and .token_present and .schemas_present and
+  .pending.batch_size == 5 and .pending.tree_depth == 30 and
+  .pending.witness_graph_sha256 == $graph and .pending.zkey_sha256 == $zkey
+' "$RUN_DIR/localdb.json" >/dev/null || die "localdb seed does not match this chain/artifact release; see $RUN_DIR/localdb.json"
+
+compose up -d --no-build --pull never indexer relayer metadata gateway
+wait_http http://127.0.0.1:3000/protocol chain metadata gateway
+wait_http http://127.0.0.1:3000/relay-health chain relayer gateway
+wait_http http://127.0.0.1:3000/sync/ready chain indexer gateway
+jq -e '.chains | length == 1 and .[0].chainId == 31337 and .[0].ready == true' \
+  "$RUN_DIR/ready.json" >/dev/null || die "indexer readiness did not confirm local chain 31337"
+compose up -d --no-build --pull never batch-prover
+deadline=$((SECONDS + 180))
+# The tree is lazy: waiting for its first note here would block hoprd from
+# starting and creating that note. The worker reports startup after connecting
+# both databases and recovering interrupted batches.
+until compose logs --no-color batch-prover | grep 'batch prover started' >/dev/null; do
+  assert_running chain db indexer batch-prover
+  ((SECONDS < deadline)) || die "batch prover initialization timed out"
   sleep 2
 done
 
-chain_cast() {
-  docker exec -e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 "$CONTAINER_ID" \
-    cast "$@" --rpc-url http://127.0.0.1:8545
-}
-[[ $(chain_cast chain-id) == 31337 ]] || die "expected the local Anvil chain"
-AGGREGATOR=$(docker exec "$CONTAINER_ID" cat /data/curvy_deployed_addresses.json |
-  jq -er '.["CurvyAggregator#CurvyAggregatorAlphaV2"]')
-[[ $AGGREGATOR =~ ^0x[[:xdigit:]]{40}$ ]] || die "invalid Curvy aggregator address"
-OWNER=$(chain_cast call "$AGGREGATOR" 'owner()(address)')
-[[ ${OWNER,,} == 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 ]] ||
-  die "unexpected Curvy owner on the local chain"
-chain_cast send --unlocked --from "$OWNER" "$AGGREGATOR" \
-  'setDirectShieldEnabled(bool)' true --json >"$RUN_DIR/enable-direct-shield.json"
-[[ $(chain_cast call "$AGGREGATOR" 'directShieldEnabled()(bool)') == true ]] ||
-  die "direct shielding was not enabled"
-
-export PIX_POOL=curvy HOPRD_CURVY_SHIELDING=direct HOPRD_CURVY_SUBMISSION=operator
+export PIX_POOL=curvy HOPRD_CURVY_SHIELDING=direct HOPRD_CURVY_SUBMISSION=relayer
+export HOPRD_CURVY_RELAYER_URL=http://127.0.0.1:3000
 export HOPRD_CURVY_NOTE_SOURCE=blokli HOPRD_CURVY_TOKEN=3
 export HOPRD_CURVY_SCOPE_AGGREGATOR="$AGGREGATOR"
+export CURVY_ZK_KEYS_DIR="$RUN_DIR/keys"
 [[ -z ${PIX_DEMO_RATE:-} ]] || export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 [[ -z ${PIX_DEMO_FLOAT:-} ]] || export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
-# This is a fresh local chain: let the harness supply its deployer/operator keys
-# and size the shield. No state or funding assumptions from an external chain apply.
-unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEY
+unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEYS
 unset HOPRD_CURVY_INITIAL_FUNDING HOPRD_CURVY_SCOPE_RPC_URL
 unset HOPRD_PIX_SOAK_POOL_PREFUNDED HOPRD_PIX_FLOAT_NODE_IDS
-echo "curvy-localcluster: direct shielding enabled; the harness will grant each Safe access"
 
-if [[ ${1:-} == --no-dashboard ]]; then
-  setsid cargo nextest run -p hoprd-localcluster --test session_pix_soak \
-    --run-ignored ignored-only -j 1 --no-capture &
-else
+printf '#!/usr/bin/env bash\nunset CURVY_RELAYER_KEY CURVY_PROVER_KEY\ncd %q || exit $?\nexec sh %q\n' \
+  "$RUN_DIR/tmp" "$CONFIG_DIR/run-soak.sh" >"$RUN_DIR/run-test.sh"
+chmod +x "$RUN_DIR/run-test.sh"
+export PIX_DEMO_TEST_RUNNER="$RUN_DIR/run-test.sh"
+echo "curvy-localcluster: stack ready; direct Safe shielding, relayer submission, external batch proving"
+echo "curvy-localcluster: node logs: /tmp/pix-soak-logs"
+if $DASHBOARD; then
   setsid "$REPO_ROOT/localcluster/scripts/pix-demo.sh" &
+else
+  setsid "$PIX_DEMO_TEST_RUNNER" &
 fi
 TEST_PID=$!
 status=0

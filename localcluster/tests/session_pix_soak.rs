@@ -116,7 +116,9 @@
 //! Optional: HOPRD_BIN, HOPRD_CONTAINER_RUNTIME, HOPRD_PIX_SOAK_FLOAT, HOPRD_PIX_SOAK_RATE
 //! With a Curvy binary (see *Curvy runs*), also:
 //!   CURVY_ZK_KEYS_DIR                 the Groth16 proving keys, required
-//!   HOPRD_CURVY_OPERATOR_PRIVATE_KEY  optional; defaults to the localcluster deployer key
+//!   HOPRD_CURVY_SUBMISSION            relayer (default), or operator for manual submission
+//!   HOPRD_CURVY_RELAYER_URL           required in relayer mode
+//!   HOPRD_CURVY_OPERATOR_PRIVATE_KEY  optional in operator mode; defaults to the deployer
 //!
 //! # Prerequisites
 //!
@@ -669,9 +671,8 @@ fn curvy_shield(net: HoprBalance) -> HoprBalance {
     HoprBalance::from((gross + one - U256::one()) / one * one)
 }
 
-/// What the Curvy pool needs from the environment, checked before minutes are spent on a
-/// bootstrap, and what this test hands it: the shield it sized, and the operator key defaulted
-/// to the localcluster deployer, which deployed the Curvy contracts on the pinned chain image.
+/// Validate Curvy configuration before bootstrap and size the direct shield.
+/// Relayed nodes need no operator key; manual operator runs retain the deployer default.
 fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> {
     let zk_keys = std::env::var(CURVY_ZK_KEYS_ENV).with_context(|| {
         format!(
@@ -688,12 +689,22 @@ fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> 
         "{CURVY_INITIAL_FUNDING_ENV} is set, but this test sizes the shield itself ({shield}) and \
          asserts that the Safe paid exactly that; unset it"
     );
-    let operator_key = std::env::var(CURVY_OPERATOR_KEY_ENV)
-        .unwrap_or_else(|_| identity::DEFAULT_PRIVATE_KEY.to_string());
-    Ok(vec![
-        (CURVY_INITIAL_FUNDING_ENV.to_string(), shield.to_string()),
-        (CURVY_OPERATOR_KEY_ENV.to_string(), operator_key),
-    ])
+    let mut env = vec![(CURVY_INITIAL_FUNDING_ENV.to_string(), shield.to_string())];
+    match std::env::var("HOPRD_CURVY_SUBMISSION").as_deref() {
+        Ok("operator") => {
+            let key = std::env::var(CURVY_OPERATOR_KEY_ENV)
+                .unwrap_or_else(|_| identity::DEFAULT_PRIVATE_KEY.to_string());
+            env.push((CURVY_OPERATOR_KEY_ENV.to_string(), key));
+        }
+        Ok("relayer") | Err(std::env::VarError::NotPresent) => {
+            anyhow::ensure!(
+                std::env::var("HOPRD_CURVY_RELAYER_URL").is_ok_and(|url| !url.trim().is_empty()),
+                "relayed Curvy submission requires HOPRD_CURVY_RELAYER_URL"
+            );
+        }
+        _ => anyhow::bail!("HOPRD_CURVY_SUBMISSION must be operator or relayer"),
+    }
+    Ok(env)
 }
 
 /// The vault's `(deposit, withdrawal)` fees in basis points, from Blokli.
