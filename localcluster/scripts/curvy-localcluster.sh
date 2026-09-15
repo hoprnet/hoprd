@@ -47,7 +47,6 @@ export CURVY_PGDATA="$(read_release '.database.pgdata // "/var/lib/postgresql/da
 export CURVY_INDEXER_IMAGE="$(read_release .images.indexer)"
 export CURVY_RELAYER_IMAGE="$(read_release .images.relayer)"
 export CURVY_BATCH_PROVER_IMAGE="$(read_release .images.batch_prover)"
-export CURVY_METADATA_IMAGE="$(read_release .images.metadata)"
 export CURVY_GATEWAY_IMAGE="$(read_release .images.gateway)"
 export CURVY_PENDING_GRAPH="$(read_release .pending.graph)"
 export CURVY_PENDING_GRAPH_SHA256="$(read_release .pending.graph_sha256)"
@@ -82,7 +81,7 @@ cleanup() {
     wait "$TEST_PID" 2>/dev/null || true
   fi
   if $COMPOSE_STARTED; then
-    for service in chain db indexer relayer batch-prover metadata gateway; do
+    for service in chain db indexer relayer batch-prover gateway; do
       compose logs --no-color --no-log-prefix "$service" >"$RUN_DIR/$service.log" 2>&1 || true
     done
     compose down --volumes --timeout 15 >/dev/null 2>&1 || true
@@ -109,13 +108,38 @@ if ! $OFFLINE; then
   done < <(jq -r '.images | [.[] | select(. != null)] | unique[]' "$RELEASE")
 fi
 
-# Dereference artifact symlinks inside the image (including Nix store links).
-ASSETS_ID=$(docker create --pull never --platform "$CURVY_PLATFORM" --user "$(id -u):$(id -g)" \
-  --volume "$RUN_DIR/keys:/export" --entrypoint /bin/sh \
-  "$(read_release .images.artifacts)" -ec 'cp -RL "$1"/. /export/' sh \
-  "$(read_release .artifacts_directory)")
-docker start -a "$ASSETS_ID" >"$RUN_DIR/artifacts.log" 2>&1 || die "artifact extraction failed"
-[[ $(docker inspect --format '{{.State.ExitCode}}' "$ASSETS_ID") == 0 ]] || die "artifact extraction failed"
+if jq -e '.images.artifacts != null' "$RELEASE" >/dev/null; then
+  # Existing offline bundles carry the same proving files in an artifact image.
+  # Dereference symlinks inside that image (including Nix store links).
+  ASSETS_ID=$(docker create --pull never --platform "$CURVY_PLATFORM" --user "$(id -u):$(id -g)" \
+    --volume "$RUN_DIR/keys:/export" --entrypoint /bin/sh \
+    "$(read_release .images.artifacts)" -ec 'cp -RL "$1"/. /export/' sh \
+    "$(read_release .artifacts_directory)")
+  docker start -a "$ASSETS_ID" >"$RUN_DIR/artifacts.log" 2>&1 || die "artifact extraction failed"
+  [[ $(docker inspect --format '{{.State.ExitCode}}' "$ASSETS_ID") == 0 ]] || die "artifact extraction failed"
+else
+  # Public files pinned to the same rs-sdk release as flake.nix. No local build.
+  # Cache by checksum, rechecking each file before reuse.
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/hopr/curvy-zk"
+  mkdir -p "$cache"
+  base_url=$(read_release .artifacts.base_url)
+  while IFS=$'\t' read -r artifact checksum; do
+    cached="$cache/$checksum"
+    if ! printf '%s  %s\n' "$checksum" "$cached" | sha256sum -c - >/dev/null 2>&1; then
+      echo "curvy-localcluster: downloading proving file $artifact"
+      curl --fail --location --retry 3 --connect-timeout 20 \
+        "$base_url/$artifact" --output "$RUN_DIR/keys/$artifact" >>"$RUN_DIR/artifacts.log" 2>&1 ||
+        die "cannot download $artifact; see $RUN_DIR/artifacts.log"
+      printf '%s  %s\n' "$checksum" "$RUN_DIR/keys/$artifact" | sha256sum -c - >/dev/null ||
+        die "$artifact does not match the release manifest"
+      cp "$RUN_DIR/keys/$artifact" "$cached"
+    else
+      cp "$cached" "$RUN_DIR/keys/$artifact"
+    fi
+  done < <(jq -r '.artifacts.files | to_entries[] | [.key, .value] | @tsv' "$RELEASE")
+fi
+# Both the host node and the container's prover user need read access.
+chmod -R a+rX "$RUN_DIR/keys"
 for kind in graph zkey; do
   artifact=$(read_release ".pending.$kind")
   checksum=$(read_release ".pending.${kind}_sha256")
@@ -153,6 +177,15 @@ AGGREGATOR=$(docker exec "$CHAIN_ID" cat /data/curvy_deployed_addresses.json |
   jq -er '.["CurvyAggregator#CurvyAggregatorAlphaV2"] // .["CurvyAggregator#ERC1967Proxy"]')
 [[ $AGGREGATOR =~ ^0x[[:xdigit:]]{40}$ ]] || die "invalid Curvy aggregator address"
 VAULT=$(chain_cast call "$AGGREGATOR" 'curvyVault()(address)')
+# The Rust relayer adapter needs the collector's spend/view public keys from
+# /protocol. Serve the upstream localnet identity without a metadata service;
+# fail early if this chain was deployed with a different collector.
+fee_key=$(jq -er '.data.feeCollector.babyJubjubPublicKey' "$CONFIG_DIR/protocol.json")
+for coordinate in 0 1; do
+  expected=$(cut -d . -f "$((coordinate + 1))" <<<"$fee_key")
+  actual=$(chain_cast call "$AGGREGATOR" 'feeNotePublicKey(uint256)(uint256)' "$coordinate")
+  [[ ${actual%% *} == "$expected" ]] || die "protocol.json fee collector does not match the chain"
+done
 OWNER=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
 AUTHORITY=$(chain_cast call "$AGGREGATOR" 'AUTHORITY_ROLE()(bytes32)')
 [[ $(chain_cast call "$AGGREGATOR" 'hasRole(bytes32,address)(bool)' "$AUTHORITY" "$OWNER") == true ]] ||
@@ -209,8 +242,8 @@ jq -e --arg aggregator "${AGGREGATOR,,}" --arg vault "${VAULT,,}" \
   .pending.witness_graph_sha256 == $graph and .pending.zkey_sha256 == $zkey
 ' "$RUN_DIR/localdb.json" >/dev/null || die "localdb seed does not match this chain/artifact release; see $RUN_DIR/localdb.json"
 
-compose up -d --no-build --pull never indexer relayer metadata gateway
-wait_http http://127.0.0.1:3000/protocol chain metadata gateway
+compose up -d --no-build --pull never indexer relayer gateway
+wait_http http://127.0.0.1:3000/protocol chain gateway
 wait_http http://127.0.0.1:3000/relay-health chain relayer gateway
 wait_http http://127.0.0.1:3000/sync/ready chain indexer gateway
 jq -e '.chains | length == 1 and .[0].chainId == 31337 and .[0].ready == true' \

@@ -5,7 +5,7 @@ This directory only configures and runs prebuilt services. HOPR and its soak
 executable are built on the Linux dev box.
 
 The launcher starts a fresh chain, PostgreSQL, indexer, relayer, batch prover,
-metadata service and gateway, then runs the four-node PIX soak. The Entry shields
+and gateway, then runs the four-node PIX soak. The Entry shields
 directly from its Safe. Nodes submit through the shared relayer; the batch prover
 has a separate funded signer. The ten-deposit assertions remain unchanged.
 
@@ -29,11 +29,10 @@ export HOPRD_PIX_SOAK_BIN="$(jq -r 'select(.reason == "compiler-artifact" and .t
 The launcher defaults to `release.json` and pulls every image before starting
 containers. It pins the public ECR PostgreSQL, indexer, relayer and batch-prover
 images, the HOPR chain fixture, and public Nginx by digest. No AWS login is needed.
-The metadata and proving-artifact entries still need their public image digests
-from the publisher; until supplied, the launcher reports those missing entries
-before doing any work. The current chain fixture requires Linux AMD64.
+Proving files are downloaded from the pinned public rs-sdk GitHub release and
+verified by SHA-256. The current chain fixture requires Linux AMD64.
 
-After those entries are published and pinned, run from the repository root:
+Run from the repository root:
 
 ```bash
 unset HOPRD_CHAIN_URL
@@ -56,9 +55,22 @@ fresh volume for chain 31337 using the paired chain's contract addresses and the
 release's circuit metadata. It checks that configuration before starting workers;
 no schema migrations or image builds run at startup.
 
-The artifacts image supplies the pinned HOPR proving keys at
-`artifacts_directory`. Pending-note graph and zkey hashes must match the release
-and database; the paired verifier uses batch size 5 and tree depth 30.
+The registry manifest pins the same proving files as `curvyZkArtifacts` in
+`flake.nix`. The launcher caches them in `${XDG_CACHE_HOME:-$HOME/.cache}/hopr/curvy-zk`,
+verifies them before reuse, and supplies them to both the Linux node and batch
+prover. Existing offline bundles can still supply these files from their artifact
+image. Pending-note graph and zkey hashes must match the release and database;
+the paired verifier uses batch size 5 and tree depth 30.
+
+No metadata container is needed. The Rust relayer adapter calls `/protocol` for
+the fee collector's public spend, view and BabyJubjub keys when constructing an
+aggregation proof. The gateway serves `protocol.json`, containing Curvy's fixed
+localnet public identity from `packages/services/common/src/fee-collector.ts`.
+Startup checks the BabyJubjub key against the aggregator's `feeNotePublicKey`.
+The spend/view keys are not stored on-chain. This fixture preserves protocol
+fees and direct shielding; it is only for the paired local deployment. The local
+relayer has no paymaster, so the adapter does not need metadata's `/networks`
+endpoint for gas-fee pricing.
 
 The launcher refuses to replace an existing `hopr-chain`. Ports 8080 and 3000
 must be available on loopback, along with the node ports. Each run owns its

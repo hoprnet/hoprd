@@ -173,9 +173,10 @@ Build hoprd and the soak executable on Linux, set `HOPRD_BIN` and
 PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
 ```
 
-The default manifest pulls images by digest. Its metadata and proving-artifact
-entries must be completed once their public images are published. Use `--release`
-to select another manifest. Use `--offline` with the prepared image archive's manifest after loading its
+The default manifest pulls images by digest and downloads verified proving files
+from the public rs-sdk release. The gateway serves the local fee collector's
+public keys; no metadata container is needed. Use `--release` to select another
+manifest, `--offline` with the prepared image archive's manifest after loading its
 images, or `--no-dashboard` to stream test output. The Entry shields directly
 from its Safe; all nodes submit through the shared relayer, and the batch prover
 has a separate funded signer. The full ten-deposit assertions remain unchanged.
