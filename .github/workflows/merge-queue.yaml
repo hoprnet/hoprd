@@ -1,3 +1,4 @@
+---
 name: Merge queue
 # The merge queue's mandatory gate. Integration throughput is a required status
 # check, so a red result here ejects the queued change and sends the PR back;

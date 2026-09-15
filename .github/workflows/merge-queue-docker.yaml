@@ -1,3 +1,4 @@
+---
 name: Merge queue (docker)
 # The required `Docker / *` contexts come from build-docker.yaml, whose matrix
 # jobs live INSIDE the reusable workflow. A job-level skip there reports an
