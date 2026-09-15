@@ -2809,7 +2809,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4110,7 +4110,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5101,7 +5101,7 @@ dependencies = [
 [[package]]
 name = "hopr-crypto-packet"
 version = "1.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "bimap",
  "const-hex",
@@ -5137,7 +5137,7 @@ dependencies = [
 [[package]]
 name = "hopr-lib"
 version = "4.0.4"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5197,8 +5197,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-protocol-app"
-version = "1.0.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+version = "1.1.0"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "hopr-crypto-packet",
  "hopr-types",
@@ -5210,8 +5210,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-protocol-hopr"
-version = "6.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+version = "6.2.0"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5240,7 +5240,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-session"
 version = "1.5.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -5271,7 +5271,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "aquamarine",
  "flagset",
@@ -5358,8 +5358,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-transport"
-version = "0.48.3"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+version = "0.48.4"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5403,7 +5403,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5443,7 +5443,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.8.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5468,8 +5468,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-transport-session"
-version = "0.29.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+version = "0.30.0"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5501,7 +5501,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "hopr-protocol-app",
  "serde",
@@ -5614,7 +5614,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
+source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9955,7 +9955,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
