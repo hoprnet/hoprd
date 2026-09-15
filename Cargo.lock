@@ -1919,7 +1919,7 @@ version = "3.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dee98b0db6a962de883bf5d20362dee4d7ca0d12fe39a7c6c73c844e1cd7c1f"
 dependencies = [
- "darling 0.20.11",
+ "darling 0.23.0",
  "ident_case",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -5084,7 +5084,7 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hopr-api",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "moka",
  "parking_lot",
  "petgraph",
@@ -5101,13 +5101,13 @@ dependencies = [
 [[package]]
 name = "hopr-crypto-packet"
 version = "1.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "bimap",
  "const-hex",
  "flagset",
  "hopr-types",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "serde",
  "serde_bytes",
  "strum",
@@ -5128,7 +5128,7 @@ dependencies = [
  "futures-time",
  "hopr-api",
  "hopr-network-graph",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "smart-default",
  "tracing",
  "validator",
@@ -5137,7 +5137,7 @@ dependencies = [
 [[package]]
 name = "hopr-lib"
 version = "4.0.4"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5157,7 +5157,7 @@ dependencies = [
  "hopr-ticket-manager",
  "hopr-transport",
  "hopr-transport-p2p",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "humantime-serde",
  "lazy_static",
  "parking_lot",
@@ -5184,7 +5184,7 @@ dependencies = [
  "bimap",
  "futures",
  "hopr-api",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "indexmap 2.14.0",
  "lazy_static",
  "parking_lot",
@@ -5198,7 +5198,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-app"
 version = "1.0.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "hopr-crypto-packet",
  "hopr-types",
@@ -5211,7 +5211,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-hopr"
 version = "6.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5223,7 +5223,7 @@ dependencies = [
  "hopr-api",
  "hopr-crypto-packet",
  "hopr-ticket-manager",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "humantime-serde",
  "lazy_static",
  "moka",
@@ -5240,7 +5240,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-session"
 version = "1.5.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -5254,7 +5254,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "hopr-crypto-packet",
  "hopr-types",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "lazy_static",
  "parking_lot",
  "pin-project",
@@ -5271,7 +5271,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "aquamarine",
  "flagset",
@@ -5286,11 +5286,12 @@ dependencies = [
 [[package]]
 name = "hopr-session-server-forwarder"
 version = "0.1.2"
-source = "git+https://github.com/hoprnet/hopr-impls?branch=kauki%2Ffix%2Fsession%2Fexit-datagram-return-path-0.1#705d48b49dbb5d1d4fade5504ae5af0bc62e2f45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488aa9150af0d5d533253c53bccc01c66ae3e96b3aebb9d491debcb8625280af"
 dependencies = [
  "async-trait",
  "hopr-api",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "serde",
  "serde_with",
  "smart-default",
@@ -5315,7 +5316,7 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hopr-api",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "humantime-serde",
  "lazy_static",
  "moka",
@@ -5343,7 +5344,7 @@ dependencies = [
  "futures",
  "hashbrown 0.17.1",
  "hopr-api",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "parking_lot",
  "postcard",
  "redb",
@@ -5358,7 +5359,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport"
 version = "0.48.3"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5380,7 +5381,7 @@ dependencies = [
  "hopr-transport-probe",
  "hopr-transport-session",
  "hopr-transport-tag-allocator",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "humantime-serde",
  "lazy_static",
  "libp2p",
@@ -5402,7 +5403,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5428,7 +5429,7 @@ dependencies = [
  "dashmap",
  "futures",
  "hopr-api",
- "hopr-utilities 0.9.0",
+ "hopr-utilities",
  "lazy_static",
  "libp2p",
  "libp2p-stream",
@@ -5442,7 +5443,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.8.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5453,7 +5454,7 @@ dependencies = [
  "hopr-api",
  "hopr-protocol-app",
  "hopr-transport-tag-allocator",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "humantime-serde",
  "moka",
  "rand 0.10.2",
@@ -5468,7 +5469,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-session"
 version = "0.29.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5481,7 +5482,7 @@ dependencies = [
  "hopr-protocol-app",
  "hopr-protocol-session",
  "hopr-protocol-start",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "humantime-serde",
  "lazy_static",
  "moka",
@@ -5500,7 +5501,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "hopr-protocol-app",
  "serde",
@@ -5575,9 +5576,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-utilities"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7de9a46fe251a9aa6ee3ab7e2edd7720ac6f09ad4f01566dd6c056913615cc43"
+checksum = "d4be85522dd5a1a42e3114d17ee354002cd5fe51aac691af95c035e3b953bfee"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5590,34 +5591,6 @@ dependencies = [
  "futures-time",
  "hickory-resolver 0.26.1",
  "hopr-api",
- "hopr-types",
- "indexmap 2.14.0",
- "lazy_static",
- "libp2p-identity",
- "multiaddr",
- "pin-project",
- "rand 0.10.2",
- "serde_json",
- "socket2 0.6.5",
- "strum",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "hopr-utilities"
-version = "0.9.1"
-source = "git+https://github.com/hoprnet/hopr-utilities?branch=kauki%2Ffix%2Fsession%2Fdatagram-aware-copy-loop-0.9#05d5278c4ac66f562b1b92da82a7fb7b7fd14fde"
-dependencies = [
- "arrayvec",
- "auto_impl",
- "const-hex",
- "crossfire",
- "flume",
- "futures",
- "futures-time",
- "hickory-resolver 0.26.1",
  "hopr-types",
  "indexmap 2.14.0",
  "lazy_static",
@@ -5641,7 +5614,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#ce6e296a9ee42b1c2d0a0d7572c2a93af5a9a678"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-r40#404cc762924fd20fa17c2da3f67da916e5722d76"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5653,7 +5626,7 @@ dependencies = [
  "hopr-api",
  "hopr-lib",
  "hopr-transport",
- "hopr-utilities 0.9.1",
+ "hopr-utilities",
  "human-bandwidth",
  "lazy_static",
  "parking_lot",
@@ -5960,7 +5933,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8363,7 +8336,7 @@ dependencies = [
  "quinn-udp 0.5.15",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -8403,7 +8376,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -8416,7 +8389,7 @@ checksum = "76150b617afc75e6e21ac5f39bc196e80b65415ae48d62dbef8e2519d040ce42"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "windows-sys 0.61.2",
 ]
 
