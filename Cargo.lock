@@ -2830,7 +2830,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5157,7 +5157,7 @@ dependencies = [
 [[package]]
 name = "hopr-crypto-packet"
 version = "2.0.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "bimap",
  "const-hex",
@@ -5194,7 +5194,7 @@ dependencies = [
 [[package]]
 name = "hopr-lib"
 version = "5.0.0-rc.2"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5255,7 +5255,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-app"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "hopr-crypto-packet",
  "hopr-types",
@@ -5268,7 +5268,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-hopr"
 version = "6.3.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5298,7 +5298,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-pix"
 version = "0.2.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "ahash",
  "auto_impl",
@@ -5321,7 +5321,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-session"
 version = "1.5.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -5352,7 +5352,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "2.0.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "aquamarine",
  "flagset",
@@ -5368,7 +5368,8 @@ dependencies = [
 [[package]]
 name = "hopr-session-server-forwarder"
 version = "0.5.0"
-source = "git+https://github.com/hoprnet/hopr-impls?branch=kauki%2Ffix%2Fsession%2Fexit-datagram-return-path#09ef3df9b2bdc4a1b553e370cd1290b0b91e0666"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aff20e973f3593a110e88997e8e0ceea74f9fe3644d4bc7e2e29d401d267704"
 dependencies = [
  "async-trait",
  "hopr-api",
@@ -5448,7 +5449,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport"
 version = "0.50.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5495,7 +5496,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5535,7 +5536,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.8.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5561,7 +5562,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-session"
 version = "0.30.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5595,7 +5596,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "hopr-protocol-app",
  "serde",
@@ -5718,7 +5719,8 @@ dependencies = [
 [[package]]
 name = "hopr-utilities"
 version = "0.15.0"
-source = "git+https://github.com/hoprnet/hopr-utilities?branch=kauki%2Ffix%2Fsession%2Fdatagram-aware-copy-loop#b6e3f810cb3fefa470c8c5e190fd4653a2ed215c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a287a83a776cc8e3901c4441f6cf7631f61b8bc632a0001b22b3da722a566d4d"
 dependencies = [
  "arrayvec",
  "auto_impl",
@@ -5751,7 +5753,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Fsession%2Fdatagram-copy-8421-master#f53b9313049089fdaddda63ba41f918003ee6d59"
+source = "git+https://github.com/hoprnet/hoprnet?branch=master#b4fdb1b77aae23d5c17c5ef49dcea2ed29ba1275"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10112,7 +10114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
