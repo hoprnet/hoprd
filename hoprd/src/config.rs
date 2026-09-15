@@ -643,6 +643,12 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_share_order_sample: supervision_defaults.min_share_order_sample,
                         max_predeposit_packets: supervision_defaults.max_predeposit_packets,
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
+                        // Recommit cadence and the SURB-fill policy are internal PIX timing, with no
+                        // hoprd-side knob to disagree with upstream's tuning — kept at its defaults
+                        // for the same reason as the block above.
+                        commitment_recommit_interval: supervision_defaults
+                            .commitment_recommit_interval,
+                        fill: supervision_defaults.fill.clone(),
                     },
                 },
                 path_planner: Default::default(),
