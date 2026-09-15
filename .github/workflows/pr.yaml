@@ -141,6 +141,11 @@ jobs:
           grep -o 'source = "git+https://github.com/hoprnet/hoprnet[^"]*"' Cargo.lock | sort -u || true
   checks:
     name: Check
+    # Skip in the merge queue: a conditionally-skipped job still reports (as
+    # skipped = passing), so the required check stays green without re-running the
+    # suite in the queue. The queue's only real work is the Integration throughput
+    # test (see merge-queue.yaml).
+    if: github.event_name == 'pull_request'
     uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
@@ -151,6 +156,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   tests:
     name: Test
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-tests-v6
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
@@ -167,6 +173,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   build-binaries:
     name: Binary ${{ matrix.binary }} ${{ matrix.architecture }}
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     strategy:
       fail-fast: false
       matrix:
@@ -219,6 +226,7 @@ jobs:
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
   build-docker:
     name: Docker
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     needs: build-binaries
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
@@ -244,6 +252,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   build-docker-pix-test:
     name: Docker (pix-test)
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     needs: build-binaries
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
@@ -269,6 +278,7 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
     name: Docs
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
     permissions:
@@ -282,6 +292,7 @@ jobs:
           command: nix build -L .#docs
   localcluster-smoke:
     name: Localcluster smoke
+    if: github.event_name == 'pull_request' # skip in the merge queue (see `checks`)
     # Runs after the binaries are built so both `nix build`s below are Cachix cache
     # hits rather than rebuilds — this job is dominated by waiting, not by compute.
     needs: build-binaries
