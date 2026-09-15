@@ -282,4 +282,4 @@ ignored = ["hopr-api"]
 # Curvy crates to their crates.io releases (rs-sdk 0.1.0-rc.7). Drop this whole section once
 # hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "8b6493c" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c641347" }
