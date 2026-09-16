@@ -308,8 +308,10 @@
           # `cargo check`, not Clippy — the point is to catch what does not compile. Promoting
           # it is a separate decision, once the lint backlog in that test code is known.
           localclusterTestCheckDerivation =
-            (rust-builder-local.callPackage nixLib.mkRustPackage (
-              localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+            (fixUtoipaEmbedPaths (
+              rust-builder-local.callPackage nixLib.mkRustPackage (
+                localclusterBuildArgs // { CARGO_PROFILE = "dev"; }
+              )
             )).overrideAttrs
               (_: {
                 pname = "hoprd-localcluster-test-check";
@@ -540,16 +542,24 @@
             let
               release = "v0.1.0-rc.6";
               files = {
-                "aggregation-2-3-30.signet.zst" = "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386";
+                "aggregation-2-3-30.signet.zst" =
+                  "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386";
                 "pending-5-30.signet.zst" = "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0";
-                "pix-aggregation-2-9-30.signet.zst" = "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a";
-                "pix-withdrawal-10-30.signet.zst" = "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56";
+                "pix-aggregation-2-9-30.signet.zst" =
+                  "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a";
+                "pix-withdrawal-10-30.signet.zst" =
+                  "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56";
                 "withdrawal-2-30.signet.zst" = "04b2fa84394548a971c757c61280b81fb7699a367eeb45834201675f8a0aad74";
-                "verifyPendingNotesCommitment_5_30_0001.zkey" = "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847";
-                "verifyPixAggregation_2_9_30_evaluation.zkey" = "b4fced8a3c183d25a13a24c9ee7234ec96b77f87f688992ee07144f23ace6750";
-                "verifyPixMultiOwnerWithdrawal_10_30_evaluation.zkey" = "e18f0fdd40aa2643c31c3a02ef0a508b5c7580a436abcae88e364ee86be6a95b";
-                "verifySingleAggregationNoHashing_2_3_30_0001.zkey" = "88a85746f60820712199a60ee13241181658250ba9855af61503d306c52ba4e6";
-                "verifySingleWithdrawalNoHashing_2_30_0001.zkey" = "c91d9fdbea6edde296e9676bdb97959f6acb5f32360b5490c01cea9814844716";
+                "verifyPendingNotesCommitment_5_30_0001.zkey" =
+                  "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847";
+                "verifyPixAggregation_2_9_30_evaluation.zkey" =
+                  "b4fced8a3c183d25a13a24c9ee7234ec96b77f87f688992ee07144f23ace6750";
+                "verifyPixMultiOwnerWithdrawal_10_30_evaluation.zkey" =
+                  "e18f0fdd40aa2643c31c3a02ef0a508b5c7580a436abcae88e364ee86be6a95b";
+                "verifySingleAggregationNoHashing_2_3_30_0001.zkey" =
+                  "88a85746f60820712199a60ee13241181658250ba9855af61503d306c52ba4e6";
+                "verifySingleWithdrawalNoHashing_2_30_0001.zkey" =
+                  "c91d9fdbea6edde296e9676bdb97959f6acb5f32360b5490c01cea9814844716";
               };
               fetch =
                 name: sha256:
@@ -561,7 +571,9 @@
             pkgs.runCommand "curvy-zk-artifacts-${release}" { } ''
               mkdir -p "$out/app/hoprd/curvy-zk-keys"
               ${lib.concatStringsSep "\n" (
-                lib.mapAttrsToList (name: sha256: ''ln -s "${fetch name sha256}" "$out/app/hoprd/curvy-zk-keys/${name}"'') files
+                lib.mapAttrsToList (
+                  name: sha256: ''ln -s "${fetch name sha256}" "$out/app/hoprd/curvy-zk-keys/${name}"''
+                ) files
               )}
             '';
 
@@ -644,8 +656,6 @@
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
-            # The production PIX image: the `strategy-pix-curvy` binary plus the proving artifacts,
-            # with `CURVY_ZK_KEYS_DIR` already pointing at them. The operator key still comes from
             # the environment at run time (`HOPRD_CURVY_OPERATOR_PRIVATE_KEY` by default).
             docker-hoprd-pix-curvy-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd-pix-curvy";

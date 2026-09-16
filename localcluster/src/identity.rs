@@ -123,14 +123,72 @@ pub struct PixSettings {
     /// Exit's deadline for the SSA commitment to arrive.
     pub max_ssa_delivery_time: std::time::Duration,
     /// Exit's deadline for the deposit to land. Together with `max_ssa_delivery_time`
-    /// this forms the PIX kill switch: the Session is closed with
-    /// `ClosureReason::UnrealizedDeposit` once it elapses without a deposit.
+    /// this forms the PIX kill switch: the Exit-side supervisor closes the Session with
+    /// `ClosureReason::PixFailure`, for its own `SessionPixCloseReason::DepositTimeout`, once it
+    /// elapses without a deposit. It used to be `ClosureReason::UnrealizedDeposit`; that variant
+    /// still exists upstream but nothing produces it now that every PIX deadline belongs to the
+    /// supervisor and reports through one reason.
     pub max_deposit_wait: std::time::Duration,
     /// Node ids that reject incoming Sessions which do not opt into PIX.
     ///
     /// Typically just the Exit — a relay never terminates a Session, so enforcement
     /// there has no effect.
     pub enforce_on_nodes: Vec<usize>,
+    /// SSAs an Exit asks the Entry to commit to in one `SsaRequest`
+    /// (`incoming_session_pix.ssas_per_request`). One reproduces the unbatched exchange
+    /// exactly; upstream clamps to `1..=MAX_SSA_BATCH_SIZE` (9).
+    ///
+    /// Batching costs both ends. The Exit holds that many live reconstructor cycles at once and
+    /// fronts that many SSA quotas of unincentivized service before the first deposit lands; the
+    /// Entry pays a full commitment, packet burst and on-chain deposit per entry. The deadlines
+    /// scale with it — the kill switch becomes
+    /// `ssas_per_request × (max_deposit_wait + max_ssa_delivery_time)` and the deposit awaiter's
+    /// timeout `ssas_per_request × max_deposit_wait` — so a caller sizing a run against a cycle
+    /// count has to size it against batches instead.
+    ///
+    /// **Must not exceed [`Self::max_ssas_per_request`]**, which is the same number read by the
+    /// other half of the exchange. See there.
+    pub ssas_per_request: usize,
+    /// SSA commitments an Entry accepts in one `SsaRequest` (`pix.max_ssas_per_request`).
+    /// Upstream clamps to `1..=MAX_SSA_BATCH_SIZE` (9).
+    ///
+    /// Stated separately from [`Self::ssas_per_request`] rather than derived from it because the
+    /// two are read by different halves of the exchange, and the batch size is *not negotiated*:
+    /// `StartSession.additional_data` is fully allocated, so the Entry cannot advertise its cap and
+    /// the Exit cannot learn it. An Exit batching above the cap has every request refused with
+    /// `UnacceptablePixParams` and loses the Session — which is a failure mode worth being able to
+    /// arrange deliberately, hence two fields rather than one.
+    ///
+    /// Every node here gets both values, so in a cluster where any node may act as either end this
+    /// must be at least `ssas_per_request` unless the refusal is the point.
+    pub max_ssas_per_request: usize,
+    /// Whether the Exit may derive a smaller batch from the offered quota
+    /// (`incoming_session_pix.allow_dynamic_ssa_batches`).
+    ///
+    /// Upstream ships this on, which makes [`Self::ssas_per_request`] a ceiling rather than the size
+    /// actually asked for: the Exit takes the smallest batch whose `batch × quota_per_ssa` lands in
+    /// `quota_range_min..=quota_range_max`. With a floor of zero — which every configuration here
+    /// uses, since these dimensions sit far below the production window — a batch of one always
+    /// fits, so the ceiling is never reached.
+    ///
+    /// So a caller that means a *particular* batch size, rather than an upper bound on one, has to
+    /// turn this off. That is the only way an assertion about the batch on the wire says anything.
+    pub allow_dynamic_ssa_batches: bool,
+    /// Packets the Exit serves without a share coming back before its egress gate blocks
+    /// (`incoming_session_pix.max_served_without_progress`).
+    ///
+    /// **Must clear the Session's SURB buffer once that buffer is deeper than one cycle's paid
+    /// surplus.** A share is bound to its SURB when the SURB is minted and the Exit spends the
+    /// buffer roughly in order, so when a cycle recovers the queued SURBs still carry *its* shares.
+    /// Upstream credits that drain as liveness only up to `num_ssa_parts × additional_shares` —
+    /// the surplus the cycle was paid for, and a cap it holds for replay-resistance rather than
+    /// convenience. Anything queued beyond that is uncreditable, and a gate that blocks partway
+    /// through it stops the very SURB spending that was draining it.
+    ///
+    /// A caller whose response buffer is a handful of SURBs can leave this at upstream's 2048; one
+    /// sizing a buffer for throughput has to size this against it. See `session_pix_soak.rs`, which
+    /// derives both from the same rate.
+    pub max_served_without_progress: u64,
     /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
     /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
@@ -231,6 +289,17 @@ impl Default for PixSettings {
             max_ssa_delivery_time: std::time::Duration::from_secs(20),
             max_deposit_wait: std::time::Duration::from_secs(60),
             enforce_on_nodes: Vec::new(),
+            // hoprd's own two defaults, so an interactive cluster runs the unbatched exchange with
+            // room for one pipelined cycle — exactly as it did before either was reachable here.
+            ssas_per_request: 1,
+            max_ssas_per_request: 2,
+            // Upstream's default, and inert at the ceiling of one above: the only batch size the
+            // Exit can pick is the one it would have asked for anyway. Left on rather than pinned
+            // off so an operator raising `ssas_per_request` here gets the shipping behaviour.
+            allow_dynamic_ssa_batches: true,
+            // Upstream's default, which the interactive cluster's small response buffer leaves
+            // ample room under — see the field.
+            max_served_without_progress: 2048,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
             // ~3.32 wxHOPR per SSA deposit against the dimensions above.
             price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
@@ -248,6 +317,27 @@ impl Default for PixSettings {
     }
 }
 
+/// Entry-side share generator dimensions and batch cap, shared by every node.
+///
+/// Identical everywhere so that any node can act as Entry; the Entry/Exit split is expressed
+/// only by [`PixSettings::enforce_on_nodes`]. A named function rather than a closure inside
+/// [`generate`] so the pairing with [`incoming_pix_config`] — the two halves of a batch size
+/// that is never negotiated on the wire — is reachable from a test without a cluster.
+fn pix_global_config(pix: Option<&PixSettings>) -> Option<UserPixGlobalConfig> {
+    pix.map(|pix| UserPixGlobalConfig {
+        num_ssa_parts: pix.num_ssa_parts,
+        ssa_part_size: pix.ssa_part_size,
+        // `Some` rather than left to the derivation: the harness computes the expected per-SSA
+        // quota from this exact number (see `PixSettings::ssa_quota`), so the surplus it asserts
+        // against and the surplus the node emits have to be the same one.
+        additional_shares: Some(pix.additional_shares),
+        // Entry-side batch cap; `incoming_pix_config` writes the Exit's `ssas_per_request`. The
+        // two have to be raised together — see `PixSettings::max_ssas_per_request` — and are
+        // named for the same reason the fields there are.
+        max_ssas_per_request: pix.max_ssas_per_request,
+    })
+}
+
 /// Exit-side admission policy for node `id`.
 ///
 /// Only nodes listed in [`PixSettings::enforce_on_nodes`] reject non-PIX Sessions; the
@@ -260,10 +350,19 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             quota_range_max: pix.quota_range_max,
             max_ssa_delivery_time: pix.max_ssa_delivery_time,
             max_deposit_wait: pix.max_deposit_wait,
-            // `ssas_per_request` is left at its default of 1 (unbatched). Batching multiplies the
-            // kill-switch window and the number of cycles in flight, so a test that wants it should
-            // add it to `PixSettings` deliberately rather than inherit it here.
-            ..Default::default()
+            // The Exit half of the batch pair; `pix_global_config` writes the Entry half. Both are
+            // named rather than swept up by `..Default::default()`, so a new upstream field is a
+            // compile error here instead of a silently defaulted one.
+            ssas_per_request: pix.ssas_per_request,
+            allow_dynamic_ssa_batches: pix.allow_dynamic_ssa_batches,
+            max_served_without_progress: pix.max_served_without_progress,
+            // Not [`PixSettings`] fields, because nothing here has a reason to move them: both are
+            // sized against `quota_range_max`, and every configuration in this crate sits orders of
+            // magnitude below the production window those defaults were chosen for. They are named
+            // rather than defaulted for the same reason the rest are — a `..Default::default()`
+            // here would take an upstream addition silently.
+            max_live_cycle_bytes: UserIncomingSessionPixConfig::default().max_live_cycle_bytes,
+            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -476,6 +575,7 @@ fn node_config(
             ..Default::default()
         },
         blokli_url: config.blokli_url.clone(),
+        blokli_dns_override: None,
         session_ip_forwarding: SessionIpForwardingConfig {
             use_target_allow_list: false,
             ..Default::default()
@@ -671,19 +771,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     };
     debug!(strategy = ?node_strategy, "node strategy");
 
-    // Share generator dimensions are identical on every node so that any of them can act
-    // as Entry; the Entry/Exit split is expressed only by `enforce_on_nodes` below.
-    let pix_global_config = config.pix.as_ref().map(|pix| UserPixGlobalConfig {
-        num_ssa_parts: pix.num_ssa_parts,
-        ssa_part_size: pix.ssa_part_size,
-        // `Some` rather than left to the derivation: the harness computes the expected per-SSA
-        // quota from this exact number (see `PixSettings::ssa_quota`), so the surplus it asserts
-        // against and the surplus the node emits have to be the same one.
-        additional_shares: Some(pix.additional_shares),
-        // Entry-side batch cap, left at its default of 2. It only needs raising in step with an
-        // Exit's `ssas_per_request`, which `incoming_pix_config` also leaves at the default.
-        ..Default::default()
-    });
+    let pix_global_config = pix_global_config(config.pix.as_ref());
 
     let mut nodes = Vec::with_capacity(effective_num_nodes);
     info!(
@@ -1279,6 +1367,96 @@ mod tests {
             &None,
         )?;
         assert!(!built.hopr.announce);
+
+        Ok(())
+    }
+
+    /// Both halves of the SSA batch pair, and the switch that decides what the Exit's half means,
+    /// must reach hoprd's config, survive YAML and validate.
+    ///
+    /// The only check on that plumbing which does not need a cluster: the batch size is not
+    /// negotiated on the wire, so an `ssas_per_request` that silently failed to reach the Exit —
+    /// or a `max_ssas_per_request` that failed to reach the Entry — does not fail loudly. It
+    /// shows up as a refused `SsaRequest` and a lost Session, minutes into an integration run.
+    /// `allow_dynamic_ssa_batches` is worse, because it fails *quietly*: an Exit that keeps
+    /// upstream's default derives its own batch size and simply runs unbatched, which looks like a
+    /// healthy run rather than like a failure.
+    ///
+    /// The mismatched pair is a case on purpose. hoprd has no cross-field validation for the two,
+    /// so a node configured to ask for more than its peer accepts must still *start* — which is
+    /// what makes the refusal a run-time failure, and what makes
+    /// `session_pix.rs`'s refusal test arrangeable at all.
+    #[test]
+    fn generated_node_config_carries_both_ssa_batch_knobs() -> anyhow::Result<()> {
+        use validator::Validate;
+
+        let safe = SafeModule {
+            safe_address: "0x1111111111111111111111111111111111111111".parse()?,
+            module_address: "0x2222222222222222222222222222222222222222".parse()?,
+        };
+        let strategy = MultiStrategyConfig::default();
+
+        // The demo default, a matched batch, and the mismatch the refusal test arranges. The
+        // last two carry the dynamic-batch opt-out with them, because that is how
+        // `session_pix.rs` configures them and the two knobs only mean a fixed batch together:
+        // left on, the Exit derives its own size from the offered quota and `ssas_per_request`
+        // becomes a ceiling it never reaches.
+        for (ssas_per_request, max_ssas_per_request, allow_dynamic_ssa_batches) in
+            [(1, 2, true), (3, 3, false), (3, 2, false)]
+        {
+            let config = GenerationConfig {
+                config_home: PathBuf::from("/tmp/localcluster-test"),
+                pix: Some(PixSettings {
+                    ssas_per_request,
+                    max_ssas_per_request,
+                    allow_dynamic_ssa_batches,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            let built = node_config(
+                0,
+                &config,
+                safe.clone(),
+                &strategy,
+                "/tmp/localcluster-test/id_0.id",
+                &pix_global_config(config.pix.as_ref()),
+            )?;
+            let yaml = serde_saphyr::to_string(&built)?;
+            let parsed: HoprdConfig = serde_saphyr::from_str(&yaml).with_context(|| {
+                format!(
+                    "hoprd could not parse the config for {ssas_per_request}/{max_ssas_per_request}"
+                )
+            })?;
+
+            assert_eq!(
+                parsed, built,
+                "the {ssas_per_request}/{max_ssas_per_request} batch pair does not survive a YAML round trip"
+            );
+            parsed.validate().with_context(|| {
+                format!("hoprd rejects the {ssas_per_request}/{max_ssas_per_request} batch pair")
+            })?;
+
+            assert_eq!(
+                parsed.hopr.network.incoming_session_pix.ssas_per_request, ssas_per_request,
+                "the Exit's ssas_per_request did not reach the generated config"
+            );
+            assert_eq!(
+                parsed.hopr.network.pix.max_ssas_per_request, max_ssas_per_request,
+                "the Entry's max_ssas_per_request did not reach the generated config"
+            );
+            assert_eq!(
+                parsed
+                    .hopr
+                    .network
+                    .incoming_session_pix
+                    .allow_dynamic_ssa_batches,
+                allow_dynamic_ssa_batches,
+                "the Exit's allow_dynamic_ssa_batches did not reach the generated config, so \
+                 ssas_per_request above means a ceiling rather than a batch size"
+            );
+        }
 
         Ok(())
     }

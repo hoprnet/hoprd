@@ -33,8 +33,9 @@
 //!
 //! There is no cycle target and no clock. The Entry is given a fixed deposit budget, it
 //! commits `price_per_byte × quota` of it per SSA, and when the next deposit would cross the
-//! budget the strategy refuses it, the Exit stops seeing money arrive, and its PIX kill switch
-//! closes the Session with `ClosureReason::UnrealizedDeposit`. That is the designed behaviour,
+//! budget the strategy refuses it, the Exit stops seeing money arrive, and its PIX supervisor
+//! closes the Session with `ClosureReason::PixFailure` — its own `DepositTimeout`, rendered on the
+//! Exit's "pix supervisor closed the session" line. That is the designed behaviour,
 //! so this test asserts it happens rather than treating it as a failure — and it makes the run
 //! self-limiting:
 //!
@@ -767,7 +768,9 @@ async fn curvy_withdrawal_gas_fee(blokli_url: &str, token_id: &str) -> anyhow::R
         .context("decoding the Curvy vault token")?;
     let fee = reply["data"]["curvyVaultToken"]["gasFees"]["withdrawal"]
         .as_str()
-        .with_context(|| format!("no withdrawal gas fee for vault token {token_id} in Blokli's reply: {reply}"))?;
+        .with_context(|| {
+            format!("no withdrawal gas fee for vault token {token_id} in Blokli's reply: {reply}")
+        })?;
     U256::from_dec_str(fee).with_context(|| format!("withdrawal gas fee {fee:?} is not a number"))
 }
 
@@ -797,6 +800,41 @@ fn pix_settings(
             Pool::Curvy => curvy_max_deposit_wait()?,
         },
         enforce_on_nodes: vec![EXIT],
+        // Unbatched, with hoprd's own Entry cap. The soak's subject is a long run at a fixed
+        // per-cycle cost, and batching would multiply the cycles in flight, the kill-switch
+        // window and the unincentivized service fronted before the first deposit — all of which
+        // this file's budget and pacing arithmetic is written against one cycle at a time.
+        // `session_pix.rs` is where the batched exchange is exercised.
+        ssas_per_request: 1,
+        max_ssas_per_request: 2,
+        // Inert at the ceiling of one above — the only batch the Exit can derive is the one it
+        // would have asked for — so this is upstream's default rather than the opt-out
+        // `session_pix.rs` needs. Stated anyway, because "unbatched" above is an assumption the
+        // soak's whole budget arithmetic rests on, and leaving the knob unmentioned would make it
+        // an assumption about a default rather than a setting.
+        allow_dynamic_ssa_batches: true,
+        // Sized against this run's own SURB buffer, because that buffer is what the Exit still has
+        // to spend after a cycle recovers before the successor's first share can reach it.
+        //
+        // Upstream credits part of that drain: a recovered cycle is held as the paid front until
+        // its FIFO tail passes. But only `PIX_POLYS x PIX_ADDITIONAL_SHARES` = 6912 shares of it —
+        // the surplus the cycle was paid for — and that ceiling is a replay bound, not a shortfall
+        // to be widened: reconstruction releases the share set, so an uncapped allowance would let
+        // an Entry replay one completed polynomial for unbounded service.
+        //
+        // `surb_buffer_target()` is ~42 000 here, six times that credit and twice a whole cycle's
+        // emission, so ~35 000 SURBs of the drain are uncreditable by construction. At the stock
+        // 2048 the gate blocks in the middle of them, and a blocked Exit spends no SURBs — which is
+        // the only thing that was draining the queue. Measured four times, across both the rev that
+        // had no tail credit at all and the one that added it, as exactly one recovered cycle and
+        // `RecoveryIdle` 60 s later with zero shares on SSA #2.
+        //
+        // Raising it does not weaken anything the protocol accounts for: payment still follows
+        // `useful_shares` and the tail credit is still capped upstream. This bounds *silence*, and
+        // the drain is not silence — it is paid traffic this Session's own buffer depth put in
+        // front of the successor. One extra second of replies on top, so the bound is the drain
+        // plus slack. `session_pix.rs` needs none of this: its buffer is ~16 SURBs.
+        max_served_without_progress: surb_buffer_target() + packet_rate(),
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
@@ -1130,8 +1168,11 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             // id the nodes are configured with), so a sweep credits a few gwei less than the
             // basis points alone would say.
             let token_id = std::env::var("HOPRD_CURVY_TOKEN").unwrap_or_else(|_| "3".to_owned());
-            let withdrawal_gas_fee = curvy_withdrawal_gas_fee(cluster.blokli_url(), &token_id).await?;
-            let per_sweep = HoprBalance::from(less_fee(per_cycle, withdrawal_fee_bps).amount() - withdrawal_gas_fee);
+            let withdrawal_gas_fee =
+                curvy_withdrawal_gas_fee(cluster.blokli_url(), &token_id).await?;
+            let per_sweep = HoprBalance::from(
+                less_fee(per_cycle, withdrawal_fee_bps).amount() - withdrawal_gas_fee,
+            );
             tracing::info!(
                 %pool, shield = %safe_outlay, deposit_fee_bps, withdrawal_fee_bps, %withdrawal_gas_fee, %per_sweep,
                 "Curvy pool: the Entry shields once, gross of the deposit fee, and each sweep \
