@@ -23,8 +23,8 @@
 # The flow was measured to sustain 6000 datagrams/s each way and to saturate by 6500; the
 # committed default is 4000, for the margin reasons on `DEFAULT_PACKET_RATE` in the test.
 #
-# Everything on screen comes from the nodes' own Prometheus endpoints and the REST API —
-# nothing is computed by the test. To watch a cluster somebody else started, or to drive
+# Node counters come from Prometheus and balances from the REST API; billing parameters
+# and application echo volume come from the test log. To watch a cluster somebody else started, or to drive
 # the refresh with watch(1) instead:
 #
 #   watch -n 2 -c ./localcluster/scripts/pix-demo.sh --dashboard
@@ -306,8 +306,8 @@ from_log() {
 # Progress bar. Built by slicing pre-filled strings rather than repeating a character:
 # `printf 'X%.0s'` with an empty argument list still prints one X, which silently puts a
 # block in every empty bar.
-FULL='████████████████████████████████'
-EMPTY='░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░'
+FULL='================================'
+EMPTY='................................'
 bar() { # value max [width]
   local value=${1:-0} max=${2:-0} width=${3:-24} filled=0
   if [ "$max" -gt 0 ] 2>/dev/null; then
@@ -323,12 +323,54 @@ num() { printf "%'d" "${1:-0}" 2>/dev/null || echo "${1:-0}"; }
 # Trim the trailing zeroes bc leaves behind ("2.65728000" -> "2.65728", "0" stays "0").
 trim() { printf '%s' "${1:-0}" | sed -e 's/\(\.[0-9]*[1-9]\)0*$/\1/' -e 's/\.0*$//'; }
 
+render_geometry() {
+  local polys=$1 shares=$2 surplus=$3 quota=$4 price=$5 per_cycle=$6
+  local emissions=$((polys * (shares + surplus))) bytes_per_share='?'
+  if [ "$emissions" -gt 0 ] && [[ $quota =~ ^[0-9]+$ ]] && [ $((quota % emissions)) -eq 0 ]; then
+    bytes_per_share=$((quota / emissions))
+  fi
+  printf '  %sSSA BILLING QUOTA%s    %s polys × (%s threshold + %s surplus) shares\n' \
+    "$C_BOLD" "$C_RESET" "$polys" "$shares" "$surplus"
+  printf '                       %s emissions × %s B = %s%s B per SSA%s\n' \
+    "$(num "$emissions")" "$bytes_per_share" "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET"
+  printf '                       %s wxHOPR/byte → %s%s wxHOPR per deposit%s\n\n' \
+    "${price:-?}" "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET"
+}
+
+render_traffic_accounting() {
+  local deposits=$1 quota=$2 sent_mb='' echoed_mb=''
+  if [[ $quota =~ ^[0-9]+$ ]]; then
+    printf '    %-22s %s B %s= %s deposits × %s B; nominal quota%s\n' \
+      'Funded SSA quota' "$(num "$((deposits * quota))")" "$C_DIM" "$deposits" "$(num "$quota")" "$C_RESET"
+  fi
+  # The harness counts verified application echoes. Use its latest progress/final
+  # report, not the node-wide packet counter multiplied by an assumed payload size.
+  if [ -r "$TEST_LOG" ]; then
+    read -r sent_mb echoed_mb < <(sed 's/\x1b\[[0-9;]*m//g' "$TEST_LOG" | awk '
+      / live |PIX soak test PASSED/ {
+        for (i=1; i<=NF; i++) {
+          if ($i ~ /^sent_mb=[0-9]+$/) { split($i, a, "="); sent=a[2] }
+          if ($i ~ /^echoed_mb=[0-9]+$/) { split($i, a, "="); echoed=a[2] }
+        }
+      }
+      END { if (sent != "" && echoed != "") print sent, echoed }
+    ') || true
+  fi
+  if [ -n "$sent_mb" ] && [ -n "$echoed_mb" ]; then
+    printf '    %-22s %s MB sent · %s MB echoed %s(test log, whole MB)%s\n' \
+      'Application payload' "$sent_mb" "$echoed_mb" "$C_DIM" "$C_RESET"
+  else
+    printf '    %-22s unavailable — waiting for a test traffic report\n' 'Application payload'
+  fi
+  printf '    %sNode packet totals are not application bytes or billable SSA shares.%s\n' "$C_DIM" "$C_RESET"
+}
+
 # ── dashboard ───────────────────────────────────────────────────────────────────
 
 render() {
   for i in "${ALL_IDXS[@]}"; do scrape "$i"; done
 
-  local sweeps deposits made_failed over_budget confirmed keys last_sweep
+  local sweeps deposits made_failed over_budget observed keys last_sweep
   sweeps=$(metric "$EXIT_IDX" hopr_strategy_pix_sweeps)
   deposits=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits)
   made_failed=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_failed)
@@ -336,7 +378,7 @@ render() {
   # `max_spend_per_window`. Counted separately from `_failed`, which is a deposit that was
   # attempted and did not land — so the two lines below mean opposite things.
   over_budget=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_over_budget)
-  confirmed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
+  observed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
   keys=$(metric "$EXIT_IDX" hopr_strategy_pix_keys_recovered)
   last_sweep=$(grep -E '^hopr_strategy_pix_last_sweep_hopr' "$STATE_DIR/metrics_$EXIT_IDX" 2>/dev/null |
     awk '{ print $NF }' | head -1)
@@ -393,7 +435,7 @@ render() {
   [ -f "$STATE_DIR/started" ] || date +%s >"$STATE_DIR/started"
   local started
   started=$(cat "$STATE_DIR/started")
-  local elapsed=$(($(date +%s) - started))
+  local elapsed=$(($(cat "$STATE_DIR/finished" 2>/dev/null || date +%s) - started))
 
   # Relay earnings, per relay and per direction. The forward leg's tickets are issued by the
   # Entry, the return leg's by the Exit, so each node's address names the channel that direction
@@ -432,8 +474,8 @@ render() {
   done
 
   # Derived from the same counters as the totals above, so the rate and the running total can
-  # never tell different stories. These are node-wide HOPR packet counts, which include the
-  # SURB keep-alives the balancer sends and the acknowledgements every packet earns — so both
+  # never tell different stories. These are node-wide HOPR packet counts, which include
+  # session control traffic and SURB keep-alives — so both
   # figures sit above the Session's datagram rate. That is the honest HOPR packet rate, and
   # the label says "pkt/s" rather than anything implying datagrams.
   local fwd_rate ret_rate
@@ -467,25 +509,19 @@ render() {
   # Why a deposit is the size it is, shown as the derivation rather than as a bare number: the
   # dimensions fix the quota, and the quota priced per byte fixes what the Entry has to pay.
   if [ -n "$polys" ] && [ -n "${emitted:-}" ]; then
-    printf '  %sSSA GEOMETRY%s         %s%s polys × %s shares%s  %s→%s  %s%s B%s %squota per SSA%s\n' \
-      "$C_BOLD" "$C_RESET" "$C_BOLD" "$polys" "$emitted" "$C_RESET" "$C_DIM" "$C_RESET" \
-      "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET" "$C_DIM" "$C_RESET"
-    printf '                       %s%s to reconstruct + %s surplus, all of them billed%s\n' \
-      "$C_DIM" "$shares" "$surplus" "$C_RESET"
-    printf '                       %s%s wxHOPR/byte%s  %s→%s  %s%s wxHOPR%s %sper deposit%s\n\n' \
-      "$C_BOLD" "${price_per_byte:-?}" "$C_RESET" "$C_DIM" "$C_RESET" \
-      "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET" "$C_DIM" "$C_RESET"
+    render_geometry "$polys" "$shares" "$surplus" "$quota" "$price_per_byte" "$per_cycle"
   fi
 
-  printf '  %sSSA CYCLE PIPELINE%s   %seach cycle: Entry deposits, Exit confirms, collects\n' "$C_BOLD" "$C_RESET" "$C_DIM"
+  printf '  %sSSA CYCLE PIPELINE%s   %seach cycle: Entry deposits, Exit observes, collects\n' "$C_BOLD" "$C_RESET" "$C_DIM"
   printf '                       shares from the SURBs it spends, then sweeps%s\n\n' "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "Entry deposits" "$(bar "$deposits" "$scale")" "$C_BOLD" "$deposits" "$C_RESET"
-  printf '    %-22s %s %s%4d%s\n' "Exit confirmed" "$(bar "$confirmed" "$scale")" "" "$confirmed" "$C_RESET"
+  printf '    %-22s %s %s%4d%s\n' "Exit observed" "$(bar "$observed" "$scale")" "" "$observed" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "SSA keys recovered" "$(bar "$keys" "$scale")" "" "$keys" "$C_RESET"
-  printf '    %-22s %s %s%4d%s\n' "swept into Safe" "$(bar "$sweeps" "$scale")" "$C_GREEN" "$sweeps" "$C_RESET"
+  printf '    %-22s %s %s%4d%s\n' "Exit Safe payouts" "$(bar "$sweeps" "$scale")" "$C_GREEN" "$sweeps" "$C_RESET"
+  printf '    %sobserved = deposit detected; key recovery needs return-traffic shares%s\n' "$C_DIM" "$C_RESET"
   if [ "${over_budget:-0}" -gt 0 ]; then
-    printf '    %-22s %s%4d%s  %sthe budget is spent — kill switch arming%s\n' \
-      "over budget" "$C_YELLOW" "$over_budget" "$C_RESET" "$C_DIM" "$C_RESET"
+    printf '    %-22s %s%4d%s  %snext deposit exceeds the budget%s\n' \
+      "budget refusals" "$C_YELLOW" "$over_budget" "$C_RESET" "$C_DIM" "$C_RESET"
   fi
   if [ "${made_failed:-0}" -gt 0 ]; then
     printf '    %-22s %s%4d%s  %snot expected — see the log%s\n' \
@@ -520,10 +556,11 @@ render() {
   [ -n "$last_sweep" ] && printf '    %-22s %s wxHOPR\n' "last sweep" "$last_sweep"
   printf '\n'
 
-  printf '  %sTRAFFIC%s  %sthe Exit unlocks one share per SURB it spends replying%s\n\n' \
+  printf '  %sNODE TRAFFIC%s  %sHOPR packets, including session control traffic%s\n\n' \
     "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
   printf '    %-22s %12s pkts  %s->%s  %12s recv\n' "Entry -> Exit" "$(num "$e_sent")" "$C_DIM" "$C_RESET" "$(num "$x_recv")"
   printf '    %-22s %12s pkts  %s<-%s  %12s recv\n' "Exit  -> Entry" "$(num "$x_sent")" "$C_DIM" "$C_RESET" "$(num "$e_recv")"
+  render_traffic_accounting "$deposits" "$quota"
   # One row per relay with its share, because the share is the point: the Session is one hop but
   # not one relay, and these two rows climbing together is hoprd redrawing the route per packet.
   local i
@@ -575,6 +612,9 @@ render() {
 }
 
 # ── entry points ────────────────────────────────────────────────────────────────
+
+# Fixture tests can render accounting without starting a cluster or scraping nodes.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
 # Every helper above caches a reading into $STATE_DIR and several read it straight back, so a
 # directory somebody else controls is a directory that decides what this script displays — and
@@ -714,12 +754,14 @@ fi
 # against this run's counter, and since the counters restart from zero it would yield a
 # negative delta — suppressed as "not advancing", leaving the previous run's rate frozen on
 # screen. Add new cache families here at the same time as the helper that writes them.
-rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
+rm -f "$STATE_DIR/finished" "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
   "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$STATE_DIR"/rate_* "$STATE_DIR"/rateval_* \
   "$STATE_DIR"/cpu_* "$STATE_DIR"/cpuval_* \
   "$TEST_LOG"
 reset_cluster
-date +%s >"$STATE_DIR/started"
+# The Curvy launcher publishes the start before pulling images; keep that same
+# timestamp so its chain readings and this pane belong to one run throughout.
+printf '%s\n' "${PIX_DEMO_RUN_STARTED:-$(date +%s)}" >"$STATE_DIR/started"
 
 echo "starting the localcluster (chain, 4 nodes, 12 channels) — this takes a few minutes"
 echo "full test output: $TEST_LOG"
@@ -770,6 +812,7 @@ done
 
 wait "$TEST_PID"
 STATUS=$?
+date +%s >"$STATE_DIR/finished"
 render "run finished"
 printf '\033[?25h'
 echo

@@ -20,10 +20,9 @@
 # who paid the gas and what the call did (a Safe module call is named by what the Safe then
 # did), with the average per action and what one PIX deposit costs the pool.
 #
-# The last section is the one to show. With the test pool (`PIX_POOL=test`) the sets meet on
-# every deposit address, and the verdict reads LINKED; with Curvy they do not, and it reads
-# UNLINKED. Nothing in the verdict knows which pool is running — it is computed from the
-# `Transfer` log alone, the same way an outside observer would.
+# The transfer view distinguishes per-session intermediaries from the shared Curvy vault.
+# Direct shielding makes the vault visible on both sides. That is not evidence of which
+# shielded note was spent, and this small local run is not a demonstration of anonymity.
 #
 # It attaches to the cluster pix-demo.sh runs; it starts nothing itself:
 #
@@ -44,7 +43,7 @@
 # and `--ledger` after the run — still show the run's figures once pix-demo has torn the chain
 # container down. The cache is dropped when pix-demo starts a new run.
 #
-# Requires curl, jq, bc, docker; run it inside `nix develop`.
+# Requires Bash 4+, curl, jq, bc, docker, timeout and flock; run inside `nix develop`.
 
 set -uo pipefail
 
@@ -66,23 +65,25 @@ STATE_DIR="$PIX_DEMO_STATE_DIR"
 # Run `cast` (or a shell script that calls it) where the chain is: on the host against PIX_RPC_URL,
 # or inside the chain container against its Anvil. Extra `-e VAR=val` args precede the command.
 chain_exec() {
+  local seconds=15
+  if [ "${1:-}" = --timeout ]; then seconds=$2; shift 2; fi
   local envs=()
   while [ "${1:-}" = "-e" ]; do
     envs+=("$2")
     shift 2
   done
   if [ -n "$PIX_RPC_URL" ]; then
-    env FOUNDRY_DISABLE_NIGHTLY_WARNING=1 RPC_URL="$PIX_RPC_URL" "${envs[@]}" "$@"
+    timeout "$seconds" env FOUNDRY_DISABLE_NIGHTLY_WARNING=1 RPC_URL="$PIX_RPC_URL" "${envs[@]}" "$@"
   else
     local dargs=(-e FOUNDRY_DISABLE_NIGHTLY_WARNING=1 -e RPC_URL=http://127.0.0.1:8545)
     local e
     for e in "${envs[@]}"; do dargs+=(-e "$e"); done
-    docker exec "${dargs[@]}" "$PIX_CHAIN_CONTAINER" "$@"
+    timeout "$seconds" docker exec "${dargs[@]}" "$PIX_CHAIN_CONTAINER" "$@"
   fi
 }
 LOG_COPY_DIR=/tmp/pix-soak-logs
 REFRESH=2
-# anvil's account 0: the localcluster's deployer and faucet, and in this demo the Curvy operator.
+# Anvil's account 0 is the deployer/faucet. Relayer and prover may use other signers.
 DEPLOYER=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266
 # Prefix of every file this script writes. Kept apart from pix-demo's own cache families, which
 # that script clears by name.
@@ -141,12 +142,17 @@ cache() {
 cache_json() {
   local file="${CACHE}_$1" out
   shift
-  out=$("$@" 2>/dev/null)
-  if [ -n "$out" ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
+  if out=$("$@" 2>"$file.error") && [ -n "$out" ] && printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
     printf '%s\n' "$out" >"$file"
+    date +%s >"$file.at"
+    printf 'live\n' >"$file.status"
   elif [ -r "$file" ]; then
+    printf 'cached\n' >"$file.status"
     cat "$file"
     return 0
+  else
+    printf 'unavailable\n' >"$file.status"
+    return 1
   fi
   printf '%s\n' "$out"
 }
@@ -229,27 +235,31 @@ transfers() {
     return 0
   fi
   printf '%s\n' "$now" >"$stamp"
-  cache_json transfers timeout 15 chain_exec sh -c \
+  cache_json transfers chain_exec sh -c \
     'cast logs --rpc-url "$RPC_URL" --from-block "$0" --address "$1" "Transfer(address indexed from, address indexed to, uint256 value)" --json' \
     "$PIX_CHAIN_FROM_BLOCK" "$token"
 }
 
 # ── the Curvy transactions, as the RPC returns them ─────────────────────────────
 
-# Every Curvy transaction the two nodes sent, oldest first: `timestamp kind hash`. The hashes are
-# the one thing taken from the logs; everything shown about them comes back from the chain.
+# Successful Curvy transactions, discovered from RPC calldata/receipts, regardless of signer.
+# Direct shielding is a nested Safe call: identify its token transfer into the vault.
+# One row per transaction: `block kind hash`. No dependency on operator-mode node logs.
 curvy_txs() {
-  {
-    printf '%s\n' "${EXCERPT[$ENTRY_IDX]}" | grep -E "shielded the Curvy funding note|committed pending Curvy notes|aggregated Curvy PIX allocations"
-    printf '%s\n' "${EXCERPT[$EXIT_IDX]}" | grep -E "withdrew Curvy PIX notes"
-  } | awk '
-    { ts = $1; kind = "" }
-    /shielded the Curvy funding note/ { kind = "shield" }
-    /committed pending Curvy notes/ { kind = "commit" }
-    /aggregated Curvy PIX allocations/ { kind = "allocation" }
-    /withdrew Curvy PIX notes/ { kind = "withdrawal" }
-    kind != "" { if (match($0, /tx=0x[0-9a-fA-F]+/)) print ts, kind, tolower(substr($0, RSTART + 3, RLENGTH - 3)) }
-  ' | sort -u
+  [ -f "${CACHE}_gas_next" ] || return 0
+  awk -v aggregator="$AGGREGATOR" -v vault="$VAULT" -v entry="${SAFE[$ENTRY_IDX]}" -v portal="$PORTAL" '
+    FILENAME == ARGV[1] { if ($4 == vault && (($3 == entry && entry != "") || ($3 == portal && portal != ""))) shield[$2] = 1; next }
+    $6 == 1 {
+      kind = ""
+      if ($4 == aggregator && aggregator != "") {
+        if ($7 == "0x8d5626c0") kind = "allocation"
+        else if ($7 == "0x7fda4404") kind = "commit"
+        else if ($7 == "0x87aabf09") kind = "withdrawal"
+      }
+      if ($2 in shield) kind = "shield"
+      if (kind != "") print $1, kind, $2
+    }
+  ' <(printf '%s\n' "$ROWS") "${CACHE}_gas" | sort -k1,1n -k3,3 -u
 }
 
 # Receipt and calldata of one transaction, summarised: `block from to gas status calldata_bytes`
@@ -262,7 +272,7 @@ tx_summary() {
     RPC_FETCH_BUDGET=$((RPC_FETCH_BUDGET - 1))
     # `--async`: `cast receipt` otherwise waits for the transaction to be mined, which a hash the
     # chain has never seen (a log line from a previous run) turns into a hang.
-    timeout 15 chain_exec sh -c \
+    chain_exec sh -c \
       "cast receipt $hash --async --rpc-url \"\$RPC_URL\" --json; cast tx $hash --rpc-url \"\$RPC_URL\" --json" 2>/dev/null |
       jq -rs '
         def hex: ltrimstr("0x") | explode | map(if . >= 97 then . - 87 elif . >= 65 then . - 55 else . - 48 end) | reduce .[] as $d (0; . * 16 + $d);
@@ -378,6 +388,7 @@ linkability() {
     n=$((n + 1))
     [ -z "${LABEL[$a]:-}" ] && LABEL[$a]="deposit addr #$n"
   done
+  return 0
 }
 
 print_rows() { # rows [max]
@@ -405,6 +416,14 @@ join_labels() {
 # ── gathering one frame's worth of readings ────────────────────────────────────
 
 gather() {
+  # The live pane and the launcher's final snapshot share a cache.
+  exec 9>"$STATE_DIR/.curvy.lock"
+  flock -w 45 9 || return 1
+  gather_unlocked
+  flock -u 9
+}
+
+sync_run_cache() {
   # A new pix-demo run means a new chain and new node identities: every cached reading is from a
   # cluster that no longer exists.
   local started
@@ -414,7 +433,12 @@ gather() {
     printf '%s\n' "$started" >"${CACHE}_run"
   fi
   ELAPSED=""
-  [ -n "$started" ] && ELAPSED=$(($(date +%s) - started))
+  [ -n "$started" ] && ELAPSED=$(($(cat "$STATE_DIR/finished" 2>/dev/null || date +%s) - started))
+  return 0
+}
+
+gather_unlocked() {
+  sync_run_cache
 
   local i
   for i in "${ALL_IDXS[@]}"; do
@@ -431,12 +455,12 @@ gather() {
   TOKEN=$(lower "$(jq -r '.contracts.token // empty' <<<"$CONTRACTS" 2>/dev/null)")
   VAULT=$(lower "$(jq -r '.contracts.curvy_vault // empty' <<<"$CONTRACTS" 2>/dev/null)")
   PORTAL_FACTORY=$(lower "$(jq -r '.contracts.curvy_portal_factory // empty' <<<"$CONTRACTS" 2>/dev/null)")
-  # Not in chainInfo; the Entry logs it when it discovers the deployment.
-  AGGREGATOR=$(lower "$(grep -o 'aggregator=0x[0-9a-fA-F]*' <<<"${EXCERPT[$ENTRY_IDX]}" | head -1 | cut -d= -f2)")
+  AGGREGATOR=$(lower "$(jq -r '.contracts.curvy_aggregator // empty' <<<"$CONTRACTS" 2>/dev/null)")
+  [ -n "$AGGREGATOR" ] || AGGREGATOR=$(lower "$(grep -o 'aggregator=0x[0-9a-fA-F]*' <<<"${EXCERPT[$ENTRY_IDX]}" | head -1 | cut -d= -f2)")
   PORTAL=$(lower "$(grep -o 'portal=0x[0-9a-fA-F]*' <<<"${EXCERPT[$ENTRY_IDX]}" | head -1 | cut -d= -f2)")
 
   LABEL=()
-  LABEL[$DEPLOYER]="operator (= deployer)"
+  LABEL[$DEPLOYER]="deployer / faucet"
   LABEL[0x0000000000000000000000000000000000000000]="burn"
   # The HOPR protocol contracts: parties to the bootstrap (stakes, key bindings, Safe
   # deployment), never to a PIX deposit. Labelled, and kept out of the linkability sets.
@@ -487,6 +511,7 @@ gather() {
   ROWS=$(ledger_rows "$(transfers "$TOKEN")")
   linkability "$ROWS" "${SAFE[$ENTRY_IDX]}" "${SAFE[$EXIT_IDX]}"
 
+  gas_scan "$GAS_SCAN_BUDGET" "$GAS_SCAN_SECS"
   TXS=$(curvy_txs)
   INDEXED=()
   local h pn cn nn
@@ -506,8 +531,42 @@ gather() {
   while read -r ts kind h; do
     [ -n "$h" ] && tx_summary "$h" >/dev/null
   done < <(printf '%s\n' "$TXS" | tail -n 8 | tac)
-  # A few blocks' worth of receipts per frame, for the gas report; see `gas_scan`.
-  gas_scan "$GAS_SCAN_BUDGET" "$GAS_SCAN_SECS"
+  return 0
+}
+
+# Unknown is different from zero. Counts describe the scanned blocks shown above them.
+tx_count() {
+  if [ -f "${CACHE}_gas_next" ]; then
+    awk -v kind="$1" '$2 == kind { n++ } END { print n+0 }' <<<"$TXS"
+  else printf 'n/a'; fi
+}
+
+source_status() {
+  local name=$1 state at age
+  state=$(cat "${CACHE}_${name}.status" 2>/dev/null || echo unavailable)
+  at=$(cat "${CACHE}_${name}.at" 2>/dev/null || echo 0)
+  if [ "$at" -gt 0 ]; then
+    age=$(($(date +%s) - at))
+    printf '%s (%ss ago)' "$state" "$age"
+  else printf '%s' "$state"; fi
+}
+
+render_sources() {
+  local next head
+  next=$(cat "${CACHE}_gas_next" 2>/dev/null || echo 0)
+  head=$(cat "${CACHE}_gas_head" 2>/dev/null || echo '?')
+  printf '  %sDATA%s  RPC %s · transfers %s · index %s\n' "$C_BOLD" "$C_RESET" \
+    "$(source_status gas)" "$(source_status transfers)" "$(source_status notes)"
+  if [ "$next" -gt 0 ]; then
+    printf '    transaction counts cover blocks %s–%s; RPC head %s\n' "$PIX_CHAIN_FROM_BLOCK" "$((next - 1))" "$head"
+    if [ "$head" != '?' ] && [ "$next" -le "$head" ]; then
+      printf '    %sscan catching up — counts are partial%s\n' "$C_YELLOW" "$C_RESET"
+    fi
+  fi
+  if [ "$PENDING" -ge 1000 ] || [ "$COMMITTED" -ge 1000 ] || [ "$NULLIFIED" -ge 1000 ]; then
+    printf '    %snote index display capped at 1,000 records per category; transaction counts use RPC%s\n' "$C_YELLOW" "$C_RESET"
+  fi
+  printf '\n'
 }
 
 # Fields of the Entry's and the Exit's private views, from their logs.
@@ -539,7 +598,7 @@ GAS_SCAN_BUDGET=40
 GAS_SCAN_SECS=20
 gas_scan() { # blocks-per-call [timeout-secs]
   local budget=${1:-$GAS_SCAN_BUDGET} secs=${2:-20} next out
-  next=$(cat "${CACHE}_gas_next" 2>/dev/null || echo 0)
+  next=$(cat "${CACHE}_gas_next" 2>/dev/null || echo "$PIX_CHAIN_FROM_BLOCK")
   [ "$budget" -gt 0 ] || return 0
   # Runs inside the chain container: the head, then every non-empty block in the window as two
   # JSON lines (block with full transactions, receipts), then the last block read.
@@ -563,24 +622,26 @@ done
 echo "scanned $to"'
   # Megabytes of block JSON on a long run: kept on disk, not in a variable.
   out="${CACHE}_gas_scan.tmp"
-  timeout "$secs" chain_exec -e FROM="$next" -e BUDGET="$budget" sh -c "$script" >"$out" 2>/dev/null || {
+  chain_exec --timeout "$secs" -e FROM="$next" -e BUDGET="$budget" sh -c "$script" >"$out" 2>"${CACHE}_gas.error" || {
+    if [ -f "${CACHE}_gas_next" ]; then echo cached; else echo unavailable; fi >"${CACHE}_gas.status"
     rm -f "$out"
     return 0
   }
   local head scanned
   head=$(sed -n 's/^head //p' "$out")
   scanned=$(sed -n 's/^scanned //p' "$out")
-  [ -n "$head" ] && printf '%s\n' "$head" >"${CACHE}_gas_head"
-  [ -n "$scanned" ] || {
+  [[ $head =~ ^[0-9]+$ && $scanned =~ ^[0-9]+$ ]] || {
+    if [ -f "${CACHE}_gas_next" ]; then echo cached; else echo unavailable; fi >"${CACHE}_gas.status"
     rm -f "$out"
     return 0
   }
-  grep -v '^head \|^scanned ' "$out" | jq -rs '
+  printf '%s\n' "$head" >"${CACHE}_gas_head"
+  if ! sed '/^head /d; /^scanned /d' "$out" | jq -rs '
     def hex: ltrimstr("0x") | explode | map(if . >= 97 then . - 87 elif . >= 65 then . - 55 else . - 48 end) | reduce .[] as $d (0; . * 16 + $d);
     def word($i): .[$i*64 : $i*64+64];
     ([.[] | select(type == "array") | .[]] | map({key: (.transactionHash | ascii_downcase), value: .}) | from_entries) as $rc
     | .[] | select(type == "object") | .transactions[]
-    | . as $t | ($rc[$t.hash | ascii_downcase] // {}) as $r
+    | . as $t | ($rc[$t.hash | ascii_downcase] // error("missing transaction receipt")) as $r
     | ($t.input // "0x" | ltrimstr("0x")) as $in | $in[0:8] as $sel
     # execTransactionFromModule / execTransaction: (address to, uint256 value, bytes data, …) —
     # the bytes offset sits in word 2, the data one word past it.
@@ -589,12 +650,20 @@ echo "scanned $to"'
          | {ito: ("0x" + ($a | word(0))[24:64]), isel: $a[$off*2+64 : $off*2+72], arg0: $a[$off*2+72 : $off*2+136]}
        else {ito: "-", isel: "", arg0: $in[8:72]} end) as $i
     | [($t.blockNumber | hex), ($t.hash | ascii_downcase), ($t.from | ascii_downcase), ($t.to // "-" | ascii_downcase),
-       ($r.gasUsed // "0x0" | hex), ($r.status // "0x0" | hex),
+       ($r.gasUsed // error("missing gas usage") | hex), ($r.status // error("missing receipt status") | hex),
        (if $t.to == null then "create" elif $sel == "" then "-" else "0x" + $sel end),
        $i.ito, (if $i.isel == "" then "-" else "0x" + $i.isel end), (if $i.arg0 == "" then "-" else $i.arg0 end)]
-    | join(" ")' >>"${CACHE}_gas" 2>/dev/null
+    | join(" ")' >"${CACHE}_gas.rows.tmp" 2>>"${CACHE}_gas.error"; then
+    if [ -f "${CACHE}_gas_next" ]; then echo cached; else echo unavailable; fi >"${CACHE}_gas.status"
+    rm -f "$out" "${CACHE}_gas.rows.tmp"
+    return 0
+  fi
+  cat "${CACHE}_gas.rows.tmp" >>"${CACHE}_gas"
+  rm -f "${CACHE}_gas.rows.tmp"
   rm -f "$out"
   printf '%s\n' $((scanned + 1)) >"${CACHE}_gas_next"
+  date +%s >"${CACHE}_gas.at"
+  echo live >"${CACHE}_gas.status"
 }
 
 # Function selectors → names, for the contracts this chain can see: the HOPR protocol (from
@@ -858,87 +927,65 @@ declare -a EXCERPT SAFE ADDR MODULE
 declare -A INDEXED EXIT_NOTES BOOTSTRAP
 
 render() {
-  gather
-
+  gather || { printf 'Dashboard cache busy; retrying.\n'; return; }
   local entry="${EXCERPT[$ENTRY_IDX]}" exit_="${EXCERPT[$EXIT_IDX]}"
-  local shield_tx commits aggregations allocations gross
-  shield_tx=$(last_field "shielded the Curvy funding note" tx "$entry")
-  gross=$(last_field "funding the Curvy shield portal" gross "$entry")
-  commits=$(count "committed pending Curvy notes" "$entry")
-  aggregations=$(count "aggregated Curvy PIX allocations" "$entry")
-  allocations=$(grep "aggregated Curvy PIX allocations" <<<"$entry" | grep -o 'allocations=[0-9]*' | cut -d= -f2 | sum)
-  local seen correlated withdrawals withdrawn_wei
+  local seen correlated clock="--:--" shield_wei exit_wei
   seen=$(distinct "discovered Curvy PIX pending note" "$exit_" note_id)
   correlated=$(distinct "correlated committed Curvy PIX note" "$exit_" note_id)
-  withdrawals=$(count "withdrew Curvy PIX notes" "$exit_")
-  withdrawn_wei=$(grep "withdrew Curvy PIX notes" <<<"$exit_" | grep -o 'amount=[0-9]*' | cut -d= -f2 | sum)
-
-  local clock="--:--"
+  shield_wei=$(printf '%s\n' "$ROWS" | awk -v e="${SAFE[$ENTRY_IDX]}" -v p="$PORTAL" -v v="$VAULT" \
+    '$4 == v && (($3 == e && e != "") || ($3 == p && p != "")) { print $5 }' | sum)
+  exit_wei=$(printf '%s\n' "$ROWS" | awk -v x="${SAFE[$EXIT_IDX]}" -v v="$VAULT" '$3 == v && $4 == x && x != "" { print $5 }' | sum)
   [ -n "$ELAPSED" ] && clock=$(printf '%02d:%02d' $((ELAPSED / 60)) $((ELAPSED % 60)))
-
   printf '\033[H\033[2J'
-  printf '%s╔══════════════════════════════════════════════════════════════════════════╗%s\n' "$C_MAGENTA" "$C_RESET"
-  printf '%s║%s  %sCurvy privacy pool%s — the same PIX run, as the chain sees it      %s%s%s  %s║%s\n' \
-    "$C_MAGENTA" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_BOLD" "$clock" "$C_RESET" "$C_MAGENTA" "$C_RESET"
-  printf '%s╚══════════════════════════════════════════════════════════════════════════╝%s\n\n' "$C_MAGENTA" "$C_RESET"
-
-  printf '  %sDEPLOYMENT%s  %spool=%s%s · chain %s · block %s · vault fees %s bps in, %s out\n' \
-    "$C_BOLD" "$C_RESET" "$C_DIM" "${POOL:-?}" "$C_RESET" "${CHAIN_ID:-?}" "${BLOCK:-?}" "${FEE_IN:-?}" "${FEE_OUT:-?}"
-  printf '    vault %s · aggregator %s · shield portal %s\n' \
-    "$(short "${VAULT:-?}")" "$(short "${AGGREGATOR:-?}")" "$(short "${PORTAL:-?}")"
-  printf '    notes tree root %s · %s%d announced · %d in the tree · %d spent%s\n\n' \
-    "$(short "${TREE_ROOT:-?}")" "$C_BOLD" "$PENDING" "$COMMITTED" "$NULLIFIED" "$C_RESET"
-
-  printf '  %sENTRY%s  %swhat it did — from its own log, nobody else sees this%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  if [ -n "$shield_tx" ]; then
-    printf '    %-28s %s%s wxHOPR%s  Safe → portal → vault  %stx %s%s\n' "shielded once, from the Safe" \
-      "$C_GREEN$C_BOLD" "$(wei2hopr "$gross")" "$C_RESET" "$C_DIM" "$(short "$shield_tx")" "$C_RESET"
-  else
-    printf '    %-28s %swaiting for the first deposit%s\n' "shielded once, from the Safe" "$C_DIM" "$C_RESET"
-  fi
-  printf '    %-28s %s%3d%s txs   %s%3d%s allocations to the Exit'"'"'s one-time scan keys\n' \
-    "PIX allocations aggregated" "$C_BOLD" "$aggregations" "$C_RESET" "$C_BOLD" "$allocations" "$C_RESET"
-  printf '    %-28s %3d txs   %sproofs: pending %s · aggregation %s%s\n\n' \
-    "pending notes committed" "$commits" "$C_DIM" "$(secs "$(proof_ms pending "$entry")")" \
-    "$(secs "$(proof_ms pix-aggregation "$entry")")" "$C_RESET"
-
-  printf '  %sEXIT%s  %swhat it did — from its own log, nobody else sees this%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  printf '    %-28s %s%3d%s of %s in the vault  %sscan-key trial decryption%s\n' \
-    "notes recognised as its own" "$C_BOLD" "$seen" "$C_RESET" "$PENDING" "$C_DIM" "$C_RESET"
-  printf '    %-28s %3d        %sSSA key recovered from the note'"'"'s allocation%s\n' \
-    "committed notes correlated" "$correlated" "$C_DIM" "$C_RESET"
-  printf '    %-28s %3d txs   %s%s wxHOPR%s → Exit Safe  %sproof: withdrawal %s%s\n' \
-    "withdrawn with a zk proof" "$withdrawals" "$C_GREEN$C_BOLD" "$(wei2hopr "$withdrawn_wei")" "$C_RESET" \
-    "$C_DIM" "$(secs "$(proof_ms pix-withdrawal "$exit_")")" "$C_RESET"
+  printf '  %sCurvy privacy pool — settlement and node observations%s  %s\n\n' "$C_MAGENTA$C_BOLD" "$C_RESET" "$clock"
+  printf '  %sDEPLOYMENT%s  pool=%s · chain %s · indexed block %s · vault fees %s bps in, %s out\n' \
+    "$C_BOLD" "$C_RESET" "${POOL:-?}" "${CHAIN_ID:-?}" "${BLOCK:-?}" "${FEE_IN:-?}" "${FEE_OUT:-?}"
+  printf '    vault %s · aggregator %s\n' "$(short "${VAULT:-?}")" "$(short "${AGGREGATOR:-?}")"
+  if [ -n "$NOTES" ]; then
+    printf '    notes: %s announced · %s in the tree · %s nullifiers spent\n' "$PENDING" "$COMMITTED" "$NULLIFIED"
+  else printf '    note index unavailable\n'; fi
   printf '\n'
+  render_sources
+
+  printf '  %sON-CHAIN SETTLEMENT%s  %ssuccessful transactions, all submitters%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  if [ -f "${CACHE}_transfers" ] && [ -n "${SAFE[$ENTRY_IDX]}" ]; then
+    printf '    %-29s %s%s wxHOPR%s  %s\n' 'Entry Safe → vault' "$C_GREEN" "$(wei2hopr "$shield_wei")" "$C_RESET" \
+      "$(if [ -n "$PORTAL" ]; then echo 'via shield portal'; else echo 'direct shielding'; fi)"
+  else printf '    %-29s n/a — transfer data or Safe address unavailable\n' 'Entry Safe → vault'; fi
+  printf '    %-29s %s txs\n' 'PIX aggregations' "$(tx_count allocation)"
+  printf '    %-29s %s txs  %sincludes shared batch-prover submissions%s\n' 'Pending-note commitments' "$(tx_count commit)" "$C_DIM" "$C_RESET"
+  printf '    %-29s %s txs\n' 'Withdrawals' "$(tx_count withdrawal)"
+  if [ -f "${CACHE}_transfers" ] && [ -n "${SAFE[$EXIT_IDX]}" ]; then
+    printf '    %-29s %s%s wxHOPR%s\n' 'Vault → Exit Safe' "$C_GREEN$C_BOLD" "$(wei2hopr "$exit_wei")" "$C_RESET"
+  else printf '    %-29s n/a — transfer data or Safe address unavailable\n' 'Vault → Exit Safe'; fi
+  printf '\n'
+
+  printf '  %sNODE OBSERVATIONS%s  %sprivate node logs; separate from the public chain view%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  if [ -n "$exit_" ]; then
+    printf '    %-29s %s  %sscan-key discovery%s\n' 'Exit notes recognised' "$seen" "$C_DIM" "$C_RESET"
+    printf '    %-29s %s  %scommitted note matched to a deposit; not SSA key recovery%s\n' 'Exit notes matched to SSA' "$correlated" "$C_DIM" "$C_RESET"
+  else printf '    Exit log unavailable\n'; fi
+  printf '    latest local proof time: aggregation %s · withdrawal %s\n\n' \
+    "$(secs "$(proof_ms pix-aggregation "$entry")")" "$(secs "$(proof_ms pix-withdrawal "$exit_")")"
 
   render_txs 5
   render_notes 4
-
-  printf '  %sON CHAIN%s  %swxHOPR Transfer events touching the Entry, the Exit, or their counterparties%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  if [ -n "$PIX_ROWS" ]; then
-    print_rows "$PIX_ROWS" 4
-  else
-    printf '    %snothing yet%s\n' "$C_DIM" "$C_RESET"
-  fi
+  printf '  %sTOKEN TRANSFERS%s  %swxHOPR movements involving the Entry, Exit and pool%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  if [ -n "$PIX_ROWS" ]; then print_rows "$PIX_ROWS" 4
+  elif [ ! -f "${CACHE}_transfers" ]; then printf '    transfer data unavailable\n'
+  else printf '    no matching transfers in the available data\n'; fi
   printf '\n'
-
-  render_knows
-  render_verdict
-  if [ -n "${1:-}" ]; then
-    printf '\n  %s%s%s\n' "$C_DIM" "$1" "$C_RESET"
-  fi
+  [ -z "${1:-}" ] || printf '\n  %s%s%s\n' "$C_DIM" "$1" "$C_RESET"
 }
 
 # One line per Curvy transaction, from its receipt: which contract it went to, how many bytes of
-# calldata (the proof), and what the vault's index says it did. The sender is not a column
-# because it is always the same — the operator key — and that is the point: it names neither
-# party.
+# calldata, submitter, and what the vault's index says it did. The direct shield is
+# signed by the node; relayer and batch-prover transactions have their own senders.
 render_txs() { # [max]
   local max=${1:-0}
-  printf '  %sCURVY TRANSACTIONS%s  %sfrom the RPC: every one sent by the operator, to a contract%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %sCURVY TRANSACTIONS%s  %smined successfully; discovered from RPC, independent of node logs%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
   if [ -z "$TXS" ]; then
-    printf '    %snone yet%s\n\n' "$C_DIM" "$C_RESET"
+    printf '    %s%s%s\n\n' "$C_DIM" "$(if [ -f "${CACHE}_gas_next" ]; then echo 'none in the scanned blocks'; else echo 'transaction data unavailable'; fi)" "$C_RESET"
     return
   fi
   local total
@@ -948,40 +995,42 @@ render_txs() { # [max]
     printf '    %s… %d earlier transactions%s\n' "$C_DIM" $((total - max)) "$C_RESET"
     shown=$(printf '%s\n' "$TXS" | tail -n "$max")
   fi
-  local ts kind h summary blk to bytes detail pn cn nn
+  local ts kind h summary blk from to bytes detail pn cn nn
   while read -r ts kind h; do
     [ -z "$h" ] && continue
     summary=$(tx_summary "$h" | head -1)
-    read -r blk _ to _ _ bytes <<<"$summary"
-    read -r pn cn nn <<<"${INDEXED[$h]:-0 0 0}"
+    read -r blk from to _ _ bytes <<<"$summary"
+    read -r pn cn nn <<<"${INDEXED[$h]:-? ? ?}"
     detail=""
     case "$kind" in
     shield) detail="funding note announced" ;;
     commit) detail="$cn note(s) into the tree" ;;
-    allocation) detail="$pn note(s) announced, encrypted" ;;
+    allocation) detail="$pn output note(s), including change/padding" ;;
     withdrawal)
       local paid
       paid=$(printf '%s\n' "$ROWS" | awk -v h="$h" -v x="${SAFE[$EXIT_IDX]}" '$2 == h && $4 == x { print $5 }' | sum)
-      detail="$nn nullifier(s) · $(wei2hopr "$paid") → Exit Safe"
+      detail="$nn nullifier(s)"
+      [ ! -f "${CACHE}_transfers" ] || detail="$detail · $(wei2hopr "$paid") → Exit Safe"
       ;;
     esac
     if [ -n "$blk" ]; then
       printf '    %sblk %5d%s  %-11s → %-16s %s%6s B%s  %s%s%s\n' \
         "$C_DIM" "$blk" "$C_RESET" "$kind" "$(label "$to")" "$C_DIM" "$bytes" "$C_RESET" "$C_BOLD" "$detail" "$C_RESET"
+      printf '      from %s · tx %s\n' "$(label "$from")" "$(short "$h")"
     else
-      printf '    %s%-9s%s  %-11s %s%s  (receipt pending)%s\n' "$C_DIM" "${ts:11:8}" "$C_RESET" "$kind" "$C_DIM" "$(short "$h")" "$C_RESET"
+      printf '    %s%-9s%s  %-11s %s%s  (receipt detail unavailable)%s\n' "$C_DIM" "blk $ts" "$C_RESET" "$kind" "$C_DIM" "$(short "$h")" "$C_RESET"
     fi
   done <<<"$shown"
-  printf '    %s%d shielded-pool transactions in all; a proof is what the calldata bytes are%s\n\n' "$C_DIM" "$total" "$C_RESET"
+  printf '    %s%d successful pool transactions in scanned blocks; B = full calldata size%s\n\n' "$C_DIM" "$total" "$C_RESET"
 }
 
 # The vault's notes as the chain announced them. The right-hand marker is the one thing on this
 # list that does not come from the chain: the Exit's own log, saying which note it recognised.
 render_notes() { # [max]
   local max=${1:-0}
-  printf '  %sNOTES IN THE VAULT%s  %sas announced on chain: an id, a view tag, a ciphertext — no owner%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %sNOTES IN THE VAULT%s  %spublic announcements; encrypted or plaintext amounts%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
   if [ -z "$NOTE_ROWS" ]; then
-    printf '    %snone yet%s\n\n' "$C_DIM" "$C_RESET"
+    printf '    %s%s%s\n\n' "$C_DIM" "$(if [ -n "$NOTES" ]; then echo 'none in the index snapshot'; else echo 'note index unavailable'; fi)" "$C_RESET"
     return
   fi
   local total
@@ -995,77 +1044,45 @@ render_notes() { # [max]
   while read -r blk id plain amount tag; do
     [ -z "$id" ] && continue
     if [ "$plain" = "true" ]; then amt="$(wei2hopr "$amount") wxHOPR, plaintext"; else amt="amount encrypted"; fi
+    [ "$tag" != null ] && [ -n "$tag" ] || tag=n/a
     mark=""
     [ -n "${EXIT_NOTES[$id]:-}" ] && mark="${C_GREEN}← the Exit's — it knows, the chain does not${C_RESET}"
     printf '    %sblk %5d%s  %s  %-27s %sview tag %-3s%s %s\n' \
       "$C_DIM" "$blk" "$C_RESET" "$(short "$id")" "$amt" "$C_DIM" "$tag" "$C_RESET" "$mark"
   done <<<"$shown"
-  # An allocation announces more notes than it creates — the aggregation circuit pads its
-  # output — so the Exit's note is one of ten announced per deposit, and nothing on chain says
-  # which. The count of its own is the Exit's log's; the rest of the line is the chain's.
-  local allocations mine
-  allocations=$(printf '%s\n' "$TXS" | grep -c " allocation ")
-  mine=${#EXIT_NOTES[@]}
-  if [ "$allocations" -gt 0 ]; then
-    printf '    %s%d notes announced by %d allocations; the Exit'"'"'s %d are among them and nothing on\n' \
-      "$C_DIM" $((total - 1)) "$allocations" "$mine"
-    printf '      chain says which%s\n' "$C_RESET"
-  fi
-  printf '\n'
-}
-
-# Each fact the chain publishes, beside the fact it withholds. Every number on the left is one
-# an outside observer can read off the RPC; nothing on the right is on the chain at all.
-render_knows() {
-  local allocations notes_n encrypted nullifiers withdrawals shield_wei shield_txt
-  allocations=$(printf '%s\n' "$TXS" | grep -c " allocation ")
-  withdrawals=$(printf '%s\n' "$TXS" | grep -c " withdrawal ")
-  notes_n=${PENDING:-0}
-  encrypted=$((notes_n - ${PLAINTEXT:-0}))
-  nullifiers=${NULLIFIED:-0}
-  shield_wei=$(printf '%s\n' "$ROWS" | awk -v p="$PORTAL" -v v="$VAULT" '$3 == p && $4 == v { print $5 }' | sum)
-  if [ "${shield_wei:-0}" != "0" ]; then shield_txt="$(wei2hopr "$shield_wei") wxHOPR, once"; else shield_txt="nothing yet"; fi
-  local exit_in_txt="nothing yet"
-  if [ "${EXIT_IN:-0}" -gt 0 ] && [ -n "$VAULT" ]; then
-    local exit_wei per_out
-    exit_wei=$(printf '%s\n' "$ROWS" | awk -v v="$VAULT" -v x="${SAFE[$EXIT_IDX]}" '$3 == v && $4 == x { print $5 }' | sum)
-    per_out=$(echo "$exit_wei / $withdrawals" | bc 2>/dev/null || echo 0)
-    exit_in_txt="$withdrawals × $(wei2hopr "$per_out") wxHOPR"
-  fi
-  printf '  %sWHAT THE CHAIN KNOWS%s                         %sWHAT IT DOES NOT%s\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"
-  printf '    %-18s %-22s %s%s%s\n' "Entry → vault" "$shield_txt" "$C_DIM" "what any of it was for" "$C_RESET"
-  printf '    %-18s %-22s %s%s%s\n' "allocations" "$allocations txs, by the operator" "$C_DIM" "whom — a scan key, no address" "$C_RESET"
-  printf '    %-18s %-22s %s%s%s\n' "notes announced" "$notes_n ($encrypted encrypted)" "$C_DIM" "amounts, or which is the Exit's" "$C_RESET"
-  printf '    %-18s %-22s %s%s%s\n' "nullifiers spent" "$nullifiers" "$C_DIM" "which note each one retires" "$C_RESET"
-  printf '    %-18s %-22s %s%s%s\n' "vault → Exit Safe" "$exit_in_txt" "$C_DIM" "that the Entry paid the Exit" "$C_RESET"
+  printf '    %soutput counts include padding/change; they are not PIX deposit counts%s\n' "$C_DIM" "$C_RESET"
+  printf '    %sView tag 0 is valid. Padding uses 0, but a tag alone does not identify padding or ownership.%s\n' "$C_DIM" "$C_RESET"
   printf '\n'
 }
 
 render_verdict() {
-  printf '  %sLINKABILITY%s  %sfrom the Transfer log alone — what an outside observer can conclude%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  if [ -z "$ROWS" ] || [ -z "${SAFE[$ENTRY_IDX]}" ]; then
-    printf '    %sno ledger yet%s\n' "$C_DIM" "$C_RESET"
+  printf '  %sTRANSFER LINKABILITY%s  %sobserved token-transfer paths, not a privacy proof%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
+  if [ ! -f "${CACHE}_transfers" ] || [ -z "${SAFE[$ENTRY_IDX]}" ] || [ -z "${SAFE[$EXIT_IDX]}" ]; then
+    printf '    transfer data or node Safe addresses unavailable\n'
     return
   fi
-  printf '    %-24s %s\n' "the Entry paid" "$(join_labels "${ENTRY_PAID[@]}")"
-  printf '    %-24s %s\n' "the Exit was paid by" "$(join_labels "${EXIT_PAID_BY[@]}")"
-  printf '    %-24s %s\n' "the money went on to" "$(join_labels "${ONE_HOP[@]}")"
-  printf '    %-24s %d   %-24s %d of %d\n' "addresses in both sets" "${#SHARED[@]}" "exact amount matches" "$MATCHED" "$EXIT_IN"
-  if [ "${#SHARED[@]}" -gt 0 ]; then
-    printf '    %s✗ LINKED%s — %d address(es) took the Entry'"'"'s money and handed it to the Exit;\n' "$C_RED$C_BOLD" "$C_RESET" "${#SHARED[@]}"
-    printf '      every deposit is a public transfer chain Entry → address → Exit\n'
+  printf '    %-24s %s\n' 'the Entry paid' "$(join_labels "${ENTRY_PAID[@]}")"
+  printf '    %-24s %s\n' 'the Exit was paid by' "$(join_labels "${EXIT_PAID_BY[@]}")"
+  printf '    %-24s %d   %-24s %d of %d\n' 'shared intermediaries' "${#SHARED[@]}" 'exact amount matches' "$MATCHED" "$EXIT_IN"
+  local shared_non_pool=0 a
+  for a in "${SHARED[@]}"; do
+    [ "$a" = "$VAULT" ] || shared_non_pool=$((shared_non_pool + 1))
+  done
+  if [ "$shared_non_pool" -gt 0 ]; then
+    printf '    %sSHARED NON-POOL ADDRESS%s — %s intermediary address(es) connect the transfers.\n' "$C_YELLOW$C_BOLD" "$C_RESET" "$shared_non_pool"
+  elif [ "$EXIT_IN" -gt 0 ] && [ -n "$VAULT" ] && [[ " ${EXIT_PAID_BY[*]} " == *" $VAULT "* ]]; then
+    printf '    %sPOOL-MEDIATED%s — the vault is a shared intermediary, not a per-session address.\n' "$C_GREEN$C_BOLD" "$C_RESET"
+    printf '    These transfers do not identify which shielded note funded the withdrawal.\n'
+    printf '    %sThis small local run still exposes timing/amount clues; it demonstrates no anonymity set.%s\n' "$C_YELLOW" "$C_RESET"
   elif [ "$EXIT_IN" -gt 0 ]; then
-    printf '    %s✓ UNLINKED%s — no address both received from the Entry and paid the Exit, and no\n' "$C_GREEN$C_BOLD" "$C_RESET"
-    printf '      amount matches. The Exit was paid by the vault against a Merkle root; which note\n'
-    printf '      it spent is inside the proof, not on the chain.\n'
-    printf '    %scaveat: on this 4-node chain the vault has one depositor, so timing alone still\n' "$C_YELLOW"
-    printf '      tells the story. On a shared deployment the set is every depositor'"'"'s.%s\n' "$C_RESET"
-  else
-    printf '    %sthe Exit has not been paid yet%s\n' "$C_DIM" "$C_RESET"
-  fi
+    printf '    No shared intermediary identified in the available transfers.\n'
+  else printf '    No Exit payout observed in the available transfers.\n'; fi
 }
 
 # ── entry points ────────────────────────────────────────────────────────────────
+
+# Allow fixture tests to exercise readers/renderers without starting the refresh loop.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
 mkdir -p "$STATE_DIR" 2>/dev/null
 if [ -L "$STATE_DIR" ] || [ ! -d "$STATE_DIR" ] || [ ! -O "$STATE_DIR" ]; then
@@ -1073,7 +1090,7 @@ if [ -L "$STATE_DIR" ] || [ ! -d "$STATE_DIR" ] || [ ! -O "$STATE_DIR" ]; then
   echo "Remove it, or point PIX_DEMO_STATE_DIR somewhere else (pix-demo.sh needs the same value)."
   exit 1
 fi
-for tool in curl jq bc docker; do
+for tool in curl jq bc docker timeout flock; do
   command -v "$tool" >/dev/null || {
     echo "curvy-demo needs $tool — try running it inside \`nix develop\`"
     exit 1
@@ -1083,6 +1100,17 @@ done
 case "${1:-}" in
 --dashboard)
   render "blokli: $PIX_BLOKLI_URL/graphql · chain: ${PIX_RPC_URL:-docker exec $PIX_CHAIN_CONTAINER} cast …"
+  exit 0
+  ;;
+--snapshot)
+  # Called before the owned chain is removed; preserve the final RPC state for the pane.
+  GAS_SCAN_BUDGET=1000000
+  GAS_SCAN_SECS=40
+  # Force a last transfer read even if the pane polled less than six seconds ago.
+  LEDGER_REFRESH=0
+  gather || exit 1
+  [[ $(cat "${CACHE}_gas.status" 2>/dev/null) == live &&
+     $(cat "${CACHE}_transfers.status" 2>/dev/null) == live ]] || exit 1
   exit 0
   ;;
 --ledger)
@@ -1105,9 +1133,9 @@ case "${1:-}" in
   RPC_FETCH_BUDGET=1000
   while read -r _ _ h; do [ -n "$h" ] && tx_summary "$h" >/dev/null; done <<<"$TXS"
   printf '\n'
+  render_sources
   render_txs
   render_notes
-  render_knows
   exit 0
   ;;
 -h | --help)
@@ -1116,7 +1144,7 @@ case "${1:-}" in
   ;;
 "") ;;
 *)
-  echo "usage: $0 [--dashboard | --ledger | --rpc]"
+  echo "usage: $0 [--dashboard | --ledger | --rpc | --snapshot]"
   exit 1
   ;;
 esac

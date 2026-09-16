@@ -192,6 +192,8 @@
 //! ```
 
 mod common;
+#[path = "common/pix_soak_monitor.rs"]
+mod pix_soak_monitor;
 
 use std::{
     path::{Path, PathBuf},
@@ -210,6 +212,7 @@ use common::{
 };
 use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
 use hoprd_localcluster::{client_helper, identity};
+use pix_soak_monitor::SessionMonitor;
 use tokio::net::UdpSocket;
 
 /// Attempts a balance read gets across transient chain-read failures (a 429 from the RPC behind
@@ -1209,6 +1212,14 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         "balances before the Session"
     );
 
+    // Only this session's events: skip bootstrap logs, but start watching before the
+    // API call because the first handshake can finish (or fail) inside that call.
+    let mut session_monitor = SessionMonitor::open(
+        &log_dir.join(format!("hoprd_{ENTRY}.log")),
+        &log_dir.join(format!("hoprd_{EXIT}.log")),
+    )
+    .context("opening current node logs to monitor PIX session closure")?;
+
     let (ip, port) = entry
         .api
         .open_session(client_helper::OpenSessionRequest {
@@ -1254,7 +1265,9 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // would otherwise produce.
     let send_interval = Duration::from_micros(1_000_000 / rate).max(Duration::from_micros(1));
     let payload: Vec<u8> = (0..CHUNK_SIZE).map(|i| (i % 256) as u8).collect();
-    let sender = tokio::spawn({
+    // Abort traffic even if a subsequent API or log read returns an error.
+    let mut traffic = tokio::task::JoinSet::new();
+    traffic.spawn({
         let (sock, stop, sent, payload) =
             (sock.clone(), stop.clone(), sent.clone(), payload.clone());
         async move {
@@ -1273,7 +1286,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             }
         }
     });
-    let receiver = tokio::spawn({
+    traffic.spawn({
         let (sock, stop, echoed) = (sock.clone(), stop.clone(), echoed.clone());
         async move {
             let mut buf = vec![0u8; 65535];
@@ -1297,9 +1310,11 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
 
     // ── Run until the Entry cannot afford the next deposit ──────────────────────
     //
-    // The Exit's tracker timing out is the definitive end signal: it means a deposit it
-    // was promised never arrived, which is what arms the kill switch. The deadline below
-    // is a safety net for the case where that never happens.
+    // Observe the transport closing the session, not the pool's tracking-timeout metric.
+    // An incomplete SSA handshake never starts deposit tracking, yet the transport still
+    // closes the session when its own deadline expires. A pool timeout alone also does
+    // not prove that transport closure has happened. The deadline below bounds an open
+    // session that has stopped making progress.
     //
     // With the Curvy pool on a real chain the first allocation can wait the whole deposit
     // budget for the batch prover to commit the funding note, so that budget is part of the
@@ -1313,15 +1328,18 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         + KILL_SWITCH_TAIL
         + deposit_wait;
     let traffic_started = Instant::now();
-    let mut recovered;
-    let mut exit_metrics;
-    let mut entry_metrics;
     // Carried across iterations: a delta that is momentarily not a whole multiple (a
     // sweep landing mid-poll) keeps the last good reading rather than reporting zero.
     let mut cycles = 0u64;
-    let mut killed = false;
-    loop {
+    let closure = loop {
         tokio::time::sleep(REPORT_INTERVAL).await;
+
+        if let Some(closure) = session_monitor
+            .poll()
+            .context("reading current node logs for PIX session closure")?
+        {
+            break Some(closure);
+        }
 
         // A balance read goes node -> Blokli -> RPC, and a public RPC answers a burst with 429
         // now and then; that is not the run failing, so give it a few tries before it is.
@@ -1331,10 +1349,10 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         let entry_now = balances_with_retries(&entry.api)
             .await
             .context("polling entry balances")?;
-        recovered = exit_now.safe_hopr - exit_before.safe_hopr;
+        let recovered = exit_now.safe_hopr - exit_before.safe_hopr;
         cycles = completed_cycles(recovered, per_sweep).unwrap_or(cycles);
-        entry_metrics = NodeMetrics::scrape(&entry.api).await;
-        exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
+        let entry_metrics = NodeMetrics::scrape(&entry.api).await;
+        let exit_metrics = NodeMetrics::scrape(&exit_node.api).await;
         let relayed = relay_forwarded(cluster.nodes(), &relays_metrics_before).await;
 
         let sent_n = sent.load(Ordering::Acquire);
@@ -1359,25 +1377,83 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             relay_split_pct = ?relay_shares(&relayed),
             deposits = entry_metrics.deposits,
             deposits_failed = entry_metrics.deposits_failed,
+            budget_refusals = entry_metrics.deposits_over_budget,
+            deposit_tracking_timeouts = exit_metrics.deposits_timed_out,
             confirmed = exit_metrics.deposits_confirmed,
             keys = exit_metrics.keys_recovered,
             sweeps = exit_metrics.sweeps,
             "live"
         );
 
-        if exit_metrics.deposits_timed_out > 0 {
-            killed = true;
-            tracing::info!(
-                "the Entry ran out of deposit funds and the Exit's kill switch tripped after \
-                 {:?}",
-                t0.elapsed()
-            );
-            break;
-        }
         if Instant::now() >= deadline {
-            break;
+            break None;
         }
+    };
+
+    stop.store(true, Ordering::Release);
+    traffic.abort_all();
+
+    // Strict reads for the verdict: a failed scrape must not turn an early closure into
+    // a zero-counter snapshot. Report it before waiting for sweeps or unrelated checks.
+    let mut entry_metrics = NodeMetrics::try_scrape(&entry.api)
+        .await
+        .context("scraping entry metrics when PIX traffic stopped")?;
+    let mut exit_metrics = NodeMetrics::try_scrape(&exit_node.api)
+        .await
+        .context("scraping exit metrics when PIX traffic stopped")?;
+    let deposits = entry_metrics
+        .deposits
+        .saturating_sub(entry_metrics_before.deposits);
+    let budget_refusals = entry_metrics
+        .deposits_over_budget
+        .saturating_sub(entry_metrics_before.deposits_over_budget);
+    let mut closure = closure.unwrap_or_else(|| {
+        panic!(
+            "PIX soak safety deadline reached after {:?} without observing session closure: \
+             Entry made {deposits}/{funded_cycles} deposits, budget refusals={budget_refusals}, \
+             deposit failures={}, Exit observed={}, keys={}, sweeps={}. \
+             The Safe outlay is separate from the {float} deposit budget (Curvy shields once). \
+             Recent session events:\n{}",
+            t0.elapsed(),
+            entry_metrics.deposits_failed,
+            exit_metrics.deposits_confirmed,
+            exit_metrics.keys_recovered,
+            exit_metrics.sweeps,
+            session_monitor.summary()
+        )
+    });
+    // The bridge and manager log from different tasks. If a funded session's bridge
+    // ends just before the manager logs its kill-switch reason, allow one log poll
+    // for that reason to arrive rather than misclassifying a successful run.
+    if deposits == funded_cycles
+        && budget_refusals > 0
+        && !closure.is_budget_exhaustion(deposits, funded_cycles, budget_refusals)
+    {
+        tokio::time::sleep(REPORT_INTERVAL).await;
+        closure = session_monitor
+            .poll()
+            .context("reading the PIX session's final closure reason")?
+            .unwrap_or(closure);
     }
+    assert!(
+        closure.is_budget_exhaustion(deposits, funded_cycles, budget_refusals),
+        "PIX session closed unexpectedly after {:?}: Entry made {deposits}/{funded_cycles} \
+         deposits, budget refusals={budget_refusals}, deposit failures={}, Exit observed={}, \
+         keys={}, sweeps={}. Expected the Exit's deposit timeout only after all funded \
+         deposits and a refusal of the next deposit. Closure: {}\nRecent session events:\n{}",
+        t0.elapsed(),
+        entry_metrics.deposits_failed,
+        exit_metrics.deposits_confirmed,
+        exit_metrics.keys_recovered,
+        exit_metrics.sweeps,
+        closure.description,
+        session_monitor.summary()
+    );
+    tracing::info!(
+        elapsed = ?t0.elapsed(), deposits, budget_refusals,
+        closure = %closure.description,
+        "the Exit closed the PIX session after the Entry exhausted its deposit budget"
+    );
 
     // Sweeps of already-recovered keys outlive the Session, so give the last ones time to
     // land before reading the Safe for the final time.
@@ -1418,10 +1494,6 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         .context("scraping entry metrics for the closing assertions")?;
     let relayed = relay_forwarded(cluster.nodes(), &relays_metrics_before).await;
     let relay_split = relay_shares(&relayed);
-
-    stop.store(true, Ordering::Release);
-    sender.abort();
-    receiver.abort();
 
     let entry_after = entry.api.balances().await.context("entry balances after")?;
     let exit_after = exit_node
@@ -1465,16 +1537,6 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         );
     }
 
-    // The run ended the way it is designed to.
-    assert!(
-        killed,
-        "the Exit's kill switch never tripped within {:?}: the Entry was funded for \
-         {funded_cycles} deposits and made {}, spending {spent} of its {float}. Either cycles \
-         are running far slower than the {MAX_SECS_PER_CYCLE}s/cycle the deadline assumes, or \
-         deposits stopped for a reason other than running out of money.",
-        t0.elapsed(),
-        entry_metrics.deposits
-    );
     assert_eq!(
         entry_metrics.deposits_rejected, 0,
         "the Entry rejected {} deposit(s) as exceeding max_ssa_allocation ({MAX_SSA_ALLOCATION}), \

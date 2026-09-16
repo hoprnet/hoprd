@@ -19,7 +19,7 @@ done
 [[ $(uname -s) == Linux ]] || die "the soak runner requires Linux (shared host loopback)"
 [[ -z ${HOPRD_CHAIN_URL:-} ]] || die "unset HOPRD_CHAIN_URL; this runner owns a fresh chain"
 [[ -f $RELEASE ]] || die "set --release or CURVY_LOCALCLUSTER_RELEASE to a published release manifest; see localcluster/curvy/README.md"
-for cmd in docker curl jq sha256sum setsid; do
+for cmd in docker curl jq sha256sum setsid flock; do
   command -v "$cmd" >/dev/null || die "$cmd is required"
 done
 if $DASHBOARD; then
@@ -100,6 +100,19 @@ printf -v CURVY_RELAYER_KEY '0x%064x' $((0xc001))
 printf -v CURVY_PROVER_KEY '0x%064x' $((0xc002))
 export CURVY_RELAYER_KEY CURVY_PROVER_KEY
 compose config --quiet
+# Publish this run before pulling images or starting a new chain. The companion
+# may already be open and must stop using the previous run's logs and caches.
+export PIX_DEMO_STATE_DIR="${PIX_DEMO_STATE_DIR:-/tmp/pix-demo}"
+mkdir -p "$PIX_DEMO_STATE_DIR"
+[[ ! -L $PIX_DEMO_STATE_DIR && -d $PIX_DEMO_STATE_DIR && -O $PIX_DEMO_STATE_DIR ]] ||
+  die "PIX_DEMO_STATE_DIR must be a directory owned by $(id -un) and not a symlink"
+export PIX_DEMO_RUN_STARTED="$(date +%s)"
+(
+  flock -w 45 9 || die "dashboard cache is busy"
+  rm -f "$PIX_DEMO_STATE_DIR/finished"
+  printf '%s\n' "$PIX_DEMO_RUN_STARTED" >"$PIX_DEMO_STATE_DIR/started.tmp"
+  mv "$PIX_DEMO_STATE_DIR/started.tmp" "$PIX_DEMO_STATE_DIR/started"
+) 9>"$PIX_DEMO_STATE_DIR/.curvy.lock"
 if ! $OFFLINE; then
   while IFS= read -r image; do
     echo "curvy-localcluster: pulling $image"
@@ -285,4 +298,10 @@ TEST_PID=$!
 status=0
 wait "$TEST_PID" || status=$?
 TEST_PID=""
+# Keep the companion pane's final readings before removing the owned chain.
+# Only needed if that pane was opened during this run.
+if [[ -f ${PIX_DEMO_STATE_DIR:-/tmp/pix-demo}/curvy_run ]]; then
+  bash "$REPO_ROOT/localcluster/scripts/curvy-demo.sh" --snapshot >"$RUN_DIR/dashboard-snapshot.log" 2>&1 ||
+    echo "curvy-localcluster: final dashboard snapshot incomplete; see $RUN_DIR/dashboard-snapshot.log" >&2
+fi
 exit "$status"

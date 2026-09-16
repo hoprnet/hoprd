@@ -78,11 +78,52 @@ containers and database volume and removes them on exit. Logs remain in the
 printed `/tmp/hopr-curvy.XXXXXX` directory, `/tmp/pix-demo/test.log`, and
 `/tmp/pix-soak-logs`. Use `--no-dashboard` to stream test output.
 
+The soak harness watches the current node logs for session closure, including SSA
+handshake failures that never start deposit tracking. An early closure fails with
+the deposit count and recent handshake events. Success requires all funded
+deposits, a budget refusal, and the Exit's deposit-timeout closure; the existing
+payout and traffic checks still apply.
+
+## Companion dashboard
+
+In another terminal on the same Linux box, run:
+
+```bash
+./localcluster/scripts/curvy-demo.sh
+```
+
+The companion reads successful aggregation, commitment and withdrawal transactions
+from RPC receipts, including relayer and batch-prover submissions. Direct shielding
+is identified by the Entry Safe's token transfer into the vault. It shows scan
+coverage and whether readings are live, cached or unavailable. Transaction counts
+can differ from deposit counts because transactions may contain batches.
+The launcher resets the run timestamp before pulling images, so the companion
+does not combine a new chain with the previous run's cached node observations.
+
+The session pane's “Exit observed” means the deposit was detected by the Exit;
+recovering the SSA key still requires return-traffic shares. The companion's note
+correlation count does not mean that key recovery has happened.
+The SSA quota includes the packet-payload byte factor. Funded quota, node-wide
+packet totals and verified application echo volume are shown separately; packet
+counts cannot be converted directly into delivered application bytes. Application
+volume uses the latest test report, rounded down to whole decimal MB. View tag 0
+is valid (including for padding); it is not evidence of ownership or a failed note.
+
+If the companion was opened during the run, the launcher takes a final snapshot
+before removing the chain. Cached readings remain available afterward. Use
+`curvy-demo.sh --ledger` for the transfer and gas report, or `--rpc` for transaction
+details. The note list displays at most 1,000 records per category; RPC transaction
+counts are independent of that limit. Transfer linkability analysis is confined
+to `--ledger`, keeping the live pane focused on the run's operational readings.
+That analysis describes visible paths, not a proof of anonymity on this small
+local chain.
+
 ## Configuration checks
 
 ```bash
 bash -n localcluster/scripts/curvy-localcluster.sh localcluster/scripts/pix-demo.sh
 sh -n localcluster/curvy/run-soak.sh
+bash localcluster/scripts/tests/curvy-demo.sh
 ```
 
 These checks do not build HOPR or run the soak test.
