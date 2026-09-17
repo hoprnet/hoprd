@@ -15,12 +15,11 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# Pinned to the immutable hoprnet master rev that carries the datagram fix (hoprnet#8421, #8422
-# merged) plus the PIX fill and drain work (hoprnet#8396, #8398) and the balancer's gate on
-# organic SURB production (hoprnet#8392), per the pr.yaml rule that unreleased HOPR deps on
-# main use a rev, not a branch.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "896ffac490", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "896ffac490", default-features = false }
+# Pinned to the immutable hoprnet master rev that carries the pool-arbitration fix (hoprnet#8424,
+# #8426 merged) for the #8246 relay-throughput regression, per the pr.yaml rule that unreleased HOPR
+# deps on main use a rev, not a branch.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
 
 # crates.io HOPR deps
 
@@ -189,8 +188,3 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
-
-# TEMPORARY (pool-arbitration preview): hopr-lib at the hoprnet master arbiter tip pulls the
-# unpublished hopr-utilities main branch. Remove once hopr-utilities is published and hoprnet merges.
-[patch.crates-io]
-hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "kauki/feat/parallelize/pool-arbitration" }
