@@ -19,8 +19,8 @@ hoprd-api-client = { path = "rest-api-client" }
 # merged) plus the PIX fill and drain work (hoprnet#8396, #8398) and the balancer's gate on
 # organic SURB production (hoprnet#8392), per the pr.yaml rule that unreleased HOPR deps on
 # main use a rev, not a branch.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "a96c00de2e5bcf2b891c3e25bb7f8a57b53a4901", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a96c00de2e5bcf2b891c3e25bb7f8a57b53a4901", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "896ffac490", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "896ffac490", default-features = false }
 
 # crates.io HOPR deps
 
@@ -189,3 +189,8 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# TEMPORARY (pool-arbitration preview): hopr-lib at the hoprnet master arbiter tip pulls the
+# unpublished hopr-utilities main branch. Remove once hopr-utilities is published and hoprnet merges.
+[patch.crates-io]
+hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "kauki/feat/parallelize/pool-arbitration" }
