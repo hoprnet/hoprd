@@ -7,5 +7,6 @@ pub mod identity;
 pub mod latency;
 pub mod lock;
 pub mod relay;
+pub mod state;
 pub mod summary;
 pub mod sweep;

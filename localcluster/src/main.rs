@@ -26,6 +26,7 @@ use hoprd_localcluster::{
     identity,
     lock::ClusterLock,
     relay::{self, RelayConfig, RelayHandle},
+    state,
     summary::{ClusterState, ClusterSummary, NodeState},
     sweep,
 };
@@ -48,6 +49,7 @@ impl Cleanup {
         }
         for node in self.nodes.iter_mut() {
             let _ = node.child.kill();
+            let _ = node.child.wait();
         }
         if let Some(chain) = self.chain.as_mut() {
             chain.stop();
@@ -115,6 +117,7 @@ async fn main() -> Result<()> {
 
     let data_dir = args.data_dir.clone();
     fs::create_dir_all(&data_dir).context("failed to create data directory")?;
+    let data_dir = fs::canonicalize(&data_dir).context("failed to resolve data directory")?;
     let log_dir = data_dir.join("logs");
     fs::create_dir_all(&log_dir).context("failed to create log directory")?;
 
@@ -126,6 +129,14 @@ async fn main() -> Result<()> {
     // Refuse to run a second instance against the same control base. Held for the
     // whole process lifetime; released automatically on exit (including a crash).
     let _lock = ClusterLock::acquire(&control_base)?;
+    // A custom control base must not allow two harnesses to share node state.
+    let data_lock_base = data_dir.join("data");
+    let _data_lock =
+        if fs::canonicalize(ClusterLock::path_for(&control_base))? == data_dir.join("data.lock") {
+            None
+        } else {
+            Some(ClusterLock::acquire(&data_lock_base)?)
+        };
 
     // Live status, updated through the lifecycle and served on the control socket.
     let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(
@@ -158,6 +169,10 @@ async fn main() -> Result<()> {
             url
         };
         summary.lock().await.blokli_url = Some(blokli_url.clone());
+        state::prepare_node_state(&data_dir, explicit_chain_url.is_none())?;
+        if explicit_chain_url.is_none() {
+            info!("cleared node state for the fresh managed chain");
+        }
 
         let config = identity::GenerationConfig {
             blokli_url: blokli_url.clone(),
@@ -165,6 +180,7 @@ async fn main() -> Result<()> {
             config_home: data_dir.to_path_buf(),
             identity_password: args.identity_password.clone(),
             random_identities: true,
+            reuse_identities: explicit_chain_url.is_some(),
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,

@@ -376,6 +376,9 @@ pub struct GenerationConfig {
     pub config_home: PathBuf,
     pub identity_password: String,
     pub random_identities: bool,
+    /// Reuse saved node keystores when reconnecting to an existing chain.
+    /// An unreadable keystore is an error; it must never be silently replaced.
+    pub reuse_identities: bool,
     /// Number of extra identities to provision (0–`MAX_EXTRA_IDENTITIES`).
     pub num_extras: usize,
     /// P2P bind/announce host. Used to pre-announce nodes so blokli indexes
@@ -404,6 +407,7 @@ impl Default for GenerationConfig {
             config_home: PathBuf::from(DEFAULT_CONFIG_HOME),
             identity_password: DEFAULT_IDENTITY_PASSWORD.to_string(),
             random_identities: false,
+            reuse_identities: false,
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
@@ -520,6 +524,25 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
     s.parse().context("invalid pre-announce multiaddr")
 }
 
+/// Load an external chain's saved identity, or persist a new one before funding it.
+fn node_keys(id: usize, config: &GenerationConfig, id_file: &str) -> anyhow::Result<HoprKeys> {
+    if config.reuse_identities && std::path::Path::new(id_file).try_exists()? {
+        return HoprKeys::read_eth_keystore(id_file, &config.identity_password)
+            .map(|(keys, _)| keys)
+            .with_context(|| format!("reading existing node {id} identity {id_file}"));
+    }
+    let keys = if config.random_identities {
+        HoprKeys::random()
+    } else {
+        let (packet_key, chain_key) = NODE_SECRETS[id];
+        frozen_hopr_keys(packet_key, chain_key)
+            .with_context(|| format!("frozen keys of node {id}"))?
+    };
+    // Persist before funding the account or its Safe.
+    keys.write_eth_keystore(id_file, &config.identity_password)?;
+    Ok(keys)
+}
+
 /// Build the hoprd configuration for cluster node `id`.
 ///
 /// This is the chain-free half of node provisioning: everything here is derived from
@@ -555,19 +578,21 @@ fn node_config(
             ..Default::default()
         },
         identity: Identity {
-            file: id_file.to_owned(),
+            file: std::path::absolute(id_file)?
+                .to_str()
+                .context("Invalid identity path")?
+                .to_owned(),
             password: config.identity_password.clone(),
             private_key: None,
         },
         db: Db {
-            data: config
-                .config_home
+            data: std::path::absolute(&config.config_home)?
                 .join(format!("db_{id}"))
                 .to_str()
                 .ok_or(anyhow::anyhow!("Invalid path"))?
                 .to_owned(),
             initialize: true,
-            force_initialize: true,
+            force_initialize: false,
         },
         api: Api {
             enable: true,
@@ -599,7 +624,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         "generating identities",
     );
     std::fs::create_dir_all(&config.config_home)?;
-    let home_path = &config.config_home;
+    let home_path = std::fs::canonicalize(&config.config_home)?;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
 
     let blokli_client =
@@ -779,26 +804,22 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         home_dir = %home_path.display(),
         "generating node identities",
     );
-    for (id, (packet_key, chain_key)) in NODE_SECRETS.iter().take(effective_num_nodes).enumerate() {
-        let kp = if config.random_identities {
-            HoprKeys::random()
-        } else {
-            frozen_hopr_keys(*packet_key, *chain_key)
-                .with_context(|| format!("frozen keys of node {id}"))?
-        };
-        let node_address = kp.chain_key.public().to_address();
-        info!(node_id = %id, address = %node_address, "node identity");
-        eprintln!("Node {id}: Address {node_address}");
-
-        // Persist the identity *before* anything is funded or deployed for it. Everything below
-        // moves tokens to this key's account and Safe; if the process dies mid-way — it did, on a
-        // real chain — a key that only ever lived in memory takes those tokens with it.
+    for id in 0..effective_num_nodes {
         let id_file = home_path.join(format!("node_id_{id}.id"));
         let id_file_str = id_file
             .to_str()
             .ok_or(anyhow::anyhow!("Invalid path"))?
             .to_owned();
-        kp.write_eth_keystore(&id_file_str, &config.identity_password)?;
+        let kp = node_keys(id, config, &id_file_str)?;
+        let node_address = kp.chain_key.public().to_address();
+        if config.reuse_identities {
+            crate::state::adopt_legacy_curvy_state(
+                &home_path.join(format!("db_{id}")),
+                &std::env::current_dir()?.join(format!("curvy-pix-{node_address}.redb")),
+            )?;
+        }
+        info!(node_id = %id, address = %node_address, "node identity");
+        eprintln!("Node {id}: Address {node_address}");
 
         let node_connector = std::sync::Arc::new(
             create_trustful_safeless_hopr_blokli_connector(
@@ -1194,6 +1215,61 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_chain_reuses_keys_and_never_replaces_an_unreadable_keystore() -> anyhow::Result<()>
+    {
+        let dir = tempfile::tempdir()?;
+        let identity_file = dir.path().join("node_id_0.id");
+        let identity_file = identity_file.to_str().unwrap();
+        let mut config = GenerationConfig {
+            reuse_identities: true,
+            ..Default::default()
+        };
+        let original = node_keys(0, &config, identity_file)?;
+        let saved = std::fs::read(identity_file)?;
+        config.random_identities = true;
+        let restored = node_keys(0, &config, identity_file)?;
+        assert_eq!(original.chain_key.public(), restored.chain_key.public());
+        assert_eq!(std::fs::read(identity_file)?, saved);
+
+        config.identity_password = "wrong password".into();
+        assert!(node_keys(0, &config, identity_file).is_err());
+        assert_eq!(std::fs::read(identity_file)?, saved);
+        std::fs::write(identity_file, "broken keystore")?;
+        assert!(node_keys(0, &config, identity_file).is_err());
+        assert_eq!(std::fs::read_to_string(identity_file)?, "broken keystore");
+        Ok(())
+    }
+
+    #[test]
+    fn generated_paths_are_independent_of_the_node_working_directory() -> anyhow::Result<()> {
+        let config = GenerationConfig {
+            config_home: "relative-cluster".into(),
+            ..Default::default()
+        };
+        let built = node_config(
+            0,
+            &config,
+            SafeModule {
+                safe_address: "0x1111111111111111111111111111111111111111".parse()?,
+                module_address: "0x2222222222222222222222222222222222222222".parse()?,
+            },
+            &MultiStrategyConfig::default(),
+            "relative-cluster/node_id_0.id",
+            &None,
+        )?;
+        assert_eq!(
+            PathBuf::from(built.db.data),
+            std::path::absolute("relative-cluster/db_0")?
+        );
+        assert_eq!(
+            PathBuf::from(built.identity.file),
+            std::path::absolute("relative-cluster/node_id_0.id")?
+        );
+        assert!(!built.db.force_initialize);
+        Ok(())
+    }
 
     /// The frozen secrets are static, so a `HoprKeys` construction failure would break every
     /// non-random cluster run. Guard all of them here instead of at startup.

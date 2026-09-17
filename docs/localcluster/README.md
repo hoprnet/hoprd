@@ -47,8 +47,6 @@ nix develop -c cargo build -p hoprd -p hoprd-localcluster
 ### Default (Docker)
 
 ```bash
-rm -rf /tmp/hopr-nodes   # clear any stale state
-
 CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
@@ -62,8 +60,6 @@ RUST_LOG=info \
 
 ```bash
 container system start   # once per boot
-
-rm -rf /tmp/hopr-nodes
 
 CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
@@ -89,6 +85,28 @@ HOPRD_CHAIN_URL=http://localhost:8080 \
 ```
 
 Press **Ctrl-C** to stop — the orchestrator kills all `hoprd` processes and removes the chain container on exit.
+
+### State across runs
+
+Each launch that starts a managed chain container clears the node directories
+`<data-dir>/db_0` through `db_4` before provisioning and starting nodes. This also
+clears nodes left over from a larger cluster. You do not need to delete the data
+directory between runs. The reset leaves files outside those node directories
+alone, including the control locks.
+
+Nodes run with their own `db_<id>` as their working directory, so Curvy's default
+`curvy-pix-<address>.redb` and any relative PIX recovery paths stay inside the
+managed node directory. Generated config and identity paths are absolute;
+relative `--hoprd-bin` and `CURVY_ZK_KEYS_DIR` paths still resolve from the
+directory where you launch localcluster.
+
+With `--chain-url` (or `HOPRD_CHAIN_URL`), localcluster preserves node databases
+and reuses existing node keystores. Restarting nodes also preserves their state.
+If you deliberately replace an external chain, use a fresh `--data-dir`.
+When resuming an external chain, a legacy `curvy-pix-<address>.redb` in the
+caller's working directory is moved into the corresponding `db_<id>`. If both
+locations contain a database, startup fails so you can select the correct one.
+Fresh managed chains leave legacy files outside the node directories untouched.
 
 ### Docker Compose
 
