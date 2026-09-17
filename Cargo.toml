@@ -18,10 +18,10 @@ hoprd-api-client = { path = "rest-api-client" }
 # TEMPORARY (hoprnet#8421): tracks the hoprnet release/4.0 branch, which now carries the datagram
 # fix (hoprnet#8423, merged). Revert to a plain published `hopr-lib` version once release/4.0 is
 # tagged and published.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "release/4.0", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/transport/packet-pipeline-concurrency-defaults-r40", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { version = "0.28.0", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "release/4.0", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "kauki/fix/transport/packet-pipeline-concurrency-defaults-r40", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "2.0.0" }
@@ -185,3 +185,8 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# TEMPORARY (pool-arbitration preview): hopr-lib at the hoprnet release/4.0 arbiter branch pulls the
+# unpublished hopr-utilities compat/v4 branch. Remove once hopr-utilities is published and #8425 merges.
+[patch.crates-io]
+hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "kauki/feat/parallelize/pool-arbitration-v4" }

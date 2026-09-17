@@ -5101,7 +5101,7 @@ dependencies = [
 [[package]]
 name = "hopr-crypto-packet"
 version = "1.4.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "bimap",
  "const-hex",
@@ -5136,8 +5136,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-lib"
-version = "4.0.4"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+version = "4.0.5"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5198,7 +5198,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-app"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "hopr-crypto-packet",
  "hopr-types",
@@ -5211,7 +5211,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-hopr"
 version = "6.2.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5240,7 +5240,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-session"
 version = "1.5.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "aquamarine",
  "asynchronous-codec",
@@ -5271,7 +5271,7 @@ dependencies = [
 [[package]]
 name = "hopr-protocol-start"
 version = "1.1.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "aquamarine",
  "flagset",
@@ -5358,8 +5358,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-transport"
-version = "0.48.4"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+version = "0.48.5"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5403,7 +5403,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-mixer"
 version = "0.4.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "futures",
  "futures-timer",
@@ -5443,7 +5443,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-probe"
 version = "0.8.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5469,7 +5469,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-session"
 version = "0.30.0"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5501,7 +5501,7 @@ dependencies = [
 [[package]]
 name = "hopr-transport-tag-allocator"
 version = "0.1.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "hopr-protocol-app",
  "serde",
@@ -5576,9 +5576,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-utilities"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4be85522dd5a1a42e3114d17ee354002cd5fe51aac691af95c035e3b953bfee"
+version = "0.9.3"
+source = "git+https://github.com/hoprnet/hopr-utilities?branch=kauki%2Ffeat%2Fparallelize%2Fpool-arbitration-v4#80ee35b89c8fb6157547f06505f17ed5f48c627b"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5586,6 +5585,7 @@ dependencies = [
  "blokli-client",
  "const-hex",
  "crossfire",
+ "event-listener 5.4.2",
  "flume",
  "futures",
  "futures-time",
@@ -5614,7 +5614,7 @@ dependencies = [
 [[package]]
 name = "hopr-utils-session"
 version = "1.2.1"
-source = "git+https://github.com/hoprnet/hoprnet?branch=release%2F4.0#80a6324e17ab010faa49c32087becc29f68f1300"
+source = "git+https://github.com/hoprnet/hoprnet?branch=kauki%2Ffix%2Ftransport%2Fpacket-pipeline-concurrency-defaults-r40#d1ecba53a43e4567ae2c9ead113dab93180d4e2b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5640,7 +5640,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "4.1.2"
+version = "4.1.3"
 dependencies = [
  "anyhow",
  "async-signal",
