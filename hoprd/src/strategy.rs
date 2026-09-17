@@ -195,6 +195,7 @@ pub struct PixNotBuilt {}
 /// which accepts any `Box<dyn Strategy + Send>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, StrumDisplay, VariantNames)]
 #[strum(serialize_all = "snake_case")]
+#[cfg_attr(feature = "pix", allow(clippy::large_enum_variant))]
 pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
     AutoRedeeming(hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig),

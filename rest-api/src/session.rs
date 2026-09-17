@@ -13,8 +13,8 @@ use hopr_lib::{
     api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
-        HoprPixSpec, PixParams, SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId,
-        SessionTarget, SurbBalancerConfig,
+        SESSION_MTU, SURB_SIZE, ServiceId, SessionCapabilities, SessionId, SessionTarget,
+        SurbBalancerConfig,
     },
 };
 #[allow(deprecated)]
@@ -152,7 +152,7 @@ pub enum RoutingOptions {
     IntermediatePath(Vec<String>),
 }
 
-impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
+impl TryFrom<RoutingOptions> for HopRouting {
     type Error = GeneralError;
 
     /// Converts API routing options into protocol-level hop routing.
@@ -167,8 +167,8 @@ impl TryFrom<RoutingOptions> for hopr_lib::HopRouting {
     }
 }
 
-impl From<hopr_lib::HopRouting> for RoutingOptions {
-    fn from(opts: hopr_lib::HopRouting) -> Self {
+impl From<HopRouting> for RoutingOptions {
+    fn from(opts: HopRouting) -> Self {
         RoutingOptions::Hops(opts.hop_count())
     }
 }
@@ -305,22 +305,6 @@ pub(crate) struct SessionClientRequest {
     ///
     /// The default value is 5.
     pub max_client_sessions: Option<usize>,
-    /// PIX SSA parameters.
-    ///
-    /// When set, the Session will use the PIX protocol with the given parameters. When
-    /// not set, PIX is not advertised to the Exit node.
-    ///
-    /// All three dimensions have to match this node's own installed share generator, or the
-    /// Session is refused at setup.
-    ///
-    /// [`PixParams`] is a quadruple — the fourth element is the curve suite, and it is
-    /// deliberately not here. The suite is a property of this build, fixed by the
-    /// `pix-bjj`/`pix-secp256k1` feature that selects `HoprPixSpec`, not something an API
-    /// caller may pick: shares are produced under one curve and announcing another would
-    /// describe a generator this node does not have. It is supplied by
-    /// `PixParams::try_new_for::<HoprPixSpec>` so it comes from the same place the shares do.
-    #[serde(default)]
-    pub pix_ssa_quota: Option<PixSsaQuota>,
     /// Flow-control (AIMD send-window) profile for this session: `off` | `clean` | `robust`.
     ///
     /// Flow control paces the entry (sending) side of the session. When omitted, the node's
@@ -328,33 +312,6 @@ pub(crate) struct SessionClientRequest {
     /// profile for throttled / high-latency multi-hop paths.
     #[serde(default)]
     pub flow_control: Option<crate::config::SessionFlowControl>,
-}
-
-/// Maps the wire-form quota onto [`PixParams`] for this build's curve suite.
-///
-/// Shared by both session request types because the conversion carries the whole validation
-/// contract of `pixSsaQuota` — the node refuses any Session whose three dimensions disagree with
-/// its installed generator — and two hand-synchronised copies of that is one copy too many.
-///
-/// The error text is kept. It names which dimension is wrong and what the node expects, and it is
-/// what stands between a caller whose generator disagrees and a bare `400 INVALID_INPUT`.
-fn pix_params_from_quota(quota: Option<PixSsaQuota>) -> Result<Option<PixParams>, ApiErrorStatus> {
-    quota
-        .map(|q| {
-            let PixSsaQuota {
-                polys_per_ssa,
-                shares_per_poly,
-                surplus_shares,
-            } = q;
-            PixParams::try_new_for::<HoprPixSpec>(polys_per_ssa, shares_per_poly, surplus_shares)
-                .map_err(|e| {
-                    ApiErrorStatus::InvalidInputDetail(format!(
-                        "invalid pixSsaQuota {{polysPerSsa: {polys_per_ssa}, sharesPerPoly: \
-                         {shares_per_poly}, surplusShares: {surplus_shares}}}: {e}"
-                    ))
-                })
-        })
-        .transpose()
 }
 
 /// Rejects a `pixSsaQuota` and a `UsePIX` capability that do not arrive together.
@@ -410,7 +367,6 @@ impl SessionClientRequest {
                 // Only Segmentation capability for UDP per default
                 _ => SessionCapability::Segmentation.into(),
             });
-        check_pix_consistency(capabilities, self.pix_ssa_quota)?;
 
         Ok((
             self.destination,
@@ -424,7 +380,6 @@ impl SessionClientRequest {
                     max_surb_upstream: self.max_surb_upstream,
                 }
                 .into(),
-                pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                 // Per-request profile overrides the node default when present.
                 flow_control: self
                     .flow_control
@@ -564,7 +519,6 @@ impl SessionClientExplicitPathRequest {
                         max_surb_upstream: self.max_surb_upstream,
                     }
                     .into(),
-                    pix_ssa_quota: pix_params_from_quota(self.pix_ssa_quota)?,
                     // The deprecated explicit-path endpoint has no per-request override, so it
                     // always uses the node default profile.
                     flow_control,
@@ -1400,7 +1354,6 @@ mod tests {
             max_surb_upstream: None,
             session_pool: None,
             max_client_sessions: None,
-            pix_ssa_quota: None,
             flow_control: per_request,
         };
 
@@ -1497,59 +1450,12 @@ mod tests {
         ));
     }
 
-    /// A caller whose dimensions disagree with the generator has to be told which one, and the
-    /// status code has to stay 400 while that happens.
-    #[test]
-    fn pix_params_conversion_keeps_the_validation_message() {
-        assert!(matches!(pix_params_from_quota(None), Ok(None)));
-
-        // 0 polynomials cannot describe a generator, whichever spec this build installed.
-        match pix_params_from_quota(Some(quota(0, 0, 0))) {
-            Err(ApiErrorStatus::InvalidInputDetail(detail)) => {
-                assert!(
-                    detail.starts_with(
-                        "invalid pixSsaQuota {polysPerSsa: 0, sharesPerPoly: 0, surplusShares: \
-                         0}: "
-                    ),
-                    "detail should name each offending dimension, got {detail:?}"
-                );
-            }
-            other => panic!("expected a detailed InvalidInput, got {other:?}"),
-        }
-    }
-
     fn quota(polys_per_ssa: u16, shares_per_poly: u8, surplus_shares: u8) -> PixSsaQuota {
         PixSsaQuota {
             polys_per_ssa,
             shares_per_poly,
             surplus_shares,
         }
-    }
-
-    #[test]
-    fn pix_ssa_quota_roundtrips_via_json() {
-        let req = SessionClientRequest {
-            destination: Address::default(),
-            forward_path: RoutingOptions::Hops(1),
-            return_path: RoutingOptions::Hops(1),
-            target: SessionTargetSpec::Plain("127.0.0.1:8080".to_string()),
-            listen_host: None,
-            capabilities: None,
-            response_buffer: None,
-            max_surb_upstream: None,
-            session_pool: None,
-            max_client_sessions: None,
-            pix_ssa_quota: Some(quota(8, 4, 2)),
-            flow_control: None,
-        };
-        let serialized = serde_json::to_value(&req).expect("serialize");
-        assert_eq!(
-            serialized["pixSsaQuota"],
-            serde_json::json!({"polysPerSsa": 8, "sharesPerPoly": 4, "surplusShares": 2})
-        );
-        let deserialized: SessionClientRequest =
-            serde_json::from_value(serialized).expect("deserialize");
-        assert_eq!(deserialized.pix_ssa_quota, Some(quota(8, 4, 2)));
     }
 
     /// Every dimension is named, required, and spelled the one way.
