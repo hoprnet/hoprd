@@ -14,6 +14,7 @@ description = "Local HOPR cluster runner using external hoprd processes"
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true }
+humantime-serde = { workspace = true }
 # The PIX pool pairing has to match the one the *binary* under test was built with — see
 # `strategy-pix-test` in hoprd's Cargo.toml. It is stated in both places because these are
 # two different builds: this one produces the test harness, and `cargo build --release -p hoprd`
