@@ -280,8 +280,8 @@ pub mod types {
     ///  "description": "Standardized error response for the API",
     ///  "examples": [
     ///    {
-    ///      "error": "Invalid value passed in parameter 'XYZ'",
-    ///      "status": "INVALID_INPUT"
+    ///      "status": "INVALID_INPUT",
+    ///      "error": "Invalid value passed in parameter 'XYZ'"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -621,8 +621,8 @@ pub mod types {
     ///  "description": "Parameters for enumerating channels.",
     ///  "examples": [
     ///    {
-    ///      "fullTopology": false,
-    ///      "includingClosed": true
+    ///      "includingClosed": true,
+    ///      "fullTopology": false
     ///    }
     ///  ],
     ///  "type": "object",
@@ -766,9 +766,9 @@ pub mod types {
     ///  "examples": [
     ///    {
     ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -1045,10 +1045,10 @@ nothing has been learned about yet would read as one known to be failing.*/
     ///  "description": "Channel information as seen by the node.",
     ///  "examples": [
     ///    {
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
     ///      "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///      "status": "Open"
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1106,14 +1106,14 @@ nothing has been learned about yet would read as one known to be failing.*/
     ///    {
     ///      "all": [
     ///        {
-    ///          "balance": "10 wxHOPR",
-    ///          "channelEpoch": 1,
     ///          "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///          "closureTime": 0,
-    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
     ///          "source": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6",
+    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
+    ///          "balance": "10 wxHOPR",
     ///          "status": "Open",
-    ///          "ticketIndex": 0
+    ///          "ticketIndex": 0,
+    ///          "channelEpoch": 1,
+    ///          "closureTime": 0
     ///        }
     ///      ],
     ///      "incoming": [],
@@ -1181,15 +1181,15 @@ and indexer state.*/
     ///      "announcedAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
     ///      ],
-    ///      "chainStatus": "Ready",
+    ///      "providerUrl": "https://staging.blokli.hoprnet.link",
+    ///      "hoprNetworkName": "rotsee",
     ///      "channelClosurePeriod": 15,
     ///      "connectivityStatus": "Green",
-    ///      "hoprNetworkName": "rotsee",
+    ///      "chainStatus": "Ready",
     ///      "hoprNodeSafe": "0x42bc901b1d040f984ed626eff550718498a6798a",
     ///      "listeningAddress": [
     ///        "/ip4/10.0.2.100/tcp/19092"
-    ///      ],
-    ///      "providerUrl": "https://staging.blokli.hoprnet.link"
+    ///      ]
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1309,16 +1309,16 @@ and indexer state.*/
     ///      "observed": [
     ///        "/ip4/10.0.2.100/tcp/19093"
     ///      ],
-    ///      "outgoingChannel": {
-    ///        "balance": "10 wxHOPR",
-    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///        "status": "Open"
-    ///      },
     ///      "qos": {
-    ///        "averageLatency": 100,
-    ///        "lastUpdate": 1690000000000,
     ///        "probeRate": 0.476,
+    ///        "lastUpdate": 1690000000000,
+    ///        "averageLatency": 100,
     ///        "score": 0.7
+    ///      },
+    ///      "outgoingChannel": {
+    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
+    ///        "status": "Open",
+    ///        "balance": "10 wxHOPR"
     ///      }
     ///    }
     ///  ],
@@ -1388,6 +1388,8 @@ and indexer state.*/
     ///{
     ///  "examples": [
     ///    {
+    ///      "overall": "Ready",
+    ///      "nodeState": "Node is running",
     ///      "components": {
     ///        "chain": {
     ///          "status": "Ready"
@@ -1398,9 +1400,7 @@ and indexer state.*/
     ///        "transport": {
     ///          "status": "Ready"
     ///        }
-    ///      },
-    ///      "nodeState": "Node is running",
-    ///      "overall": "Ready"
+    ///      }
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1449,11 +1449,11 @@ and indexer state.*/
     ///  "description": "Received tickets statistics.",
     ///  "examples": [
     ///    {
+    ///      "winningCount": 0,
     ///      "neglectedValue": "0 wxHOPR",
     ///      "redeemedValue": "1000 wxHOPR",
     ///      "rejectedValue": "0 wxHOPR",
-    ///      "unredeemedValue": "2000 wxHOPR",
-    ///      "winningCount": 0
+    ///      "unredeemedValue": "2000 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1635,9 +1635,9 @@ and indexer state.*/
     ///  "description": "Channel information for a specific peer.",
     ///  "examples": [
     ///    {
-    ///      "balance": "10 wxHOPR",
     ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
+    ///      "status": "Open",
+    ///      "balance": "10 wxHOPR"
     ///    }
     ///  ],
     ///  "type": "object",
@@ -1684,9 +1684,9 @@ and indexer state.*/
     ///  "description": "QoS observation data for a peer.",
     ///  "examples": [
     ///    {
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
     ///      "probeRate": 0.476,
+    ///      "lastUpdate": 1690000000000,
+    ///      "averageLatency": 100,
     ///      "score": 0.7
     ///    }
     ///  ],
@@ -1799,78 +1799,6 @@ the absent case as `0.0` would be indistinguishable from a peer measured at zero
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct PingResponse {
         pub latency: i64,
-    }
-    /**The three SSA dimensions a PIX Session is priced against.
-
-Named fields rather than the positional triple this used to be, for the reason
-[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable
-to any type checker and are *not* interchangeable to the protocol, while their product —
-which is all the Exit compares — is identical either way. A transposed pair therefore
-announces valid-looking dimensions against a correct quota. Names are what close that, and
-they close it in every consumer of the spec, not just the Rust ones.
-
-The field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the
-packed protocol word.*/
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "The three SSA dimensions a PIX Session is priced against.\n\nNamed fields rather than the positional triple this used to be, for the reason\n[`PixParams`] gives for its own shape: `polysPerSsa` and `sharesPerPoly` are interchangeable\nto any type checker and are *not* interchangeable to the protocol, while their product —\nwhich is all the Exit compares — is identical either way. A transposed pair therefore\nannounces valid-looking dimensions against a correct quota. Names are what close that, and\nthey close it in every consumer of the spec, not just the Rust ones.\n\nThe field names are [`PixParams`]' own, so one vocabulary runs from the JSON body to the\npacked protocol word.",
-    ///  "examples": [
-    ///    {
-    ///      "polysPerSsa": 8,
-    ///      "sharesPerPoly": 4,
-    ///      "surplusShares": 2
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "polysPerSsa",
-    ///    "sharesPerPoly",
-    ///    "surplusShares"
-    ///  ],
-    ///  "properties": {
-    ///    "polysPerSsa": {
-    ///      "description": "Polynomials per SSA.",
-    ///      "type": "integer",
-    ///      "maximum": 65535.0,
-    ///      "minimum": 0.0
-    ///    },
-    ///    "sharesPerPoly": {
-    ///      "description": "Shares per polynomial, i.e. the reconstruction threshold.",
-    ///      "type": "integer",
-    ///      "maximum": 255.0,
-    ///      "minimum": 0.0
-    ///    },
-    ///    "surplusShares": {
-    ///      "description": "Shares beyond the threshold.\n\nPriced like the other two: the per-SSA quota is\n`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that\ndisagreed with the Exit would size every deposit against a quota the node never\nagreed to.",
-    ///      "type": "integer",
-    ///      "maximum": 255.0,
-    ///      "minimum": 0.0
-    ///    }
-    ///  },
-    ///  "additionalProperties": false
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
-    #[serde(deny_unknown_fields)]
-    pub struct PixSsaQuota {
-        ///Polynomials per SSA.
-        #[serde(rename = "polysPerSsa")]
-        pub polys_per_ssa: u16,
-        ///Shares per polynomial, i.e. the reconstruction threshold.
-        #[serde(rename = "sharesPerPoly")]
-        pub shares_per_poly: u8,
-        /**Shares beyond the threshold.
-
-Priced like the other two: the per-SSA quota is
-`polysPerSsa × (sharesPerPoly + surplusShares) × PAYLOAD_SIZE`, so a surplus that
-disagreed with the Exit would size every deposit against a quota the node never
-agreed to.*/
-        #[serde(rename = "surplusShares")]
-        pub surplus_shares: u8,
     }
     ///Request body for ticket redemption with optional fields.
     ///
@@ -2076,25 +2004,25 @@ If omitted, tickets in all channels are redeemed.*/
     ///  "description": "Request body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "capabilities": [
-    ///        "Retransmission",
-    ///        "Segmentation"
-    ///      ],
     ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "listenHost": "127.0.0.1:10000",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
     ///      "target": {
     ///        "Plain": "localhost:8080"
-    ///      }
+    ///      },
+    ///      "listenHost": "127.0.0.1:10000",
+    ///      "capabilities": [
+    ///        "Retransmission",
+    ///        "Segmentation"
+    ///      ],
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "sessionPool": 0,
+    ///      "maxClientSessions": 2
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2146,9 +2074,6 @@ If omitted, tickets in all channels are redeemed.*/
     ///        "string",
     ///        "null"
     ///      ]
-    ///    },
-    ///    "pixSsaQuota": {
-    ///      "$ref": "#/components/schemas/PixSsaQuota"
     ///    },
     ///    "responseBuffer": {
     ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
@@ -2230,12 +2155,6 @@ All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
-        #[serde(
-            rename = "pixSsaQuota",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        pub pix_ssa_quota: ::std::option::Option<PixSsaQuota>,
         /**The amount of response data the Session counterparty can deliver back to us,
 without us sending any SURBs to them.
 
@@ -2276,24 +2195,24 @@ Currently, the maximum value is 5.*/
     ///  "description": "Response body for creating a new client session.",
     ///  "examples": [
     ///    {
-    ///      "activeClients": [],
+    ///      "target": "example.com:80",
     ///      "destination": "0x5112D584a1C72Fc250176B57aEba5fFbbB287D8F",
     ///      "forwardPath": {
     ///        "Hops": 1
     ///      },
-    ///      "hoprMtu": 1002,
-    ///      "ip": "127.0.0.1",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "port": 5542,
-    ///      "protocol": "tcp",
-    ///      "responseBuffer": "2 MB",
     ///      "returnPath": {
     ///        "Hops": 1
     ///      },
-    ///      "sessionPool": 0,
+    ///      "protocol": "tcp",
+    ///      "ip": "127.0.0.1",
+    ///      "port": 5542,
+    ///      "hoprMtu": 1002,
     ///      "surbLen": 398,
-    ///      "target": "example.com:80"
+    ///      "activeClients": [],
+    ///      "maxClientSessions": 2,
+    ///      "maxSurbUpstream": "2000 kb/s",
+    ///      "responseBuffer": "2 MB",
+    ///      "sessionPool": 0
     ///    }
     ///  ],
     ///  "type": "object",
@@ -2462,8 +2381,8 @@ This is useful for SURB balancing calculations.*/
     ///{
     ///  "examples": [
     ///    {
-    ///      "maxSurbUpstream": "2 Mbps",
-    ///      "responseBuffer": "2 MB"
+    ///      "responseBuffer": "2 MB",
+    ///      "maxSurbUpstream": "2 Mbps"
     ///    }
     ///  ],
     ///  "type": "object",

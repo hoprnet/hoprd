@@ -15,12 +15,12 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# Pinned to the immutable hoprnet master rev that carries the datagram fix (hoprnet#8421, #8422
-# merged) plus the PIX fill and drain work (hoprnet#8396, #8398) and the balancer's gate on
-# organic SURB production (hoprnet#8392), per the pr.yaml rule that unreleased HOPR deps on
-# main use a rev, not a branch.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "a96c00de2e5bcf2b891c3e25bb7f8a57b53a4901", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a96c00de2e5bcf2b891c3e25bb7f8a57b53a4901", default-features = false }
+# Pinned to the immutable hoprnet master rev that drops `pix_ssa_quota` from the session client
+# config (hoprnet#8430), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a
+# branch. A `branch = "master"` here would re-resolve on every lock refresh, so the commit the
+# tests ran against and the one CI builds could differ without either moving.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
 
 # crates.io HOPR deps
 
