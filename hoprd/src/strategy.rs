@@ -195,7 +195,6 @@ pub struct PixNotBuilt {}
 /// which accepts any `Box<dyn Strategy + Send>`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, StrumDisplay, VariantNames)]
 #[strum(serialize_all = "snake_case")]
-#[cfg_attr(feature = "pix", allow(clippy::large_enum_variant))]
 pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
     AutoRedeeming(hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig),
@@ -208,8 +207,14 @@ pub enum StrategyKind {
     /// Makes an Exit paid for the traffic it delivers: the Entry deposits to per-Session
     /// stealth addresses, the Exit recovers each key from the shares its spent SURBs carried
     /// and sweeps the deposit into its Safe. Not in [`hopr_default_strategies`] — opt-in.
+    ///
+    /// Boxed for the reason [`ChannelLifecycle`](StrategyKind::ChannelLifecycle) is: at 416
+    /// bytes against a 64-byte runner-up it sets the size of every element of
+    /// [`MultiStrategyConfig::strategies`], including the `Passive` ones, in a config a node
+    /// holds for its whole startup. `Box<T>` is transparent to serde, so the YAML stanza is
+    /// unchanged.
     #[cfg(feature = "pix")]
-    Pix(PixConfig),
+    Pix(Box<PixConfig>),
     /// See [`PixNotBuilt`]: parses so that validation can explain itself.
     #[cfg(not(feature = "pix"))]
     Pix(PixNotBuilt),
@@ -662,7 +667,7 @@ strategies:
     #[test]
     fn pix_stanza_round_trips() -> anyhow::Result<()> {
         let before = MultiStrategyConfig {
-            strategies: vec![StrategyKind::Pix(PixConfig::default())],
+            strategies: vec![StrategyKind::Pix(Box::new(PixConfig::default()))],
             ..hopr_default_strategies()
         };
         let after: MultiStrategyConfig =
