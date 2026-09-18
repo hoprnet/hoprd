@@ -15,12 +15,12 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# Pinned to the immutable hoprnet master rev that drops `pix_ssa_quota` from the session client
-# config (hoprnet#8430), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a
-# branch. A `branch = "master"` here would re-resolve on every lock refresh, so the commit the
-# tests ran against and the one CI builds could differ without either moving.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
+# Pinned to the immutable hoprnet rev carrying the compact/expanded `OffchainPublicKey` split
+# (hopr-types#52), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a branch.
+# A branch here would re-resolve on every lock refresh, so the commit the tests ran against and the
+# one CI builds could differ without either moving. Repoint at master once the train is merged.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "4f9a6ccee2f061a34f0d99e98108b197c61755c4", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "4f9a6ccee2f061a34f0d99e98108b197c61755c4", default-features = false }
 
 # crates.io HOPR deps
 
@@ -189,3 +189,10 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# Points at the branches carrying the compact/expanded `OffchainPublicKey` split
+# (hopr-types#52). Drop these once the train is published.
+[patch.crates-io]
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/extended-offchain-key" }
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", branch = "lukas/extended-offchain-key" }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/extended-offchain-key" }
