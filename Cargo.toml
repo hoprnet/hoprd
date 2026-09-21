@@ -18,10 +18,10 @@ hoprd-api-client = { path = "rest-api-client" }
 # TEMPORARY (hoprnet#8421): tracks the branch carrying the latest chain-connector update and the
 # datagram fix (hoprnet#8423, merged). Revert to a plain published `hopr-lib` version once
 # release/4.0 is tagged and published.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "d5192762c94cfb3291f7f609223dff70785eaca5", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "9e37a0987997686fc54a9763ca820381cfcb92db", default-features = false }
 # `hopr-strategy` migrated out of the hoprnet workspace to a standalone crate.
 hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", rev = "8824935f4656982ea120a3ad670723c0070ac3a6", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "d5192762c94cfb3291f7f609223dff70785eaca5", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "9e37a0987997686fc54a9763ca820381cfcb92db", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "4.3.0" }
