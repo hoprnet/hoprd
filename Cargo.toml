@@ -24,7 +24,7 @@ hopr-strategy = { version = "0.28.0", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "release/4.0", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "2.0.0" }
+hopr-api = { version = "4.3.0" }
 hopr-chain-connector = { version = "0.22.2" }
 hopr-ct-full-network = { version = "0.4.0", default-features = false }
 hopr-network-graph = { version = "0.5.0", default-features = false }
