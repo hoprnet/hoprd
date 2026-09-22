@@ -149,7 +149,6 @@ async fn go(payload_size: usize) -> anyhow::Result<()> {
             ]),
             response_buffer: Some("10 MB".to_string()),
             max_surb_upstream: Some("50 Mb/s".to_string()),
-            pix_ssa_quota: None,
         })
         .await
         .unwrap();

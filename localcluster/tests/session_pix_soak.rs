@@ -468,7 +468,7 @@ fn channel_stake() -> String {
 
 // ── Exit deadlines ──────────────────────────────────────────────────────────────
 
-/// Together these arm the PIX kill switch with a 23 s fuse, against the 80 s product default.
+/// Together these arm the PIX kill switch with a 30 s fuse, against the 80 s product default.
 ///
 /// **Sized for the bloklid-anvil container, not for a real chain**, and deliberately not shared
 /// with [`session_pix`](../session_pix.rs), which keeps the product defaults so that one of the
@@ -481,7 +481,7 @@ fn channel_stake() -> String {
 ///
 /// | component | measured | budget |
 /// |---|---|---|
-/// | `SsaCommit` delivery | 0.025–0.035 s | 3 s |
+/// | `SsaCommit` delivery | 0.025–0.035 s | 10 s |
 /// | on-chain settlement | 2.03–9.85 s (median 7.0) | 20 s |
 ///
 /// Delivery is the one that was badly wrong: 15 s for a 30 ms operation. 3 s is still a hundred
@@ -493,7 +493,22 @@ fn channel_stake() -> String {
 /// The cost of the fuse is bytes, not seconds, and bytes scale with the rate while the fuse does
 /// not: 45 s cost ~10 MB at the original 250 datagrams/s and 145 MB at 4000. So this has to be
 /// revisited whenever [`DEFAULT_PACKET_RATE`] moves, which is not otherwise obvious.
-const MAX_SSA_DELIVERY_TIME: Duration = Duration::from_secs(3);
+///
+/// **Raised 3 s → 10 s for `commitment_recommit_interval`**, which upstream added with a 3 s
+/// default and a validator requiring it to be *strictly shorter* than this deadline — at 3 s the
+/// node refuses to start outright: "a partially delivered commitment is never re-requested before
+/// the Session closes". The floor is therefore just above 3 s, but a deadline barely clearing the
+/// repair interval leaves no room for the repair to land, and upstream sizes its own 3 s so that
+/// "a repair completes several times over inside the delivery deadline". 10 s buys three rounds,
+/// stays at half the 20 s product default, and is still ~300× the 25–35 ms delivery measured here.
+///
+/// It is not free: the Exit's unfunded exposure is
+/// `ssas_per_request × (delivery + deposit_wait) × R × PAYLOAD`, so the extra 7 s adds ~29 MB at
+/// [`DEFAULT_PACKET_RATE`] — the fuse goes from 23 s to 30 s of credit. The alternative is
+/// exposing `commitment_recommit_interval` through hoprd so this could stay at 3 s; hoprd pins
+/// the rest of the supervision policy to upstream's defaults, so that is a deliberate widening of
+/// the config surface rather than a drop-in, and it belongs in its own change.
+const MAX_SSA_DELIVERY_TIME: Duration = Duration::from_secs(10);
 const MAX_DEPOSIT_WAIT: Duration = Duration::from_secs(20);
 /// Also fixes the Exit's deposit poll cadence at a tenth of this.
 const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
@@ -1275,12 +1290,6 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
             ]),
             response_buffer: Some(response_buffer()),
             max_surb_upstream: Some("50 Mb/s".to_string()),
-            // Must match this node's own generator dimensions or the Session is refused.
-            pix_ssa_quota: Some(hoprd_api_client::types::PixSsaQuota {
-                polys_per_ssa: PIX_POLYS,
-                shares_per_poly: PIX_SHARES,
-                surplus_shares: PIX_ADDITIONAL_SHARES,
-            }),
         })
         .await
         .context("opening PIX session")?;

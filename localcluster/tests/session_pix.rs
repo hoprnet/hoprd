@@ -409,12 +409,6 @@ fn open_request<'a>(exit_addr: &'a str, target: &'a str) -> client_helper::OpenS
         // worth of replies, which stalls every cycle after the first.
         response_buffer: Some(RESPONSE_BUFFER.to_string()),
         max_surb_upstream: Some(MAX_SURB_UPSTREAM.to_string()),
-        // Must match this node's own generator dimensions, or the Session is refused.
-        pix_ssa_quota: Some(hoprd_api_client::types::PixSsaQuota {
-            polys_per_ssa: PIX_POLYS,
-            shares_per_poly: PIX_SHARES,
-            surplus_shares: PIX_ADDITIONAL_SHARES,
-        }),
     }
 }
 

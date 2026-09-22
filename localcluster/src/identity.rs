@@ -753,7 +753,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             max_spend_per_window = %pix.max_spend_per_window,
             "enabling PIX settlement strategy",
         );
-        strategies.push(StrategyKind::Pix(PixConfig {
+        strategies.push(StrategyKind::Pix(Box::new(PixConfig {
             strategy: PixStrategyConfig {
                 price_per_byte: pix.price_per_byte,
                 max_ssa_allocation: pix.max_ssa_allocation,
@@ -784,7 +784,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 tx_timeout_multiplier: DEFAULT_TX_TIMEOUT_MULTIPLIER,
                 ..Default::default()
             },
-        }));
+        })));
     }
     let strategy_interval = config
         .strategy_execution_interval
