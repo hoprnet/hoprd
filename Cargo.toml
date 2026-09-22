@@ -25,7 +25,7 @@ hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.5.0", default-features = false }
-hopr-strategy = { version = "4.0.0", default-features = false }
+hopr-strategy = { version = "5.1.0", default-features = false }
 hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
   "redb",
   "cli",
