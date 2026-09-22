@@ -69,17 +69,19 @@ hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 #
 # 5.0.0 is the first release whose Curvy deposit pool (`strategy-pix-curvy`) builds from
 # crates.io alone: the Curvy SDK crates (`curvy-sdk`, `curvy-chain-blokli` and the ones beneath
-# them, 0.1.0-rc.7) are published, `curvy-core` 0.1.0-rc.6 asks for `thiserror` as a caret range
+# them, 0.1.0-rc.8) are published, `curvy-core` 0.1.0-rc.6 asks for `thiserror` as a caret range
 # that agrees with `hopr-api`'s, and the `vendor/` copies and the `[patch.crates-io]` lines every
 # consumer had to repeat are gone with it. Until hoprnet publishes 5.0.0 the crate is taken from
 # the `[patch.crates-io]` at the bottom of this manifest, pinned to a rev; the patch has to
 # satisfy this requirement, which is why it reads 5.0.0 ahead of the registry.
 #
 # The pool's proving artifacts are not in any crate. The SDK reads each circuit's zkey and
-# witness graph from `CURVY_ZK_KEYS_DIR` at run time, digest-checked, and the ten files ship
-# with each rs-sdk release, packaged by its flake; `flake.nix` takes that as the
-# `curvy-zk-artifacts` input, pinned to the same tag as the crates here, and the
-# `hoprd-pix-curvy` image carries them and sets the variable. Anything else has to provide both.
+# witness graph, digest-checked, from `CURVY_ZK_KEYS_DIR` at run time or, failing that, from
+# the directory `curvy-witnesscalc` was compiled with (`CURVY_ZK_KEYS_DIR_DEFAULT`). The ten
+# files ship with each rs-sdk release, packaged by its flake; `flake.nix` takes that as the
+# `curvy-zk-artifacts` input, pinned to the same rs-sdk ref as the crates here, and compiles
+# its store path into the `pix-curvy` binary, so the `hoprd-pix-curvy` image needs nothing
+# set. A node built any other way has to provide the files and the variable.
 #
 # Asks for `hopr-api` 4.3 as a caret range, which the `=4.3.0` line above satisfies, so the
 # `hopr-lib` rev is `main`'s. What the earlier majors changed for this workspace is recorded
@@ -110,7 +112,7 @@ hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 hopr-strategy = { version = "5.0.0", default-features = false }
 # Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
 # Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
-curvy-abi = "=0.1.0-rc.7"
+curvy-abi = "=0.1.0-rc.8"
 # Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
 # `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
 # feature the rest of the workspace expects.
@@ -276,11 +278,11 @@ ignored = ["hopr-api"]
 
 # `hopr-strategy` 5.0.0 is not on crates.io yet: it is the Curvy PIX branch, under review as a
 # PR against hoprnet/hopr-strategy. Pinned to a rev on the fork it is reviewed from, so a rebuild
-# is reproducible and moving it is a reviewable change. `8eb34e0` is the merge that brings the
-# fork up to upstream `main`: `hopr-api` 4.3.0 and `hopr-utilities` 0.14.0 (its
+# is reproducible and moving it is a reviewable change. `c80fb88` pins the rs-sdk crates at
+# 0.1.0-rc.8 on top of `8eb34e0`, the merge that brings the fork up to upstream `main`: `hopr-api` 4.3.0 and `hopr-utilities` 0.14.0 (its
 # `TestChainConnector` now lives there, behind the `testing` feature), plus
 # `build_curvy_with_pool` for a connector-provided Curvy pool, which hoprd does not call yet —
 # it still constructs the bundled pool through `build_curvy`. The Curvy crates themselves stay
-# on crates.io at rs-sdk 0.1.0-rc.7. Drop this whole section once hoprnet releases 5.0.0.
+# on crates.io at rs-sdk 0.1.0-rc.8. Drop this whole section once hoprnet releases 5.0.0.
 [patch.crates-io]
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "8eb34e0" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c80fb88" }

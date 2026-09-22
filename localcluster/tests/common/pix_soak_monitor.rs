@@ -35,10 +35,14 @@ impl SessionEvents {
         let manager = line
             .split_once("hopr_transport_session::manager: ")
             .map(|(_, msg)| msg);
-        // Neither "timeout set" nor "timeout - session not found" proves a closure.
+        // The PIX supervisor closes the session and the manager logs the reason; only the
+        // `DepositTimeout` reason is the budget-exhaustion closure this soak expects. Neither
+        // "timeout set" nor "timeout - session not found" proves a closure.
         let deposit_timeout = role == "Exit"
-            && manager
-                .is_some_and(|msg| msg.starts_with("pix session deposit timeout session_id="));
+            && manager.is_some_and(|msg| {
+                msg.starts_with("pix supervisor closed the session ")
+                    && msg.contains("reason=DepositTimeout")
+            });
         let closed = deposit_timeout
             || manager.is_some_and(|msg| msg.starts_with("closed session "))
             || line.contains("hopr_utils_session: client session ended ")

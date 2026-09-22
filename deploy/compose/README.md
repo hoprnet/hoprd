@@ -39,7 +39,7 @@ Adjust the following environment variables as needed:
 - `HOPRD_P2P_PORT`: Adjust the p2p communication port, default is `9091`.
 - `HOPRD_IMAGE`: Change the image tag from `stable` to `latest`. Example: `europe-west3-docker.pkg.dev/hoprassociation/docker-images/hoprd:latest`.
   For a node running the PIX strategy with the Curvy deposit pool use the `hoprd-pix-curvy` image instead. It is the same node built
-  with `strategy-pix-curvy`, plus the Curvy proving artifacts under `/app/hoprd/curvy-zk-keys` with `CURVY_ZK_KEYS_DIR` already set.
+  with `strategy-pix-curvy`, with the Curvy proving artifacts built in: the binary carries their location, nothing needs setting.
 
 Configure the Metrics url:
 

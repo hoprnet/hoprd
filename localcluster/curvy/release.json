@@ -14,7 +14,7 @@
     "configure_localnet": true
   },
   "artifacts": {
-    "base_url": "https://github.com/0xCurvy/rs-sdk/releases/download/v0.1.0-rc.6",
+    "base_url": "https://github.com/0xCurvy/rs-sdk/releases/download/v0.1.0-rc.8",
     "files": {
       "aggregation-2-3-30.signet.zst": "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386",
       "pending-5-30.signet.zst": "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0",

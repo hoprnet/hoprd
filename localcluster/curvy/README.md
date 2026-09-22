@@ -59,8 +59,8 @@ fresh volume for chain 31337 using the paired chain's contract addresses and the
 release's circuit metadata. It checks that configuration before starting workers;
 no schema migrations or image builds run at startup.
 
-The registry manifest pins the same proving files as `curvyZkArtifacts` in
-`flake.nix`. The launcher caches them in `${XDG_CACHE_HOME:-$HOME/.cache}/hopr/curvy-zk`,
+The registry manifest pins the same proving files as the `curvy-zk-artifacts`
+input in `flake.nix`. The launcher caches them in `${XDG_CACHE_HOME:-$HOME/.cache}/hopr/curvy-zk`,
 verifies them before reuse, and supplies them to both the Linux node and batch
 prover. Existing offline bundles can still supply these files from their artifact
 image. Pending-note graph and zkey hashes must match the release and database;

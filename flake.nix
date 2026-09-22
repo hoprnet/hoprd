@@ -19,9 +19,8 @@
     # pool reads from `CURVY_ZK_KEYS_DIR`, packaged by the rs-sdk flake, which fetches the release
     # its checkout's version names. `hopr-strategy` pins the `curvy-*` crates of the same release,
     # so the two move together: change the ref here and in `hopr-strategy`, then
-    # `nix flake update curvy-zk-artifacts`. A commit on `main` past `v0.1.0-rc.7` (the flake
-    # arrived after that tag was cut); the next rs-sdk release tag replaces it.
-    curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/0e76f46166667ea6cc8f04568c78a57c344634ac";
+    # `nix flake update curvy-zk-artifacts`.
+    curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/v0.1.0-rc.8";
 
     curvy-zk-artifacts.inputs.nixpkgs.follows = "nixpkgs";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
@@ -370,16 +369,32 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
               }
             );
-            # The production PIX pool. Same binary shape as `pix-test`; the proving artifacts the pool
-            # needs at run time are not in the binary, the `hoprd-pix-curvy` image adds them.
-            binary-hoprd-pix-curvy-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
-              }
-            );
-            # The artifacts on their own, for a deployment that is not the image: `nix build
-            # .#curvy-zk-artifacts` and point `CURVY_ZK_KEYS_DIR` at `result/app/hoprd/curvy-zk-keys`.
+            # The production PIX pool. Same binary shape as `pix-test`, plus the proving artifacts
+            # the pool needs at run time: `curvy-witnesscalc` compiles the store path of
+            # `curvyZkArtifacts` in as its fallback location, so the binary finds them with nothing
+            # set and Nix carries them in its closure. `CURVY_ZK_KEYS_DIR` still overrides at run
+            # time. Set on the dependency build too, since that is where the crate is compiled.
+            binary-hoprd-pix-curvy-x86_64-linux =
+              let
+                zkKeysDefault = {
+                  CURVY_ZK_KEYS_DIR_DEFAULT = "${curvyZkArtifacts}";
+                };
+              in
+              (rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
+                projectBuildArgs
+                // {
+                  cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
+                }
+              )).overrideAttrs
+                (
+                  previous:
+                  {
+                    cargoArtifacts = previous.cargoArtifacts.overrideAttrs (_: zkKeysDefault);
+                  }
+                  // zkKeysDefault
+                );
+            # The artifacts on their own, for a node built outside Nix: `nix build
+            # .#curvy-zk-artifacts` and point `CURVY_ZK_KEYS_DIR` at `result`.
             curvy-zk-artifacts = curvyZkArtifacts;
             binary-hoprd-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-x86_64-darwin = rust-builder-x86_64-darwin.callPackage nixLib.mkRustPackage projectBuildArgs;
@@ -536,17 +551,9 @@
 
           # The Curvy proving artifacts come from the rs-sdk flake (see the `curvy-zk-artifacts`
           # input), which fetches them by the digests `curvy-witnesscalc` checks on load, so a wrong
-          # or stale file fails there at build time, never here as a bad proof. Placed under
-          # `/app/hoprd/curvy-zk-keys` so the path in the image is stable and can be named in
-          # documentation; the `hoprd-pix-curvy` image links it in and sets `CURVY_ZK_KEYS_DIR`.
-          curvyZkArtifacts =
-            let
-              artifacts = inputs.curvy-zk-artifacts.packages.${system}.curvy-zk-artifacts;
-            in
-            pkgs.runCommand "hoprd-${artifacts.name}" { } ''
-              mkdir -p "$out/app/hoprd/curvy-zk-keys"
-              ln -s "${artifacts}"/* "$out/app/hoprd/curvy-zk-keys/"
-            '';
+          # or stale file fails there at build time, never here as a bad proof. One flat directory,
+          # the layout the crate expects; `binary-hoprd-pix-curvy-x86_64-linux` compiles its path in.
+          curvyZkArtifacts = inputs.curvy-zk-artifacts.packages.${system}.curvy-zk-artifacts;
 
           hoprdDocker = {
             docker-hoprd-x86_64-linux = nixLib.mkDockerImage {
@@ -628,18 +635,18 @@
               ];
             };
             # the environment at run time (`HOPRD_CURVY_OPERATOR_PRIVATE_KEY` by default).
+            # The proving artifacts ride along in the binary's closure (see
+            # `binary-hoprd-pix-curvy-x86_64-linux`), so the image neither links nor names them.
             docker-hoprd-pix-curvy-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd-pix-curvy";
               pathsToLink = [
                 "/bin"
-                "/app/hoprd/curvy-zk-keys"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages.binary-hoprd-pix-curvy-x86_64-linux
                 hoprdPackages.binary-ticket-inspector-x86_64-linux
-                curvyZkArtifacts
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -654,7 +661,6 @@
                 "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-                "CURVY_ZK_KEYS_DIR=/app/hoprd/curvy-zk-keys"
               ];
             };
             docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
