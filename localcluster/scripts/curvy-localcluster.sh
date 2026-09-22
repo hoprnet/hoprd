@@ -4,16 +4,29 @@
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_DIR="$REPO_ROOT/localcluster/curvy"
-die() { echo "curvy-localcluster: $*" >&2; exit 1; }
+die() {
+  echo "curvy-localcluster: $*" >&2
+  exit 1
+}
 RELEASE="${CURVY_LOCALCLUSTER_RELEASE:-$CONFIG_DIR/release.json}"
 DASHBOARD=true
 OFFLINE=false
 while (($#)); do
   case "$1" in
-    --release) (($# >= 2)) || die "--release needs a JSON file"; RELEASE=$2; shift 2 ;;
-    --no-dashboard) DASHBOARD=false; shift ;;
-    --offline) OFFLINE=true; shift ;;
-    *) die "usage: $0 [--release release.json] [--offline] [--no-dashboard]" ;;
+  --release)
+    (($# >= 2)) || die "--release needs a JSON file"
+    RELEASE=$2
+    shift 2
+    ;;
+  --no-dashboard)
+    DASHBOARD=false
+    shift
+    ;;
+  --offline)
+    OFFLINE=true
+    shift
+    ;;
+  *) die "usage: $0 [--release release.json] [--offline] [--no-dashboard]" ;;
   esac
 done
 [[ $(uname -s) == Linux ]] || die "the soak runner requires Linux (shared host loopback)"
@@ -38,8 +51,8 @@ fi
 read_release() { jq -er "$1" "$RELEASE"; }
 export CURVY_PLATFORM="$(read_release .platform)"
 case "$(uname -m):$CURVY_PLATFORM" in
-  x86_64:linux/amd64 | aarch64:linux/arm64) ;;
-  *) die "release platform $CURVY_PLATFORM does not match this host; use native images for proving" ;;
+x86_64:linux/amd64 | aarch64:linux/arm64) ;;
+*) die "release platform $CURVY_PLATFORM does not match this host; use native images for proving" ;;
 esac
 export CURVY_CHAIN_IMAGE="$(read_release .images.chain)"
 export CURVY_LOCALDB_IMAGE="$(read_release .images.localdb)"
@@ -156,7 +169,7 @@ chmod -R a+rX "$RUN_DIR/keys"
 for kind in graph zkey; do
   artifact=$(read_release ".pending.$kind")
   checksum=$(read_release ".pending.${kind}_sha256")
-  printf '%s  %s\n' "$checksum" "$RUN_DIR/keys/$artifact" | sha256sum -c - > /dev/null ||
+  printf '%s  %s\n' "$checksum" "$RUN_DIR/keys/$artifact" | sha256sum -c - >/dev/null ||
     die "pending-note $kind does not match the release manifest"
 done
 
@@ -173,7 +186,8 @@ assert_running() {
   done
 }
 wait_http() {
-  local url=$1 deadline=$((SECONDS + 180)); shift
+  local url=$1 deadline=$((SECONDS + 180))
+  shift
   until curl -fsS --max-time 3 "$url" >"$RUN_DIR/ready.json" 2>/dev/null; do
     assert_running "$@"
     ((SECONDS < deadline)) || die "readiness timed out: $url"

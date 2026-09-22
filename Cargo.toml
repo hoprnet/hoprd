@@ -77,8 +77,9 @@ hopr-session-server-forwarder = { version = "0.4.0", default-features = false }
 #
 # The pool's proving artifacts are not in any crate. The SDK reads each circuit's zkey and
 # witness graph from `CURVY_ZK_KEYS_DIR` at run time, digest-checked, and the ten files ship
-# with each rs-sdk release; the `hoprd-pix-curvy` image in `flake.nix` carries them and sets the
-# variable, anything else has to provide both.
+# with each rs-sdk release, packaged by its flake; `flake.nix` takes that as the
+# `curvy-zk-artifacts` input, pinned to the same tag as the crates here, and the
+# `hoprd-pix-curvy` image carries them and sets the variable. Anything else has to provide both.
 #
 # Asks for `hopr-api` 4.3 as a caret range, which the `=4.3.0` line above satisfies, so the
 # `hopr-lib` rev is `main`'s. What the earlier majors changed for this workspace is recorded

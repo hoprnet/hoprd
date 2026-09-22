@@ -14,7 +14,7 @@ while IFS=$'\t' read -r name tag expected; do
     (.Os + "/" + .Architecture) == $platform and
     (. as $image | any($ids[];
       . == $image.Id or . == $image.Descriptor.annotations["config.digest"]))
-  ' <<< "$actual" >/dev/null; then
+  ' <<<"$actual" >/dev/null; then
     echo "bundled image $name does not match the saved ID/platform" >&2
     exit 1
   fi

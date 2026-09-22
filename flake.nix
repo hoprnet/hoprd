@@ -15,7 +15,15 @@
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     flake-root.url = "github:srid/flake-root";
+    # The Curvy Groth16 proving artifacts (zkeys and witness graphs) the `strategy-pix-curvy`
+    # pool reads from `CURVY_ZK_KEYS_DIR`, packaged by the rs-sdk flake, which fetches the release
+    # its checkout's version names. `hopr-strategy` pins the `curvy-*` crates of the same release,
+    # so the two move together: change the ref here and in `hopr-strategy`, then
+    # `nix flake update curvy-zk-artifacts`. A commit on `main` past `v0.1.0-rc.7` (the flake
+    # arrived after that tag was cut); the next rs-sdk release tag replaces it.
+    curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/0e76f46166667ea6cc8f04568c78a57c344634ac";
 
+    curvy-zk-artifacts.inputs.nixpkgs.follows = "nixpkgs";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
     foundry.inputs.flake-utils.follows = "flake-utils";
     foundry.inputs.nixpkgs.follows = "nixpkgs";
@@ -526,55 +534,18 @@
             description = "HOPR node executable";
           };
 
-          # The Curvy Groth16 proving artifacts: five zkeys and five witness graphs, one pair per
-          # circuit, which `curvy-sdk` reads from `CURVY_ZK_KEYS_DIR` and digest-checks on load. They
-          # are too large for a crate (the zkeys alone are ~290 MB), so they ship as assets of the
-          # rs-sdk release the pinned `curvy-*` crates were published from, and are fetched here by
-          # hash: one fixed-output fetch per file, the hashes copied from the release's `SHA256SUMS`,
-          # which are the same digests `curvy-witnesscalc` compiles in. A wrong or stale file fails at
-          # build time here, or at load time in the node — never as a bad proof.
-          #
-          # Assembled under `/app/hoprd/curvy-zk-keys` so the path in the image is stable and can be
-          # named in documentation; the `hoprd-pix-curvy` image links it in and sets the variable.
-          # Moving to a new rs-sdk release means updating the tag, the file list and the hashes here
-          # together with the `curvy-*` versions in `hopr-strategy`.
+          # The Curvy proving artifacts come from the rs-sdk flake (see the `curvy-zk-artifacts`
+          # input), which fetches them by the digests `curvy-witnesscalc` checks on load, so a wrong
+          # or stale file fails there at build time, never here as a bad proof. Placed under
+          # `/app/hoprd/curvy-zk-keys` so the path in the image is stable and can be named in
+          # documentation; the `hoprd-pix-curvy` image links it in and sets `CURVY_ZK_KEYS_DIR`.
           curvyZkArtifacts =
             let
-              release = "v0.1.0-rc.6";
-              files = {
-                "aggregation-2-3-30.signet.zst" =
-                  "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386";
-                "pending-5-30.signet.zst" = "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0";
-                "pix-aggregation-2-9-30.signet.zst" =
-                  "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a";
-                "pix-withdrawal-10-30.signet.zst" =
-                  "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56";
-                "withdrawal-2-30.signet.zst" = "04b2fa84394548a971c757c61280b81fb7699a367eeb45834201675f8a0aad74";
-                "verifyPendingNotesCommitment_5_30_0001.zkey" =
-                  "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847";
-                "verifyPixAggregation_2_9_30_evaluation.zkey" =
-                  "b4fced8a3c183d25a13a24c9ee7234ec96b77f87f688992ee07144f23ace6750";
-                "verifyPixMultiOwnerWithdrawal_10_30_evaluation.zkey" =
-                  "e18f0fdd40aa2643c31c3a02ef0a508b5c7580a436abcae88e364ee86be6a95b";
-                "verifySingleAggregationNoHashing_2_3_30_0001.zkey" =
-                  "88a85746f60820712199a60ee13241181658250ba9855af61503d306c52ba4e6";
-                "verifySingleWithdrawalNoHashing_2_30_0001.zkey" =
-                  "c91d9fdbea6edde296e9676bdb97959f6acb5f32360b5490c01cea9814844716";
-              };
-              fetch =
-                name: sha256:
-                pkgs.fetchurl {
-                  inherit name sha256;
-                  url = "https://github.com/0xCurvy/rs-sdk/releases/download/${release}/${name}";
-                };
+              artifacts = inputs.curvy-zk-artifacts.packages.${system}.curvy-zk-artifacts;
             in
-            pkgs.runCommand "curvy-zk-artifacts-${release}" { } ''
+            pkgs.runCommand "hoprd-${artifacts.name}" { } ''
               mkdir -p "$out/app/hoprd/curvy-zk-keys"
-              ${lib.concatStringsSep "\n" (
-                lib.mapAttrsToList (
-                  name: sha256: ''ln -s "${fetch name sha256}" "$out/app/hoprd/curvy-zk-keys/${name}"''
-                ) files
-              )}
+              ln -s "${artifacts}"/* "$out/app/hoprd/curvy-zk-keys/"
             '';
 
           hoprdDocker = {

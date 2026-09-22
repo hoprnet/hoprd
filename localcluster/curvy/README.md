@@ -42,6 +42,10 @@ PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
 Use `--release /path/to/release.json` to select another matching release. The
 registry flow requires no transferred image archive or local image tags.
 
+Verified 2026-09-15 with `--no-dashboard`: image pulls and proving-file
+downloads take about 10 minutes the first time, the soak then ran 10 of 10
+cycles and passed in 555 s.
+
 For the already prepared offline bundle, transfer and load `images.tar.gz` with
 `docker load --input images.tar.gz`, then pass its `release.json` with `--offline`.
 The launcher verifies the saved image IDs and starts Compose with `--pull never`

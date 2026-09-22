@@ -1,3 +1,4 @@
+---
 # Images, including the initialized database, are supplied by one release manifest.
 # No service in this stack is built on the developer's machine.
 x-service-env: &service-env
@@ -41,7 +42,7 @@ services:
     platform: ${CURVY_PLATFORM}
     network_mode: service:chain
     environment:
-      <<: *service-env
+      !!merge <<: *service-env
       DB_SCHEMA: indexer
       PORT: "4300"
       INDEXER_MODE: both
@@ -54,7 +55,7 @@ services:
     platform: ${CURVY_PLATFORM}
     network_mode: service:chain
     environment:
-      <<: *service-env
+      !!merge <<: *service-env
       DB_SCHEMA: relayer
       PORT: "4400"
       RELAYER_MODE: both
@@ -74,7 +75,7 @@ services:
     platform: ${CURVY_PLATFORM}
     network_mode: service:chain
     environment:
-      <<: *service-env
+      !!merge <<: *service-env
       DB_SCHEMA: batch_prover
       INDEXER_DATABASE_URL: postgresql://curvy:curvy@db:5432/curvy
       PROVER_PRIVATE_KEY: ${CURVY_PROVER_KEY}
