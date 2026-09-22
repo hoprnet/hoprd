@@ -407,9 +407,14 @@ pub struct UserIncomingSessionPixConfig {
     /// reserve and recovers nothing. It is bounded by the same ceiling and reserve as ordinary fill,
     /// and ended by [`max_recovery_time`](Self::max_recovery_time) whether or not it succeeds.
     ///
-    /// The rate law behind it is not exposed here for the reason the supervision deadlines above are
-    /// not: it is sized against the reconstructor and the SURB buffer, neither of which hoprd
-    /// surfaces. Turning this off restores the immediate teardown on every close path.
+    /// It needs [`fill_enabled`](Self::fill_enabled) on. Upstream gates the drain on
+    /// `fill.enabled && fill.drain_after_close`: a drain is fill on the close path, planned by the
+    /// same rate law and carried by the same stream, so switching fill off leaves this field inert
+    /// rather than in conflict with it. [`fill_max_rate`](Self::fill_max_rate) is the ceiling it
+    /// runs under. The rest of the rate law — the heartbeat, the two fractions, the SURB reserve —
+    /// is not exposed, for the reason the supervision deadlines above are not: it is sized against
+    /// the reconstructor and the SURB buffer, neither of which hoprd surfaces. Turning this off
+    /// restores the immediate teardown on every close path.
     ///
     /// Default is upstream's, on.
     #[default(default_pix_drain_after_close())]
@@ -709,19 +714,26 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
-                        // Only the post-close drain is a hoprd dial. The rest of the fill law prices
-                        // one idle Session's traffic against the SURB buffer and the reconstructor,
-                        // and both of those are pinned to upstream's defaults above — so moving a
-                        // rate here without being able to move what it is sized against is the same
-                        // trap the supervision deadlines are left alone to avoid. Named rather than
-                        // `..Default::default()`, for the reason every literal in this block is.
+                        // Three of the seven are hoprd dials: whether the Exit fills at all, the
+                        // ceiling on what it originates for itself, and whether a close mid-cycle
+                        // drains or tears down. All three are deployment choices an operator can
+                        // make from the outside.
+                        //
+                        // The remaining four are the rate law's own shape rather than a deployment
+                        // choice, and are named for the same reason everything above is.
+                        // `heartbeat` is the floor while the application covers the need, and it is
+                        // what refreshes the Entry's idle eviction; the two fractions place the aim
+                        // point and pay for return-path loss, and both are validated against ranges
+                        // an operator cannot usefully explore from the outside; `min_surb_reserve`
+                        // is a ceiling on a value the Exit derives per Session from the buffer the
+                        // *Entry* announced, so a number set here is not the number that binds.
                         fill: PixFillConfig {
+                            enabled: value.network.incoming_session_pix.fill_enabled,
+                            max_rate: value.network.incoming_session_pix.fill_max_rate,
                             drain_after_close: value.network.incoming_session_pix.drain_after_close,
-                            enabled: supervision_defaults.fill.enabled,
                             heartbeat: supervision_defaults.fill.heartbeat,
                             finish_fraction: supervision_defaults.fill.finish_fraction,
                             loss_margin: supervision_defaults.fill.loss_margin,
-                            max_rate: supervision_defaults.fill.max_rate,
                             min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
                         },
                     },
@@ -871,6 +883,140 @@ mod tests {
             identity,
             ..HoprdConfig::default()
         })
+    }
+
+    /// Every PIX knob this module hoists must survive the trip into [`HoprLibConfig`].
+    ///
+    /// The conversion is a hand-written literal of ~20 fields, half of them taken from the user
+    /// config and half deliberately pinned to upstream's defaults, and the two halves look
+    /// identical at the call site. So a field can stop being read — by a bad merge, or by a
+    /// rewrite of one arm of the literal — while it still parses, still validates, still
+    /// round-trips through YAML, and still carries a doc comment describing what it does. Nothing
+    /// else in the tree notices: `localcluster` writes these knobs into a config file and asserts
+    /// on node behaviour, which is downstream of the value hoprd actually passed.
+    ///
+    /// That is not hypothetical. `fill_enabled` and `fill_max_rate` were wired on `main`, and the
+    /// merge that brought them onto the branch adding `drain_after_close` took the new fields from
+    /// one side and the conversion block from the other — leaving both settable and inert, through
+    /// a green CI and a full localcluster run.
+    ///
+    /// Hence: set every hoisted field to something that is *not* its default, convert once, and
+    /// assert each one arrived. A field pinned to an upstream default on purpose does not belong
+    /// here — the point is the ones that claim to be operator-facing.
+    #[test]
+    fn hoisted_pix_knobs_reach_the_library_config() {
+        let mut cfg = UserHoprLibConfig::default();
+        let pix = &mut cfg.network.pix;
+        pix.num_ssa_parts = 2048;
+        pix.ssa_part_size = 64;
+        pix.additional_shares = Some(9);
+        pix.max_ssas_per_request = 7;
+
+        let exit = &mut cfg.network.incoming_session_pix;
+        exit.enforce_pix = true;
+        exit.quota_range_min = 111_000;
+        exit.quota_range_max = 222_000;
+        exit.max_ssa_delivery_time = Duration::from_secs(11);
+        exit.max_deposit_wait = Duration::from_secs(13);
+        exit.max_live_cycle_bytes = 17_000_000;
+        exit.max_recovery_time = Duration::from_secs(1900);
+        exit.max_served_without_progress = 19;
+        exit.ssas_per_request = 3;
+        exit.allow_dynamic_ssa_batches = !exit.allow_dynamic_ssa_batches;
+        exit.drain_after_close = !exit.drain_after_close;
+        exit.fill_enabled = !exit.fill_enabled;
+        exit.fill_max_rate = 137;
+
+        // Cloned so the assertions below read against what was set, not a moved-from value.
+        let (pix, exit) = (
+            cfg.network.pix.clone(),
+            cfg.network.incoming_session_pix.clone(),
+        );
+        let lib = HoprLibConfig::from(cfg);
+        let global = &lib.protocol.pix;
+        let incoming = &lib.protocol.incoming_session_pix_config;
+        let supervision = &incoming.supervision;
+
+        assert_eq!(global.num_ssa_parts, pix.num_ssa_parts);
+        assert_eq!(global.ssa_part_size, pix.ssa_part_size);
+        assert_eq!(global.additional_shares, pix.additional_shares);
+        assert_eq!(global.max_ssas_per_request, pix.max_ssas_per_request);
+
+        assert_eq!(incoming.enforce_pix, exit.enforce_pix);
+        assert_eq!(
+            incoming.quota_range,
+            exit.quota_range_min..=exit.quota_range_max
+        );
+        assert_eq!(incoming.max_live_cycle_bytes, exit.max_live_cycle_bytes);
+
+        assert_eq!(
+            supervision.max_ssa_delivery_time,
+            exit.max_ssa_delivery_time
+        );
+        assert_eq!(supervision.max_deposit_wait, exit.max_deposit_wait);
+        assert_eq!(supervision.max_recovery_time, exit.max_recovery_time);
+        assert_eq!(supervision.ssas_per_request, exit.ssas_per_request);
+        assert_eq!(
+            supervision.allow_dynamic_ssa_batches,
+            exit.allow_dynamic_ssa_batches
+        );
+        assert_eq!(
+            supervision.max_served_without_progress,
+            exit.max_served_without_progress
+        );
+
+        assert_eq!(supervision.fill.enabled, exit.fill_enabled);
+        assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
+        assert_eq!(supervision.fill.drain_after_close, exit.drain_after_close);
+    }
+
+    /// The other half of the literal: the fields hoprd pins on purpose stay pinned.
+    ///
+    /// Without this, "wire everything up" would be a passing answer to the test above, and the
+    /// reasoning recorded in that block — that `max_recovery_idle` and
+    /// `tombstone_retention_window` pair with a reconstructor hoprd does not surface, that the
+    /// fill rate law is sized against that same reconstructor — would be enforced by nothing.
+    #[test]
+    fn unhoisted_pix_policy_stays_at_upstream_defaults() {
+        let defaults = SupervisorConfig::default();
+        let lib = HoprLibConfig::from(UserHoprLibConfig::default());
+        let supervision = &lib.protocol.incoming_session_pix_config.supervision;
+
+        assert_eq!(supervision.max_failed_cycles, defaults.max_failed_cycles);
+        assert_eq!(supervision.max_recovery_idle, defaults.max_recovery_idle);
+        assert_eq!(
+            supervision.max_off_front_share_fraction,
+            defaults.max_off_front_share_fraction
+        );
+        assert_eq!(
+            supervision.min_share_order_sample,
+            defaults.min_share_order_sample
+        );
+        assert_eq!(
+            supervision.max_predeposit_packets,
+            defaults.max_predeposit_packets
+        );
+        assert_eq!(
+            supervision.tombstone_retention_window,
+            defaults.tombstone_retention_window
+        );
+        assert_eq!(
+            supervision.commitment_recommit_interval,
+            defaults.commitment_recommit_interval
+        );
+
+        assert_eq!(supervision.fill.heartbeat, defaults.fill.heartbeat);
+        assert_eq!(
+            supervision.fill.finish_fraction,
+            defaults.fill.finish_fraction
+        );
+        assert_eq!(supervision.fill.loss_margin, defaults.fill.loss_margin);
+        assert_eq!(
+            supervision.fill.min_surb_reserve,
+            defaults.fill.min_surb_reserve
+        );
+
+        assert_eq!(lib.protocol.pix.reconstructor, Default::default());
     }
 
     #[test]
