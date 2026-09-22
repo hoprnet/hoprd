@@ -591,7 +591,6 @@ fn default_host() -> HostConfig {
 impl From<UserHoprLibConfig> for HoprLibConfig {
     fn from(value: UserHoprLibConfig) -> Self {
         let supervision_defaults = SupervisorConfig::default();
-        let fill_defaults = supervision_defaults.fill.clone();
         HoprLibConfig {
             host: value.host,
             publish: value.announce,
