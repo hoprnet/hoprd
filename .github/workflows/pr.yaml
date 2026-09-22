@@ -141,9 +141,20 @@ jobs:
           grep -o 'source = "git+https://github.com/hoprnet/hoprnet[^"]*"' Cargo.lock | sort -u || true
   checks:
     name: Check
+    # In the merge queue we don't re-run the heavy checks, but their contexts
+    # (`Check / *`) are required and must report on the merge group or the queue
+    # stalls. So the job runs on merge_group too, with the reusable workflow's
+    # enable booleans turned off there: the work is skipped while each `Check / *`
+    # still reports (green). Only Integration throughput does real work in the
+    # queue (see merge-queue.yaml). `!= 'merge_group'` keeps PR behaviour intact.
     uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-checks-v2
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      format: ${{ github.event_name != 'merge_group' }}
+      pre_commit: ${{ github.event_name != 'merge_group' }}
+      lint: ${{ github.event_name != 'merge_group' }}
+      deps: ${{ github.event_name != 'merge_group' }}
+      audit: ${{ github.event_name != 'merge_group' }}
       lint_command: "nix build -L .#quick"
       runner_small: depot-ubuntu-24.04
       runner_large: depot-ubuntu-24.04-4
@@ -151,14 +162,16 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   tests:
     name: Test
+    # Runs on merge_group too, but the enable booleans are off there so the
+    # `Test / *` contexts report (skipped) without re-running (see `checks`).
     uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@3ee95c480962bb3c1fc0061887da9ba735f537c7 # workflow-tests-v6
     with:
       source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
-      enable_unit_tests: true
+      enable_unit_tests: ${{ github.event_name != 'merge_group' }}
       enable_integration_tests: false
-      enable_nightly_tests: true
+      enable_nightly_tests: ${{ github.event_name != 'merge_group' }}
       enable_benchmarks: false
-      enable_unit_coverage: true
+      enable_unit_coverage: ${{ github.event_name != 'merge_group' }}
       enable_integration_coverage: false
       unit_coverage_command: "nix build -L .#coverage -o coverage.lcov"
       runner_unit: depot-ubuntu-24.04-16
@@ -167,6 +180,9 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   build-binaries:
     name: Binary ${{ matrix.binary }} ${{ matrix.architecture }}
+    # Runs on merge_group too; `enabled` is off there so the `Binary … / Build`
+    # and `… / Sign and Publish` contexts report (skipped) without rebuilding
+    # (see `checks`). The reusable job carries the matrix so names stay expanded.
     strategy:
       fail-fast: false
       matrix:
@@ -213,12 +229,16 @@ jobs:
       build_command: ${{ matrix.build_command }}
       binary: ${{ matrix.binary }}
       runner: ${{ matrix.runner }}
-      enabled: ${{ matrix.required_label == '' || contains(github.event.pull_request.labels.*.name, matrix.required_label) }}
+      enabled: ${{ github.event_name != 'merge_group' && (matrix.required_label == '' || contains(github.event.pull_request.labels.*.name, matrix.required_label)) }}
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
   build-docker:
     name: Docker
+    # Docker builds are too heavy to run in the queue and build-docker.yaml has no
+    # skip input, so this stays skipped on merge_group; the required `Docker / *`
+    # contexts are reported (green) by merge-queue-docker.yaml instead.
+    if: github.event_name == 'pull_request'
     needs: build-binaries
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
@@ -244,6 +264,8 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   build-docker-pix-test:
     name: Docker (pix-test)
+    # Not a required check; skip in the merge queue.
+    if: github.event_name == 'pull_request'
     needs: build-binaries
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@25898d13dab1b3fbf4c33c394e7c581578a2b0d7 # build-docker-v3.2.0
     permissions:
@@ -269,6 +291,8 @@ jobs:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
   docs:
     name: Docs
+    # Not a required check; skip in the merge queue.
+    if: github.event_name == 'pull_request'
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
     permissions:
@@ -282,6 +306,8 @@ jobs:
           command: nix build -L .#docs
   localcluster-smoke:
     name: Localcluster smoke
+    # Not a required check; skip in the merge queue.
+    if: github.event_name == 'pull_request'
     # Runs after the binaries are built so both `nix build`s below are Cachix cache
     # hits rather than rebuilds — this job is dominated by waiting, not by compute.
     needs: build-binaries
