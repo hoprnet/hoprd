@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(rotsee.initial_balance, wei(374_400_000));
         assert_eq!(rotsee.topup_balance, wei(201_600_000));
         assert_eq!(rotsee.lower_balance_threshold, wei(201_600_000));
-        assert_eq!(rotsee.min_safe_balance_required, wei(201_600_000));
+        assert_eq!(rotsee.face_value, wei(2_400_000));
 
         // jura: ticket price 1e13 wei, win_prob 4e-6 (1/250 000)
         let jura = funding.resolve::<TestTransport>(wei(10_000_000_000_000), 4.0e-6);
@@ -347,10 +347,7 @@ mod tests {
             jura.lower_balance_threshold,
             wei(45_000_000_000_000_000_000)
         );
-        assert_eq!(
-            jura.min_safe_balance_required,
-            wei(45_000_000_000_000_000_000)
-        );
+        assert_eq!(jura.face_value, wei(7_500_000_000_000_000_000));
 
         Ok(())
     }
