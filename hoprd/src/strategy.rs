@@ -17,6 +17,9 @@ use smart_default::SmartDefault;
 use strum::{Display as StrumDisplay, VariantNames};
 use validator::{Validate, ValidationError};
 
+#[cfg(feature = "runtime-tokio")]
+mod legacy_config;
+
 #[cfg(all(feature = "telemetry", not(test)))]
 lazy_static::lazy_static! {
     static ref METRIC_ENABLED_STRATEGIES: hopr_lib::api::types::telemetry::MultiGauge =
@@ -68,6 +71,7 @@ pub enum StrategyKind {
     #[cfg(feature = "runtime-tokio")]
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
+    #[serde(deserialize_with = "legacy_config::deserialize_channel_lifecycle")]
     ChannelLifecycle(Box<hopr_strategy::channel_lifecycle::ChannelLifecycleConfig>),
     Multi(MultiStrategyConfig),
     Passive,
@@ -348,6 +352,99 @@ mod tests {
             wei(45_000_000_000_000_000_000)
         );
         assert_eq!(jura.face_value, wei(7_500_000_000_000_000_000));
+
+        Ok(())
+    }
+
+    fn channel_lifecycle(
+        kind: StrategyKind,
+    ) -> hopr_strategy::channel_lifecycle::ChannelLifecycleConfig {
+        match kind {
+            StrategyKind::ChannelLifecycle(c) => *c,
+            other => panic!("expected a ChannelLifecycle strategy, got {other}"),
+        }
+    }
+
+    /// Configs written before `min_safe_capacity_required` and `stop_when_unfunded`
+    /// were removed from `hopr-strategy` must still load, with both keys ignored.
+    #[test]
+    fn channel_lifecycle_accepts_deprecated_funding_keys() -> anyhow::Result<()> {
+        let legacy = serde_saphyr::from_str::<StrategyKind>(
+            r#"
+ChannelLifecycle:
+  funding:
+    initial_capacity: "1 GiB"
+    topup_capacity: "512 MiB"
+    min_safe_capacity_required: "512 MiB"
+    stop_when_unfunded: true
+"#,
+        )?;
+        let current = serde_saphyr::from_str::<StrategyKind>(
+            r#"
+ChannelLifecycle:
+  funding:
+    initial_capacity: "1 GiB"
+    topup_capacity: "512 MiB"
+"#,
+        )?;
+
+        assert_eq!(channel_lifecycle(legacy), channel_lifecycle(current));
+
+        Ok(())
+    }
+
+    #[test]
+    fn channel_lifecycle_defaults_match_upstream() -> anyhow::Result<()> {
+        let parsed = serde_saphyr::from_str::<StrategyKind>("ChannelLifecycle: {}\n")?;
+
+        assert_eq!(
+            channel_lifecycle(parsed),
+            hopr_strategy::channel_lifecycle::ChannelLifecycleConfig::default()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn channel_lifecycle_still_rejects_unknown_funding_keys() {
+        let err = serde_saphyr::from_str::<StrategyKind>(
+            "ChannelLifecycle:\n  funding:\n    not_a_funding_key: 1\n",
+        )
+        .expect_err("unknown funding keys must be rejected");
+
+        assert!(
+            err.to_string().contains("not_a_funding_key"),
+            "error should name the offending key, got: {err}"
+        );
+    }
+
+    #[test]
+    fn channel_lifecycle_still_rejects_unknown_top_level_keys() {
+        let err =
+            serde_saphyr::from_str::<StrategyKind>("ChannelLifecycle:\n  not_a_lifecycle_key: 1\n")
+                .expect_err("unknown channel lifecycle keys must be rejected");
+
+        assert!(
+            err.to_string().contains("not_a_lifecycle_key"),
+            "error should name the offending key, got: {err}"
+        );
+    }
+
+    #[test]
+    fn channel_lifecycle_serialization_omits_deprecated_funding_keys() -> anyhow::Result<()> {
+        let legacy = serde_saphyr::from_str::<StrategyKind>(
+            r#"
+ChannelLifecycle:
+  funding:
+    min_safe_capacity_required: "512 MiB"
+    stop_when_unfunded: false
+"#,
+        )?;
+        let yaml = serde_saphyr::to_string(&legacy)?;
+
+        assert!(!yaml.contains("min_safe_capacity_required"), "got: {yaml}");
+        assert!(!yaml.contains("stop_when_unfunded"), "got: {yaml}");
+        assert_eq!(serde_saphyr::from_str::<StrategyKind>(&yaml)?, legacy);
 
         Ok(())
     }

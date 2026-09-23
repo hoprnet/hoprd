@@ -223,6 +223,22 @@ mod tests {
     }
 
     #[test]
+    fn validate_passes_for_config_with_deprecated_funding_keys() -> anyhow::Result<()> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/hoprd-legacy-funding.cfg.yaml"
+        );
+
+        validate_effective_config(&[
+            "--configurationFilePath".to_string(),
+            path.to_string(),
+            "--password".to_string(),
+            "a-securely-provided-password".to_string(),
+        ])
+        .context("expected a config with deprecated funding keys to validate")
+    }
+
+    #[test]
     fn help_and_version_requests_are_a_noop_success() -> anyhow::Result<()> {
         // hoprd itself renders --help/--version; the validation gate must not block them.
         validate_effective_config(&["--help".to_string()])
