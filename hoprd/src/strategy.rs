@@ -156,10 +156,12 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 /// ```
 ///
 /// Both sections may be omitted; each falls back to the upstream defaults documented on the
-/// respective type. Note that the accepted keys under `pool` follow the build: a
-/// `strategy-pix-curvy` binary has only `max_deposit_tracking_time`, and — because
-/// `CurvyDepositPoolConfig` does not set `deny_unknown_fields` — it *ignores* the plain pool's
-/// keys rather than rejecting them.
+/// respective type. Note that the accepted keys under `pool` follow the build: the two pools
+/// share only `blokli_url` and `max_deposit_tracking_time`, and each has keys the other has no
+/// use for — the plain pool's `gas_xdai_per_sweep`, the Curvy pool's `shielding`, `submission`
+/// and the rest of its deployment wiring. Because `CurvyDepositPoolConfig` does not set
+/// `deny_unknown_fields`, a `strategy-pix-curvy` binary *ignores* the plain pool's keys rather
+/// than rejecting them; the plain pool does set it, so the converse is an error.
 #[cfg(feature = "pix")]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Validate)]
 #[serde(default, deny_unknown_fields)]
@@ -386,17 +388,19 @@ where
     build_strategies_inner(cfg, node, chain_key)
 }
 
-// `chain_key` is unread unless the plain pool is compiled in; see `build_strategies`.
-// Without the plain pool there is no `build_non_anonymous` call, so `chain_key` reaches nothing
-// but the recursive call below — which is what both of these lints are pointing at. Gated on the
-// feature rather than blanket-allowed, so the day something else here needs the key, an unused
-// one is still caught in the builds that have it.
+// `chain_key` is unread unless a PIX pool is compiled in; see `build_strategies`. Both pools
+// take it now — the plain one signs its deposit transfers with it, and the Curvy one drives the
+// node's Safe through its permission module, whose `execTransactionFromModule` accepts no other
+// signer — so with neither, `chain_key` reaches nothing but the recursive call below, which is
+// what both of these lints are pointing at. Gated on the features rather than blanket-allowed,
+// so the day something else here needs the key, an unused one is still caught in the builds
+// that have it.
 #[cfg_attr(
-    not(feature = "strategy-pix-test"),
+    not(any(feature = "strategy-pix-test", feature = "strategy-pix-curvy")),
     allow(
         unused_variables,
         clippy::only_used_in_recursion,
-        reason = "only the plain PIX pool signs with the node key"
+        reason = "only a PIX deposit pool signs with the node key"
     )
 )]
 fn build_strategies_inner<N>(
@@ -490,6 +494,7 @@ where
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_curvy::<_, SpecDepositAddress>(
                         Arc::clone(&node),
+                        chain_key.clone(),
                         sub_cfg.pool.clone(),
                     )?;
                 strategies.push(built);
@@ -578,7 +583,9 @@ mod tests {
         assert_eq!(rotsee.initial_balance, wei(374_400_000));
         assert_eq!(rotsee.topup_balance, wei(201_600_000));
         assert_eq!(rotsee.lower_balance_threshold, wei(201_600_000));
-        assert_eq!(rotsee.min_safe_balance_required, wei(201_600_000));
+        // `price × hops / win_prob` = 100 × 3 / 1.25e-4, and the quantum the three stakes
+        // above are whole multiples of (156, 84 and 84 tickets respectively).
+        assert_eq!(rotsee.face_value, wei(2_400_000));
 
         // jura: ticket price 1e13 wei, win_prob 4e-6 (1/250 000)
         let jura = funding.resolve::<TestTransport>(wei(10_000_000_000_000), 4.0e-6);
@@ -588,10 +595,8 @@ mod tests {
             jura.lower_balance_threshold,
             wei(45_000_000_000_000_000_000)
         );
-        assert_eq!(
-            jura.min_safe_balance_required,
-            wei(45_000_000_000_000_000_000)
-        );
+        // 1e13 × 3 / 4e-6; the stakes above are 9 and 6 tickets.
+        assert_eq!(jura.face_value, wei(7_500_000_000_000_000_000));
 
         Ok(())
     }
