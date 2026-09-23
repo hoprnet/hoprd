@@ -159,6 +159,3 @@ hopr-lib = { workspace = true, features = [
 
 [package.metadata.cargo-machete]
 ignored = ["humantime-serde", "lazy_static"]
-
-[package.metadata.cargo-shear]
-ignored = ["humantime-serde", "lazy_static"]

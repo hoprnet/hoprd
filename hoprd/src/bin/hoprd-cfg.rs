@@ -93,6 +93,13 @@ struct CliArgs {
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
+    // Surfaces config warnings (e.g. deprecated options) on stderr, keeping stdout
+    // clean for the `--default` YAML dump.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::WARN)
+        .init();
+
     if args.default {
         println!(
             "{}",
