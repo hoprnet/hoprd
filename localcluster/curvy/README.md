@@ -42,6 +42,21 @@ PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
 Use `--release /path/to/release.json` to select another matching release. The
 registry flow requires no transferred image archive or local image tags.
 
+### Stack only
+
+`--stack-only` brings up the same stack and leaves it running instead of
+running the soak, for a harness that starts its own nodes against it
+(gnosis_vpn-testenv's `up-curvy`). `HOPRD_BIN` and `HOPRD_PIX_SOAK_BIN` are not
+needed. The environment those nodes need — `HOPRD_CHAIN_URL`, the pool's
+`HOPRD_CURVY_*` overrides, `HOPRD_CURVY_SCOPE_AGGREGATOR` and
+`CURVY_ZK_KEYS_DIR` — is written to `stack.env` in the printed run directory;
+the service signers are not. `--down` removes the stack again.
+
+`CURVY_BIND_ADDR` (default `127.0.0.1`) and `CURVY_GATEWAY_PORT` (default
+`3000`) move where Blokli and the gateway are published, for callers whose
+clients sit behind a Docker bridge or whose nodes already use port 3000. Both
+apply to the soak run as well.
+
 Verified 2026-09-15 with `--no-dashboard`: image pulls and proving-file
 downloads take about 10 minutes the first time, the soak then ran 10 of 10
 cycles and passed in 555 s.

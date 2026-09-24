@@ -15,7 +15,9 @@ services:
     platform: ${CURVY_PLATFORM}
     container_name: hopr-chain
     ports:
-      - "127.0.0.1:8080:8080"
+      # CURVY_BIND_ADDR: where Blokli and the gateway are published. Loopback by default; a caller
+      # whose clients sit behind a Docker bridge publishes on that bridge's gateway address instead.
+      - "${CURVY_BIND_ADDR:-127.0.0.1}:8080:8080"
 
   db:
     # Public hopr-localcluster-pg: schemas/users are already in PGDATA. A fresh
@@ -99,7 +101,7 @@ services:
     image: ${CURVY_GATEWAY_IMAGE:?release manifest required}
     platform: ${CURVY_PLATFORM}
     ports:
-      - "127.0.0.1:3000:80"
+      - "${CURVY_BIND_ADDR:-127.0.0.1}:${CURVY_GATEWAY_PORT:-3000}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./protocol.json:/usr/share/nginx/html/protocol.json:ro

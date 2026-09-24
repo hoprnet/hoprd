@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Pull a Curvy release stack and run the PIX soak with direct Safe shielding.
 # No Nix, Cargo, Docker builds, or source checkouts are used at launch time.
+#
+# --stack-only brings the same stack up and leaves it running instead of running the soak, for a
+# harness that starts its own nodes against it (gnosis_vpn-testenv). It writes the environment those
+# nodes need to $CURVY_RUN_DIR/stack.env; --down removes the stack again. CURVY_BIND_ADDR and
+# CURVY_GATEWAY_PORT move where Blokli and the gateway are published (default 127.0.0.1, 3000).
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_DIR="$REPO_ROOT/localcluster/curvy"
@@ -11,8 +16,19 @@ die() {
 RELEASE="${CURVY_LOCALCLUSTER_RELEASE:-$CONFIG_DIR/release.json}"
 DASHBOARD=true
 OFFLINE=false
+STACK_ONLY=false
+STACK_PROJECT="${CURVY_STACK_PROJECT:-hopr-curvy-stack}"
 while (($#)); do
   case "$1" in
+  --stack-only)
+    STACK_ONLY=true
+    DASHBOARD=false
+    shift
+    ;;
+  --down)
+    docker compose --project-name "$STACK_PROJECT" down --volumes --timeout 15
+    exit
+    ;;
   --release)
     (($# >= 2)) || die "--release needs a JSON file"
     RELEASE=$2
@@ -26,7 +42,7 @@ while (($#)); do
     OFFLINE=true
     shift
     ;;
-  *) die "usage: $0 [--release release.json] [--offline] [--no-dashboard]" ;;
+  *) die "usage: $0 [--release release.json] [--offline] [--no-dashboard] [--stack-only | --down]" ;;
   esac
 done
 [[ $(uname -s) == Linux ]] || die "the soak runner requires Linux (shared host loopback)"
@@ -65,10 +81,20 @@ export CURVY_PENDING_GRAPH="$(read_release .pending.graph)"
 export CURVY_PENDING_GRAPH_SHA256="$(read_release .pending.graph_sha256)"
 export CURVY_PENDING_ZKEY="$(read_release .pending.zkey)"
 export CURVY_PENDING_ZKEY_SHA256="$(read_release .pending.zkey_sha256)"
-[[ -x ${HOPRD_BIN:-} && -x ${HOPRD_PIX_SOAK_BIN:-} ]] ||
-  die "set HOPRD_BIN and HOPRD_PIX_SOAK_BIN to the Linux-built executables"
-export HOPRD_BIN="$(realpath "$HOPRD_BIN")"
-export HOPRD_PIX_SOAK_BIN="$(realpath "$HOPRD_PIX_SOAK_BIN")"
+if ! $STACK_ONLY; then
+  [[ -x ${HOPRD_BIN:-} && -x ${HOPRD_PIX_SOAK_BIN:-} ]] ||
+    die "set HOPRD_BIN and HOPRD_PIX_SOAK_BIN to the Linux-built executables"
+  export HOPRD_BIN="$(realpath "$HOPRD_BIN")"
+  export HOPRD_PIX_SOAK_BIN="$(realpath "$HOPRD_PIX_SOAK_BIN")"
+fi
+export CURVY_BIND_ADDR="${CURVY_BIND_ADDR:-127.0.0.1}"
+export CURVY_GATEWAY_PORT="${CURVY_GATEWAY_PORT:-3000}"
+# Where this script (and the nodes) reach what is published: a wildcard bind is reachable on loopback.
+case "$CURVY_BIND_ADDR" in
+0.0.0.0 | 127.0.0.1) STACK_HOST=127.0.0.1 ;;
+*) STACK_HOST=$CURVY_BIND_ADDR ;;
+esac
+GATEWAY_URL="http://$STACK_HOST:$CURVY_GATEWAY_PORT"
 docker info >/dev/null
 docker compose version >/dev/null
 if $OFFLINE; then
@@ -79,7 +105,12 @@ docker container inspect hopr-chain >/dev/null 2>&1 &&
 
 RUN_DIR=$(mktemp -d /tmp/hopr-curvy.XXXXXX)
 export CURVY_RUN_DIR="$RUN_DIR"
-PROJECT="hopr-curvy-$(basename "$RUN_DIR" | tr '[:upper:].' '[:lower:]-')"
+if $STACK_ONLY; then
+  # Fixed, so that --down finds it without the run directory.
+  PROJECT=$STACK_PROJECT
+else
+  PROJECT="hopr-curvy-$(basename "$RUN_DIR" | tr '[:upper:].' '[:lower:]-')"
+fi
 COMPOSE=(docker compose --env-file /dev/null --project-name "$PROJECT" -f "$CONFIG_DIR/compose.yml")
 compose() { "${COMPOSE[@]}" "$@"; }
 COMPOSE_STARTED=false
@@ -115,17 +146,19 @@ export CURVY_RELAYER_KEY CURVY_PROVER_KEY
 compose config --quiet
 # Publish this run before pulling images or starting a new chain. The companion
 # may already be open and must stop using the previous run's logs and caches.
-export PIX_DEMO_STATE_DIR="${PIX_DEMO_STATE_DIR:-/tmp/pix-demo}"
-mkdir -p "$PIX_DEMO_STATE_DIR"
-[[ ! -L $PIX_DEMO_STATE_DIR && -d $PIX_DEMO_STATE_DIR && -O $PIX_DEMO_STATE_DIR ]] ||
-  die "PIX_DEMO_STATE_DIR must be a directory owned by $(id -un) and not a symlink"
-export PIX_DEMO_RUN_STARTED="$(date +%s)"
-(
-  flock -w 45 9 || die "dashboard cache is busy"
-  rm -f "$PIX_DEMO_STATE_DIR/finished"
-  printf '%s\n' "$PIX_DEMO_RUN_STARTED" >"$PIX_DEMO_STATE_DIR/started.tmp"
-  mv "$PIX_DEMO_STATE_DIR/started.tmp" "$PIX_DEMO_STATE_DIR/started"
-) 9>"$PIX_DEMO_STATE_DIR/.curvy.lock"
+if ! $STACK_ONLY; then
+  export PIX_DEMO_STATE_DIR="${PIX_DEMO_STATE_DIR:-/tmp/pix-demo}"
+  mkdir -p "$PIX_DEMO_STATE_DIR"
+  [[ ! -L $PIX_DEMO_STATE_DIR && -d $PIX_DEMO_STATE_DIR && -O $PIX_DEMO_STATE_DIR ]] ||
+    die "PIX_DEMO_STATE_DIR must be a directory owned by $(id -un) and not a symlink"
+  export PIX_DEMO_RUN_STARTED="$(date +%s)"
+  (
+    flock -w 45 9 || die "dashboard cache is busy"
+    rm -f "$PIX_DEMO_STATE_DIR/finished"
+    printf '%s\n' "$PIX_DEMO_RUN_STARTED" >"$PIX_DEMO_STATE_DIR/started.tmp"
+    mv "$PIX_DEMO_STATE_DIR/started.tmp" "$PIX_DEMO_STATE_DIR/started"
+  ) 9>"$PIX_DEMO_STATE_DIR/.curvy.lock"
+fi
 if ! $OFFLINE; then
   while IFS= read -r image; do
     echo "curvy-localcluster: pulling $image"
@@ -176,7 +209,7 @@ done
 COMPOSE_STARTED=true
 compose up -d --no-build --pull never chain db
 CHAIN_ID=$(compose ps -q chain)
-export HOPRD_CHAIN_URL=http://127.0.0.1:8080
+export HOPRD_CHAIN_URL=http://$STACK_HOST:8080
 assert_running() {
   local service id
   for service in "$@"; do
@@ -270,9 +303,9 @@ jq -e --arg aggregator "${AGGREGATOR,,}" --arg vault "${VAULT,,}" \
 ' "$RUN_DIR/localdb.json" >/dev/null || die "localdb seed does not match this chain/artifact release; see $RUN_DIR/localdb.json"
 
 compose up -d --no-build --pull never indexer relayer gateway
-wait_http http://127.0.0.1:3000/protocol chain gateway
-wait_http http://127.0.0.1:3000/relay-health chain relayer gateway
-wait_http http://127.0.0.1:3000/sync/ready chain indexer gateway
+wait_http "$GATEWAY_URL/protocol" chain gateway
+wait_http "$GATEWAY_URL/relay-health" chain relayer gateway
+wait_http "$GATEWAY_URL/sync/ready" chain indexer gateway
 jq -e '.chains | length == 1 and .[0].chainId == 31337 and .[0].ready == true' \
   "$RUN_DIR/ready.json" >/dev/null || die "indexer readiness did not confirm local chain 31337"
 compose up -d --no-build --pull never batch-prover
@@ -287,7 +320,7 @@ until compose logs --no-color batch-prover | grep 'batch prover started' >/dev/n
 done
 
 export PIX_POOL=curvy HOPRD_CURVY_SHIELDING=direct HOPRD_CURVY_SUBMISSION=relayer
-export HOPRD_CURVY_RELAYER_URL=http://127.0.0.1:3000
+export HOPRD_CURVY_RELAYER_URL=$GATEWAY_URL
 export HOPRD_CURVY_NOTE_SOURCE=blokli HOPRD_CURVY_TOKEN=3
 export HOPRD_CURVY_SCOPE_AGGREGATOR="$AGGREGATOR"
 export CURVY_ZK_KEYS_DIR="$RUN_DIR/keys"
@@ -296,6 +329,22 @@ export CURVY_ZK_KEYS_DIR="$RUN_DIR/keys"
 unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEYS
 unset HOPRD_CURVY_INITIAL_FUNDING HOPRD_CURVY_SCOPE_RPC_URL
 unset HOPRD_PIX_SOAK_POOL_PREFUNDED HOPRD_PIX_FLOAT_NODE_IDS
+
+if $STACK_ONLY; then
+  # Everything a node started against this stack needs; the service signers stay out of it.
+  {
+    for var in HOPRD_CHAIN_URL HOPRD_CURVY_SHIELDING HOPRD_CURVY_SUBMISSION HOPRD_CURVY_RELAYER_URL \
+      HOPRD_CURVY_NOTE_SOURCE HOPRD_CURVY_TOKEN HOPRD_CURVY_SCOPE_AGGREGATOR CURVY_ZK_KEYS_DIR; do
+      printf 'export %s=%q\n' "$var" "${!var}"
+    done
+    printf 'export CURVY_STACK_PROJECT=%q\n' "$PROJECT"
+  } >"$RUN_DIR/stack.env"
+  # Leave the stack up: the EXIT trap only tears down what it was told it started.
+  COMPOSE_STARTED=false
+  echo "curvy-localcluster: stack up (project $PROJECT); environment in $RUN_DIR/stack.env"
+  echo "curvy-localcluster: stop it with: $0 --down"
+  exit 0
+fi
 
 printf '#!/usr/bin/env bash\nunset CURVY_RELAYER_KEY CURVY_PROVER_KEY\ncd %q || exit $?\nexec sh %q\n' \
   "$RUN_DIR/tmp" "$CONFIG_DIR/run-soak.sh" >"$RUN_DIR/run-test.sh"

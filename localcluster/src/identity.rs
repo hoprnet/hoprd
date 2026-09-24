@@ -1184,6 +1184,24 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 poll_handle.await??
             };
 
+            // Same grant as for a cluster node: an extra identity is how an external Entry — a
+            // client embedding its own node — joins the cluster, and under the Curvy pool it is the
+            // Entry's Safe that shields, so its module needs the aggregator scoped just the same.
+            if let Some(aggregator) = crate::curvy_grant::aggregator_from_env()? {
+                info!(extra_id = %id, "scoping the Curvy aggregator into the Safe module");
+                crate::curvy_grant::scope_aggregator(
+                    &blokli_client,
+                    &kp.chain_key,
+                    safe.address,
+                    safe.module,
+                    aggregator,
+                )
+                .await
+                .with_context(|| {
+                    format!("Extra {id}: granting the Safe the Curvy aggregator target")
+                })?;
+            }
+
             let id_file = home_path.join(format!("extra_id_{id}.id"));
             let id_file_str = id_file
                 .to_str()
