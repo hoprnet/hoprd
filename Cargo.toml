@@ -25,7 +25,7 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "rel
 
 # crates.io HOPR deps
 hopr-api = { version = "2.0.0" }
-hopr-chain-connector = { version = "0.22.2" }
+hopr-chain-connector = { version = "0.22.3" }
 hopr-ct-full-network = { version = "0.4.0", default-features = false }
 hopr-network-graph = { version = "0.5.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.1.2", default-features = false }
