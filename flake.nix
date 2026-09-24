@@ -133,6 +133,7 @@
             extraFiles = [
               ./deploy/compose/hoprd/conf/hoprd.cfg.yaml
               ./deploy/nfpm/hoprd-sample.cfg.yaml
+              ./hoprd/tests/fixtures/hoprd-legacy-funding.cfg.yaml
               (fs.fileFilter (file: file.hasExt "snap") ./.)
             ];
           };

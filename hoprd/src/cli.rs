@@ -484,6 +484,26 @@ mod tests {
         Ok(())
     }
 
+    /// A node whose config file predates the removal of `min_safe_capacity_required`
+    /// and `stop_when_unfunded` from `hopr-strategy` must still build its config.
+    #[test]
+    fn config_file_with_deprecated_funding_keys_loads() -> anyhow::Result<()> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/hoprd-legacy-funding.cfg.yaml"
+        );
+        let args = CliArgs::try_parse_from(["hoprd", "--configurationFilePath", path])?;
+
+        let legacy = HoprdConfig::try_from(args)?;
+        let shipped = serde_saphyr::from_str::<HoprdConfig>(include_str!(
+            "../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"
+        ))?;
+
+        assert_eq!(legacy.strategy, shipped.strategy);
+
+        Ok(())
+    }
+
     #[test]
     fn non_auto_domain_listen_host_is_rejected() -> anyhow::Result<()> {
         // A domain is accepted by CLI parsing but rejected when the effective config is built,

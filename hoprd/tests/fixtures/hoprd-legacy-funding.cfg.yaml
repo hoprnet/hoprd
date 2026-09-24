@@ -1,12 +1,19 @@
 ---
 blokli_url: https://blokli.prod.hoprnet.link
-db:
-  data: /var/lib/hoprd
 identity:
-  file: "/etc/hoprd/hopr.id"
-  password: "change_me"
+  file: "/app/hoprd/conf/hopr.id"
+db:
+  data: /app/hoprd/data
 api:
   enable: true
+  host:
+    address:
+      IPv4: 0.0.0.0
+    port: 3001
+  # Flow-control (AIMD send-window) profile for sessions this node initiates as a
+  # client via the session API: off | clean | robust. Only affects node-originated
+  # sessions — relays and exit nodes never run flow control. Default: robust.
+  session_flow_control: robust
 strategy:
   allow_recursive: false
   strategies:
@@ -33,6 +40,8 @@ strategy:
           initial_capacity: "1 GiB"
           topup_capacity: "512 MiB"
           lower_capacity_threshold: "512 MiB"
+          min_safe_capacity_required: "512 MiB"
+          stop_when_unfunded: true
         proactive_funding:
           enabled: true
           safety_margin: 1.5
@@ -53,6 +62,10 @@ hopr:
   network:
     probe_interval: "3s"
     probe_recheck_threshold: "10s"
+  host:
+    address:
+      IPv4: 127.0.0.1 # NOTE: adapt this to reflect your public IP
+    port: 9091 # NOTE: adapt this to reflect your public PORT - the value set in HOPRD_P2P_PORT
   safe_module:
     safe_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
     module_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
