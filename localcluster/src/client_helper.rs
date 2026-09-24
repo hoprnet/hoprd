@@ -7,8 +7,8 @@ use anyhow::{Context, Result};
 use hopr_lib::api::types::primitive::prelude::{HoprBalance, XDaiBalance};
 use hoprd_api_client;
 use hoprd_api_client::types::{
-    IpProtocol, OpenChannelBodyRequest, PixSsaQuota, RoutingOptions, SessionCapability,
-    SessionClientRequest, SessionTargetSpec,
+    IpProtocol, OpenChannelBodyRequest, RoutingOptions, SessionCapability, SessionClientRequest,
+    SessionTargetSpec,
 };
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::debug;
@@ -40,17 +40,6 @@ pub struct OpenSessionRequest<'a> {
     /// SURB balancer: ceiling on artificial SURB generation, e.g. `"50 Mb/s"`.
     /// `None` leaves the protocol default.
     pub max_surb_upstream: Option<String>,
-    /// PIX SSA dimensions, named as the API names them.
-    ///
-    /// Must equal this node's own `network.pix` generator dimensions — all three of them,
-    /// since the surplus is priced into the per-SSA quota — and must be accompanied by
-    /// [`SessionCapability::UsePix`]; without the capability the Exit is never told PIX
-    /// is in play.
-    ///
-    /// The generated client's own type rather than a triple of this crate's: it is what the
-    /// body needs, so taking anything else here would only add a conversion that could put the
-    /// dimensions back in the wrong order.
-    pub pix_ssa_quota: Option<PixSsaQuota>,
 }
 
 /// Balances reported by `GET /account/balances`, split by holder.
@@ -350,7 +339,6 @@ impl HoprdApiClient {
             capabilities,
             response_buffer,
             max_surb_upstream,
-            pix_ssa_quota,
         } = req;
 
         let body = SessionClientRequest {
@@ -363,7 +351,6 @@ impl HoprdApiClient {
             listen_host: None,
             max_client_sessions: None,
             max_surb_upstream,
-            pix_ssa_quota,
             response_buffer,
             session_pool: None,
         };

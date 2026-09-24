@@ -541,8 +541,10 @@ mod tests {
     #[test]
     fn disable_checks_absent_leaves_config_unchanged() -> anyhow::Result<()> {
         let (_g, _e) = setup_env(&[(DISABLE_CHECKS_VAR, None)]);
-        let mut cfg = HoprLibConfig::default();
-        cfg.disable_protocol_checks = true;
+        let mut cfg = HoprLibConfig {
+            disable_protocol_checks: true,
+            ..Default::default()
+        };
 
         update_hopr_lib_config_from_env_vars(&mut cfg)?;
 
