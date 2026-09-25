@@ -16,6 +16,27 @@
         "type": "github"
       }
     },
+    "curvy-zk-artifacts": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790066826,
+        "narHash": "sha256-1VdF8gpJoGm3FRmXI6gp3jnv4G+NtjVppxhQtdr8mz4=",
+        "owner": "0xCurvy",
+        "repo": "rs-sdk",
+        "rev": "c97120cd2e8f4a3e59c4c88e27b0ea4d27856807",
+        "type": "github"
+      },
+      "original": {
+        "owner": "0xCurvy",
+        "ref": "v0.1.0-rc.8",
+        "repo": "rs-sdk",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -204,6 +225,7 @@
     "root": {
       "inputs": {
         "crane": "crane",
+        "curvy-zk-artifacts": "curvy-zk-artifacts",
         "flake-parts": "flake-parts",
         "flake-root": "flake-root",
         "flake-utils": "flake-utils",

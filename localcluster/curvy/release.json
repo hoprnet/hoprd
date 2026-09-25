@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "platform": "linux/amd64",
+  "images": {
+    "chain": "europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:32714eddb075c7eb781a4e5cc75c0e42a24ab8aa891f4749f7f49c5dcf1570f8",
+    "localdb": "public.ecr.aws/f2n2s2w2/hopr-localcluster-pg@sha256:d833b161b7b0e4e5cd0bd5028127472d9e25a643aa2803a014215085dacb9022",
+    "indexer": "public.ecr.aws/f2n2s2w2/staging-indexer@sha256:4c0be3af7381ffebcc417723a83c56c736e12d73496d28bb6b7eccec57250c54",
+    "relayer": "public.ecr.aws/f2n2s2w2/staging-relayer@sha256:86cd994685ed5102bba32087465f267f442a6a96b4e5e540eeafd5a2de50df4d",
+    "batch_prover": "public.ecr.aws/f2n2s2w2/staging-batch-prover@sha256:acb005abee2c64b7acfc72ef780330098e90fd189c8ac7464715a7d5cb1c8acd",
+    "gateway": "docker.io/library/nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c"
+  },
+  "database": {
+    "pgdata": "/var/lib/postgresql/cluster",
+    "configure_localnet": true
+  },
+  "artifacts": {
+    "base_url": "https://github.com/0xCurvy/rs-sdk/releases/download/v0.1.0-rc.8",
+    "files": {
+      "aggregation-2-3-30.signet.zst": "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386",
+      "pending-5-30.signet.zst": "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0",
+      "pix-aggregation-2-9-30.signet.zst": "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a",
+      "pix-withdrawal-10-30.signet.zst": "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56",
+      "withdrawal-2-30.signet.zst": "04b2fa84394548a971c757c61280b81fb7699a367eeb45834201675f8a0aad74",
+      "verifyPendingNotesCommitment_5_30_0001.zkey": "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847",
+      "verifyPixAggregation_2_9_30_evaluation.zkey": "b4fced8a3c183d25a13a24c9ee7234ec96b77f87f688992ee07144f23ace6750",
+      "verifyPixMultiOwnerWithdrawal_10_30_evaluation.zkey": "e18f0fdd40aa2643c31c3a02ef0a508b5c7580a436abcae88e364ee86be6a95b",
+      "verifySingleAggregationNoHashing_2_3_30_0001.zkey": "88a85746f60820712199a60ee13241181658250ba9855af61503d306c52ba4e6",
+      "verifySingleWithdrawalNoHashing_2_30_0001.zkey": "c91d9fdbea6edde296e9676bdb97959f6acb5f32360b5490c01cea9814844716"
+    }
+  },
+  "pending": {
+    "graph": "pending-5-30.signet.zst",
+    "graph_sha256": "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0",
+    "zkey": "verifyPendingNotesCommitment_5_30_0001.zkey",
+    "zkey_sha256": "efb4c3d4d3350f931860faeb6319b6010303c5fbf06d8ef414d708e9cf907847"
+  }
+}

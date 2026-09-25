@@ -47,8 +47,6 @@ nix develop -c cargo build -p hoprd -p hoprd-localcluster
 ### Default (Docker)
 
 ```bash
-rm -rf /tmp/hopr-nodes   # clear any stale state
-
 CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
 RUST_LOG=info \
@@ -62,8 +60,6 @@ RUST_LOG=info \
 
 ```bash
 container system start   # once per boot
-
-rm -rf /tmp/hopr-nodes
 
 CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest
 
@@ -89,6 +85,28 @@ HOPRD_CHAIN_URL=http://localhost:8080 \
 ```
 
 Press **Ctrl-C** to stop — the orchestrator kills all `hoprd` processes and removes the chain container on exit.
+
+### State across runs
+
+Each launch that starts a managed chain container clears the node directories
+`<data-dir>/db_0` through `db_4` before provisioning and starting nodes. This also
+clears nodes left over from a larger cluster. You do not need to delete the data
+directory between runs. The reset leaves files outside those node directories
+alone, including the control locks.
+
+Nodes run with their own `db_<id>` as their working directory, so Curvy's default
+`curvy-pix-<address>.redb` and any relative PIX recovery paths stay inside the
+managed node directory. Generated config and identity paths are absolute;
+relative `--hoprd-bin` and `CURVY_ZK_KEYS_DIR` paths still resolve from the
+directory where you launch localcluster.
+
+With `--chain-url` (or `HOPRD_CHAIN_URL`), localcluster preserves node databases
+and reuses existing node keystores. Restarting nodes also preserves their state.
+If you deliberately replace an external chain, use a fresh `--data-dir`.
+When resuming an external chain, a legacy `curvy-pix-<address>.redb` in the
+caller's working directory is moved into the corresponding `db_<id>`. If both
+locations contain a database, startup fails so you can select the correct one.
+Fresh managed chains leave legacy files outside the node directories untouched.
 
 ### Docker Compose
 
@@ -156,6 +174,35 @@ HOPRD_BIN=./result-hoprd/bin/hoprd \
 HOPRD_CHAIN_IMAGE=<chain-image> \
   nix develop -c cargo nextest run -p hoprd-localcluster --test smoke --run-ignored all -j 1
 ```
+
+---
+
+## Curvy PIX soak test (direct shielding)
+
+The Curvy publishing pipeline supplies prebuilt PostgreSQL, indexer, relayer,
+batch-prover and supporting images. The launcher starts them with a fresh chain
+and database, configures local chain 31337, and runs the PIX soak. It performs
+no image builds or schema migrations.
+
+Build hoprd and the soak executable on Linux, set `HOPRD_BIN` and
+`HOPRD_PIX_SOAK_BIN`, then run with the checked-in image manifest:
+
+```bash
+PIX_DEMO_RATE=1000 ./localcluster/scripts/curvy-localcluster.sh
+```
+
+The default manifest pulls images by digest and downloads verified proving files
+from the public rs-sdk release. The gateway serves the local fee collector's
+public keys; no metadata container is needed. Use `--release` to select another
+manifest, `--offline` with the prepared image archive's manifest after loading its
+images, or `--no-dashboard` to stream test output. The Entry shields directly
+from its Safe; all nodes submit through the shared relayer, and the batch prover
+has a separate funded signer. The full ten-deposit assertions remain unchanged.
+
+See [the runtime configuration and Linux commands](../../localcluster/curvy/README.md).
+Logs remain in `/tmp/pix-demo/test.log`, `/tmp/pix-soak-logs`, and the printed
+`/tmp/hopr-curvy.XXXXXX` directory. The launcher removes only its own containers
+and temporary database volume on exit.
 
 ---
 

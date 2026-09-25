@@ -19,13 +19,16 @@ use std::{fs, net::SocketAddr, sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use clap::Parser;
 use futures::stream::{FuturesUnordered, StreamExt};
+use hopr_chain_connector::api::HoprBalance;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper, control,
     control::{ControlServer, SharedSummary},
     identity,
     lock::ClusterLock,
     relay::{self, RelayConfig, RelayHandle},
+    state,
     summary::{ClusterState, ClusterSummary, NodeState},
+    sweep,
 };
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
@@ -46,6 +49,7 @@ impl Cleanup {
         }
         for node in self.nodes.iter_mut() {
             let _ = node.child.kill();
+            let _ = node.child.wait();
         }
         if let Some(chain) = self.chain.as_mut() {
             chain.stop();
@@ -85,6 +89,21 @@ async fn main() -> Result<()> {
         println!("{json}");
         return Ok(());
     }
+    if let Some(cli::Command::SweepSafes(sweep)) = &cli.command {
+        let to = sweep.to.parse().context("--to must be an EVM address")?;
+        let moved = sweep::sweep_safes(
+            &sweep.cluster_dir,
+            &sweep.identity_password,
+            &sweep.blokli_url,
+            to,
+        )
+        .await?;
+        let total: HoprBalance = moved
+            .iter()
+            .fold(HoprBalance::zero(), |acc, (_, _, b)| acc + *b);
+        println!("swept {total} from {} Safe(s) to {to}", moved.len());
+        return Ok(());
+    }
 
     let args = cli.run;
 
@@ -98,6 +117,7 @@ async fn main() -> Result<()> {
 
     let data_dir = args.data_dir.clone();
     fs::create_dir_all(&data_dir).context("failed to create data directory")?;
+    let data_dir = fs::canonicalize(&data_dir).context("failed to resolve data directory")?;
     let log_dir = data_dir.join("logs");
     fs::create_dir_all(&log_dir).context("failed to create log directory")?;
 
@@ -109,6 +129,14 @@ async fn main() -> Result<()> {
     // Refuse to run a second instance against the same control base. Held for the
     // whole process lifetime; released automatically on exit (including a crash).
     let _lock = ClusterLock::acquire(&control_base)?;
+    // A custom control base must not allow two harnesses to share node state.
+    let data_lock_base = data_dir.join("data");
+    let _data_lock =
+        if fs::canonicalize(ClusterLock::path_for(&control_base))? == data_dir.join("data.lock") {
+            None
+        } else {
+            Some(ClusterLock::acquire(&data_lock_base)?)
+        };
 
     // Live status, updated through the lifecycle and served on the control socket.
     let summary: SharedSummary = Arc::new(Mutex::new(ClusterSummary::initial(
@@ -141,6 +169,10 @@ async fn main() -> Result<()> {
             url
         };
         summary.lock().await.blokli_url = Some(blokli_url.clone());
+        state::prepare_node_state(&data_dir, explicit_chain_url.is_none())?;
+        if explicit_chain_url.is_none() {
+            info!("cleared node state for the fresh managed chain");
+        }
 
         // Read before the cluster is built rather than lazily inside the config literal: a typo in
         // the geometry should fail here, in a second, and not after a chain and a full mesh of
@@ -172,6 +204,7 @@ async fn main() -> Result<()> {
             config_home: data_dir.to_path_buf(),
             identity_password: args.identity_password.clone(),
             random_identities: true,
+            reuse_identities: explicit_chain_url.is_some(),
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
             p2p_port_base: args.p2p_port_base,
@@ -249,6 +282,7 @@ async fn main() -> Result<()> {
             p2p_port_base: args.p2p_port_base,
             identity_password: &args.identity_password,
             api_token: args.api_token.clone(),
+            env: &[],
         };
         cleanup.nodes = client_helper::start_nodes(&start_cfg).await?;
         {

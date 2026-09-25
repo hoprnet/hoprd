@@ -2,6 +2,10 @@
 #
 # Live dashboard for the PIX Session soak test.
 #
+# For a complete local Curvy setup with direct shielding, use:
+#   ./localcluster/scripts/curvy-localcluster.sh
+# It prepares the chain permissions and environment, then invokes this dashboard.
+#
 # Runs `session_pix_soak` against a throwaway 4-node localcluster — an Entry, two relays and
 # an Exit — and renders what all four are doing while it happens: traffic crossing the Session
 # over both relays, SSA cycles advancing through deposit → confirmation → key recovery → sweep,
@@ -14,24 +18,28 @@
 #   ./localcluster/scripts/pix-demo.sh                  # ~7 minutes
 #   PIX_DEMO_FLOAT="150 wxHOPR" ./localcluster/scripts/pix-demo.sh    # more cycles
 #   PIX_DEMO_RATE=6000 ./localcluster/scripts/pix-demo.sh             # faster
+#   PIX_POOL=curvy CURVY_ZK_KEYS_DIR=~/curvy-zk-keys ./localcluster/scripts/pix-demo.sh
 #
 # The flow was measured to sustain 6000 datagrams/s each way and to saturate by 6500; the
 # committed default is 4000, for the margin reasons on `DEFAULT_PACKET_RATE` in the test.
 #
-# Everything on screen comes from the nodes' own Prometheus endpoints and the REST API —
-# nothing is computed by the test. To watch a cluster somebody else started, or to drive
+# Node counters come from Prometheus and balances from the REST API; billing parameters
+# and application echo volume come from the test log. To watch a cluster somebody else started, or to drive
 # the refresh with watch(1) instead:
 #
 #   watch -n 2 -c ./localcluster/scripts/pix-demo.sh --dashboard
 #
-# Requires curl, jq, bc, docker and cargo-nextest, so run it inside `nix develop`. Plus a
+# Direct runs require curl, jq, bc, docker and cargo-nextest (`nix develop`). The
+# Curvy launcher supplies PIX_DEMO_TEST_RUNNER, bypassing Cargo and local binary
+# checks because it validates/runs a prebuilt executable. Direct runs also need a
 # release `hoprd` at HOPRD_BIN (default `target/release/hoprd`) and HOPRD_CHAIN_IMAGE — see
 # the test's module docs.
 #
 # The hoprd binary carries exactly one deposit pool, chosen at build time by a `strategy-pix-*`
 # feature; `PIX_POOL` (default `test`) says which one this run expects, and the binary is
-# checked against it before the cluster is started. `PIX_POOL=curvy` selects the Baby JubJub pool,
-# which is currently a stub that panics — it exists so the wiring can be exercised end to end.
+# checked against it before the cluster is started. `PIX_POOL=curvy` selects the Curvy privacy
+# pool, which needs `CURVY_ZK_KEYS_DIR` pointing at the proving keys (see *Curvy runs* in the
+# test's docs) and pairs with `curvy-demo.sh`, which shows the same run from the chain's side.
 #
 # Safe to re-run: a stale chain container or leftover nodes from an interrupted attempt are
 # cleared on the way in, and Ctrl-C tears the cluster down on the way out.
@@ -298,8 +306,8 @@ from_log() {
 # Progress bar. Built by slicing pre-filled strings rather than repeating a character:
 # `printf 'X%.0s'` with an empty argument list still prints one X, which silently puts a
 # block in every empty bar.
-FULL='████████████████████████████████'
-EMPTY='░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░'
+FULL='================================'
+EMPTY='................................'
 bar() { # value max [width]
   local value=${1:-0} max=${2:-0} width=${3:-24} filled=0
   if [ "$max" -gt 0 ] 2>/dev/null; then
@@ -315,12 +323,54 @@ num() { printf "%'d" "${1:-0}" 2>/dev/null || echo "${1:-0}"; }
 # Trim the trailing zeroes bc leaves behind ("2.65728000" -> "2.65728", "0" stays "0").
 trim() { printf '%s' "${1:-0}" | sed -e 's/\(\.[0-9]*[1-9]\)0*$/\1/' -e 's/\.0*$//'; }
 
+render_geometry() {
+  local polys=$1 shares=$2 surplus=$3 quota=$4 price=$5 per_cycle=$6
+  local emissions=$((polys * (shares + surplus))) bytes_per_share='?'
+  if [ "$emissions" -gt 0 ] && [[ $quota =~ ^[0-9]+$ ]] && [ $((quota % emissions)) -eq 0 ]; then
+    bytes_per_share=$((quota / emissions))
+  fi
+  printf '  %sSSA BILLING QUOTA%s    %s polys × (%s threshold + %s surplus) shares\n' \
+    "$C_BOLD" "$C_RESET" "$polys" "$shares" "$surplus"
+  printf '                       %s emissions × %s B = %s%s B per SSA%s\n' \
+    "$(num "$emissions")" "$bytes_per_share" "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET"
+  printf '                       %s wxHOPR/byte → %s%s wxHOPR per deposit%s\n\n' \
+    "${price:-?}" "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET"
+}
+
+render_traffic_accounting() {
+  local deposits=$1 quota=$2 sent_mb='' echoed_mb=''
+  if [[ $quota =~ ^[0-9]+$ ]]; then
+    printf '    %-22s %s B %s= %s deposits × %s B; nominal quota%s\n' \
+      'Funded SSA quota' "$(num "$((deposits * quota))")" "$C_DIM" "$deposits" "$(num "$quota")" "$C_RESET"
+  fi
+  # The harness counts verified application echoes. Use its latest progress/final
+  # report, not the node-wide packet counter multiplied by an assumed payload size.
+  if [ -r "$TEST_LOG" ]; then
+    read -r sent_mb echoed_mb < <(sed 's/\x1b\[[0-9;]*m//g' "$TEST_LOG" | awk '
+      / live |PIX soak test PASSED/ {
+        for (i=1; i<=NF; i++) {
+          if ($i ~ /^sent_mb=[0-9]+$/) { split($i, a, "="); sent=a[2] }
+          if ($i ~ /^echoed_mb=[0-9]+$/) { split($i, a, "="); echoed=a[2] }
+        }
+      }
+      END { if (sent != "" && echoed != "") print sent, echoed }
+    ') || true
+  fi
+  if [ -n "$sent_mb" ] && [ -n "$echoed_mb" ]; then
+    printf '    %-22s %s MB sent · %s MB echoed %s(test log, whole MB)%s\n' \
+      'Application payload' "$sent_mb" "$echoed_mb" "$C_DIM" "$C_RESET"
+  else
+    printf '    %-22s unavailable — waiting for a test traffic report\n' 'Application payload'
+  fi
+  printf '    %sNode packet totals are not application bytes or billable SSA shares.%s\n' "$C_DIM" "$C_RESET"
+}
+
 # ── dashboard ───────────────────────────────────────────────────────────────────
 
 render() {
   for i in "${ALL_IDXS[@]}"; do scrape "$i"; done
 
-  local sweeps deposits made_failed over_budget confirmed keys last_sweep
+  local sweeps deposits made_failed over_budget observed keys last_sweep
   sweeps=$(metric "$EXIT_IDX" hopr_strategy_pix_sweeps)
   deposits=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits)
   made_failed=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_failed)
@@ -328,7 +378,7 @@ render() {
   # `max_spend_per_window`. Counted separately from `_failed`, which is a deposit that was
   # attempted and did not land — so the two lines below mean opposite things.
   over_budget=$(metric "$ENTRY_IDX" hopr_strategy_pix_deposits_over_budget)
-  confirmed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
+  observed=$(metric "$EXIT_IDX" hopr_strategy_pix_deposit_tracking 'outcome="confirmed"')
   keys=$(metric "$EXIT_IDX" hopr_strategy_pix_keys_recovered)
   last_sweep=$(grep -E '^hopr_strategy_pix_last_sweep_hopr' "$STATE_DIR/metrics_$EXIT_IDX" 2>/dev/null |
     awk '{ print $NF }' | head -1)
@@ -364,6 +414,10 @@ render() {
   entry_float=$(balance "$ENTRY_IDX" safeHopr)
   local per_cycle
   per_cycle=$(from_log "per_cycle")
+  # What one sweep credits the Exit: the deposit itself, or with the Curvy pool the deposit less
+  # the vault's withdrawal fee, which the test announces once it has read the fee off the chain.
+  local per_sweep
+  per_sweep=$(from_log "per_sweep")
   local funded
   funded=$(from_log "funded_cycles")
   # The run's fixed parameters, announced once in the test's startup banner. All empty when
@@ -381,7 +435,7 @@ render() {
   [ -f "$STATE_DIR/started" ] || date +%s >"$STATE_DIR/started"
   local started
   started=$(cat "$STATE_DIR/started")
-  local elapsed=$(($(date +%s) - started))
+  local elapsed=$(($(cat "$STATE_DIR/finished" 2>/dev/null || date +%s) - started))
 
   # Relay earnings, per relay and per direction. The forward leg's tickets are issued by the
   # Entry, the return leg's by the Exit, so each node's address names the channel that direction
@@ -420,8 +474,8 @@ render() {
   done
 
   # Derived from the same counters as the totals above, so the rate and the running total can
-  # never tell different stories. These are node-wide HOPR packet counts, which include the
-  # SURB keep-alives the balancer sends and the acknowledgements every packet earns — so both
+  # never tell different stories. These are node-wide HOPR packet counts, which include
+  # session control traffic and SURB keep-alives — so both
   # figures sit above the Session's datagram rate. That is the honest HOPR packet rate, and
   # the label says "pkt/s" rather than anything implying datagrams.
   local fwd_rate ret_rate
@@ -455,25 +509,19 @@ render() {
   # Why a deposit is the size it is, shown as the derivation rather than as a bare number: the
   # dimensions fix the quota, and the quota priced per byte fixes what the Entry has to pay.
   if [ -n "$polys" ] && [ -n "${emitted:-}" ]; then
-    printf '  %sSSA GEOMETRY%s         %s%s polys × %s shares%s  %s→%s  %s%s B%s %squota per SSA%s\n' \
-      "$C_BOLD" "$C_RESET" "$C_BOLD" "$polys" "$emitted" "$C_RESET" "$C_DIM" "$C_RESET" \
-      "$C_BOLD" "$(num "${quota:-0}")" "$C_RESET" "$C_DIM" "$C_RESET"
-    printf '                       %s%s to reconstruct + %s surplus, all of them billed%s\n' \
-      "$C_DIM" "$shares" "$surplus" "$C_RESET"
-    printf '                       %s%s wxHOPR/byte%s  %s→%s  %s%s wxHOPR%s %sper deposit%s\n\n' \
-      "$C_BOLD" "${price_per_byte:-?}" "$C_RESET" "$C_DIM" "$C_RESET" \
-      "$C_GREEN$C_BOLD" "${per_cycle:-?}" "$C_RESET" "$C_DIM" "$C_RESET"
+    render_geometry "$polys" "$shares" "$surplus" "$quota" "$price_per_byte" "$per_cycle"
   fi
 
-  printf '  %sSSA CYCLE PIPELINE%s   %seach cycle: Entry deposits, Exit confirms, collects\n' "$C_BOLD" "$C_RESET" "$C_DIM"
+  printf '  %sSSA CYCLE PIPELINE%s   %seach cycle: Entry deposits, Exit observes, collects\n' "$C_BOLD" "$C_RESET" "$C_DIM"
   printf '                       shares from the SURBs it spends, then sweeps%s\n\n' "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "Entry deposits" "$(bar "$deposits" "$scale")" "$C_BOLD" "$deposits" "$C_RESET"
-  printf '    %-22s %s %s%4d%s\n' "Exit confirmed" "$(bar "$confirmed" "$scale")" "" "$confirmed" "$C_RESET"
+  printf '    %-22s %s %s%4d%s\n' "Exit observed" "$(bar "$observed" "$scale")" "" "$observed" "$C_RESET"
   printf '    %-22s %s %s%4d%s\n' "SSA keys recovered" "$(bar "$keys" "$scale")" "" "$keys" "$C_RESET"
-  printf '    %-22s %s %s%4d%s\n' "swept into Safe" "$(bar "$sweeps" "$scale")" "$C_GREEN" "$sweeps" "$C_RESET"
+  printf '    %-22s %s %s%4d%s\n' "Exit Safe payouts" "$(bar "$sweeps" "$scale")" "$C_GREEN" "$sweeps" "$C_RESET"
+  printf '    %sobserved = deposit detected; key recovery needs return-traffic shares%s\n' "$C_DIM" "$C_RESET"
   if [ "${over_budget:-0}" -gt 0 ]; then
-    printf '    %-22s %s%4d%s  %sthe budget is spent — kill switch arming%s\n' \
-      "over budget" "$C_YELLOW" "$over_budget" "$C_RESET" "$C_DIM" "$C_RESET"
+    printf '    %-22s %s%4d%s  %snext deposit exceeds the budget%s\n' \
+      "budget refusals" "$C_YELLOW" "$over_budget" "$C_RESET" "$C_DIM" "$C_RESET"
   fi
   if [ "${made_failed:-0}" -gt 0 ]; then
     printf '    %-22s %s%4d%s  %snot expected — see the log%s\n' \
@@ -487,9 +535,9 @@ render() {
   # soon as the withdrawal call returns, so it can lead the Safe balance by a block or two,
   # and pairing the two would print an equation that does not hold.
   if [ -n "$per_cycle" ]; then
-    local landed
-    landed=$(echo "scale=0; $recovered / $per_cycle" | bc -l 2>/dev/null)
-    printf '  %s= %s × %s%s' "$C_DIM" "${landed:-0}" "$per_cycle" "$C_RESET"
+    local credit=${per_sweep:-$per_cycle} landed
+    landed=$(echo "scale=0; $recovered / $credit" | bc -l 2>/dev/null)
+    printf '  %s= %s × %s%s' "$C_DIM" "${landed:-0}" "$credit" "$C_RESET"
   fi
   printf '\n'
   # What actually limits deposits is the rolling spend budget, not the balance — the Safe keeps
@@ -508,10 +556,11 @@ render() {
   [ -n "$last_sweep" ] && printf '    %-22s %s wxHOPR\n' "last sweep" "$last_sweep"
   printf '\n'
 
-  printf '  %sTRAFFIC%s  %sthe Exit unlocks one share per SURB it spends replying%s\n\n' \
+  printf '  %sNODE TRAFFIC%s  %sHOPR packets, including session control traffic%s\n\n' \
     "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
   printf '    %-22s %12s pkts  %s->%s  %12s recv\n' "Entry -> Exit" "$(num "$e_sent")" "$C_DIM" "$C_RESET" "$(num "$x_recv")"
   printf '    %-22s %12s pkts  %s<-%s  %12s recv\n' "Exit  -> Entry" "$(num "$x_sent")" "$C_DIM" "$C_RESET" "$(num "$e_recv")"
+  render_traffic_accounting "$deposits" "$quota"
   # One row per relay with its share, because the share is the point: the Session is one hop but
   # not one relay, and these two rows climbing together is hoprd redrawing the route per packet.
   local i
@@ -564,6 +613,9 @@ render() {
 
 # ── entry points ────────────────────────────────────────────────────────────────
 
+# Fixture tests can render accounting without starting a cluster or scraping nodes.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+
 # Every helper above caches a reading into $STATE_DIR and several read it straight back, so a
 # directory somebody else controls is a directory that decides what this script displays — and
 # a symlink there redirects each of those writes to wherever it points. /tmp being world-writable
@@ -589,10 +641,17 @@ command -v bc >/dev/null || {
   echo "pix-demo needs bc"
   exit 1
 }
-cargo nextest --version >/dev/null 2>&1 || {
-  echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
-  exit 1
-}
+if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  [ -x "$PIX_DEMO_TEST_RUNNER" ] || {
+    echo "PIX_DEMO_TEST_RUNNER must name an executable"
+    exit 1
+  }
+else
+  cargo nextest --version >/dev/null 2>&1 || {
+    echo 'pix-demo needs cargo-nextest on PATH — try running it inside `nix develop`'
+    exit 1
+  }
+fi
 
 # Tear down whatever a previous run left behind. This is not hygiene, it is the difference
 # between a rehearsal and the live run working: the chain container is a fixed name and the
@@ -608,7 +667,11 @@ cargo nextest --version >/dev/null 2>&1 || {
 # The bracket in the pattern stops `pkill -f` matching the shell that is running this script,
 # whose own command line contains the pattern; without it the script SIGTERMs itself.
 reset_cluster() {
-  docker rm -f hopr-chain >/dev/null 2>&1
+  # The pull-only launcher owns its runner process/container and the entire stack.
+  # Do not kill host processes or remove its chain from the dashboard.
+  [ -z "${PIX_DEMO_TEST_RUNNER:-}" ] || return 0
+  # An external chain (HOPRD_CHAIN_URL) has no container of ours to remove.
+  [ -n "${HOPRD_CHAIN_URL:-}" ] || docker rm -f hopr-chain >/dev/null 2>&1
   local i
   for i in "${ALL_IDXS[@]}"; do
     pkill -f "hoprd .*--apiPort[ ]$((API_PORT_BASE + i))" >/dev/null 2>&1
@@ -617,53 +680,66 @@ reset_cluster() {
 }
 
 : "${HOPRD_BIN:=$REPO_ROOT/target/release/hoprd}"
-: "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
-export HOPRD_BIN HOPRD_CHAIN_IMAGE
+# HOPRD_CHAIN_URL names an already-running Blokli (a real chain, say) and skips the container;
+# otherwise the Anvil image is started as before.
+if [ -n "${HOPRD_CHAIN_URL:-}" ]; then
+  export HOPRD_BIN HOPRD_CHAIN_URL
+else
+  : "${HOPRD_CHAIN_IMAGE:=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil:latest}"
+  export HOPRD_BIN HOPRD_CHAIN_IMAGE
+fi
 [ -n "${PIX_DEMO_FLOAT:-}" ] && export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 [ -n "${PIX_DEMO_RATE:-}" ] && export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 
 # The deposit pool is a *build-time* choice in the binary, and this script runs a prebuilt one.
-# A binary built with the other pairing starts and bootstraps normally, then either never
-# deposits (wrong curve) or panics (curvy, whose pool is a stub) — several minutes in, with the
-# audience watching. So check it before spending that time.
+# A binary built with the other pairing starts and bootstraps normally, then settles in a way
+# the test's accounting for this pool rejects — several minutes in, with the audience watching.
+# So check it before spending that time.
 #
 # `POOL` in `hoprd::strategy` is a `&str` compiled into the binary for exactly this, and for the
-# `pool=` field of the node's "enabling the PIX strategy" log line.
+# `pool=` field of the node's "enabling the PIX strategy" log line. Only the test pool's is a
+# usable marker: `hopr-strategy` compiles both pools into either binary and the feature merely
+# selects one, so "curvy" is in both. Its absence is what says curvy (as it would for a binary
+# with no PIX at all, which then fails at startup on the `Pix` stanza rather than mid-run).
+# `session_pix_soak` makes the same call the same way.
 : "${PIX_POOL:=test}"
 case "$PIX_POOL" in
-# The marker is the pool's own description, which still names the curve it settles on — only
-# the *feature* was renamed. `hoprd::strategy::POOL` is where it comes from.
-test) POOL_MARKER="non-anonymous-secp256k1" ;;
-curvy) POOL_MARKER="curvy" ;;
+test | curvy) ;;
 *)
   echo "PIX_POOL must be 'test' or 'curvy', got '$PIX_POOL'"
   exit 1
   ;;
 esac
+TEST_POOL_MARKER="non-anonymous-secp256k1"
 # Additive to the default feature set: neither pairing is default, so this is the only flag.
 BUILD_CMD="cargo build --release -p hoprd --features strategy-pix-$PIX_POOL"
 
-if [ ! -x "$HOPRD_BIN" ]; then
-  echo "no hoprd binary at $HOPRD_BIN — build it first:"
-  echo "    $BUILD_CMD"
-  exit 1
-fi
+if [ -z "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+  if [ ! -x "$HOPRD_BIN" ]; then
+    echo "no hoprd binary at $HOPRD_BIN — build it first:"
+    echo "    $BUILD_CMD"
+    exit 1
+  fi
 
-if ! grep -qa "$POOL_MARKER" "$HOPRD_BIN"; then
-  echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
-  echo "Rebuild it:"
-  echo "    $BUILD_CMD"
-  echo
-  echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
-  echo " binary carries exactly one.)"
-  exit 1
-fi
+  if grep -qa "$TEST_POOL_MARKER" "$HOPRD_BIN"; then BIN_POOL="test"; else BIN_POOL="curvy"; fi
+  if [ "$BIN_POOL" != "$PIX_POOL" ]; then
+    echo "$HOPRD_BIN was not built with the '$PIX_POOL' deposit pool."
+    echo "Rebuild it:"
+    echo "    $BUILD_CMD"
+    echo
+    echo "(Or set PIX_POOL to match the binary. The pools are mutually exclusive and the"
+    echo " binary carries exactly one.)"
+    exit 1
+  fi
 
-if [ "$PIX_POOL" = "curvy" ]; then
-  echo "PIX_POOL=curvy selects CurvyDepositPool, whose methods are unimplemented and panic."
-  echo "The cluster will bootstrap and then die on the first deposit. This is expected until"
-  echo "the Baby JubJub pool is implemented; use PIX_POOL=test for a run that completes."
-  echo
+  # The Curvy pool proves in-process and needs the zkeys on disk; the test refuses to start
+  # without them, but only after nextest has compiled. The harness also validates
+  # the selected submission mode and sizes the direct shield.
+  if [ "$PIX_POOL" = "curvy" ] && [ ! -d "${CURVY_ZK_KEYS_DIR:-}" ]; then
+    echo "PIX_POOL=curvy needs CURVY_ZK_KEYS_DIR pointing at a directory with the five Curvy .zkey"
+    echo "proving keys; see 'Curvy runs' in localcluster/tests/session_pix_soak.rs."
+    exit 1
+  fi
 fi
 
 # Everything cached from a previous run has to go: `scrape`/`balance` deliberately keep the
@@ -678,17 +754,27 @@ fi
 # against this run's counter, and since the counters restart from zero it would yield a
 # negative delta — suppressed as "not advancing", leaving the previous run's rate frozen on
 # screen. Add new cache families here at the same time as the helper that writes them.
-rm -f "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
+rm -f "$STATE_DIR/finished" "$STATE_DIR/baseline" "$STATE_DIR"/metrics_* "$STATE_DIR"/balance_* \
   "$STATE_DIR"/addr_* "$STATE_DIR"/tickets_* "$STATE_DIR"/rate_* "$STATE_DIR"/rateval_* \
   "$STATE_DIR"/cpu_* "$STATE_DIR"/cpuval_* \
   "$TEST_LOG"
 reset_cluster
-date +%s >"$STATE_DIR/started"
+# The Curvy launcher publishes the start before pulling images; keep that same
+# timestamp so its chain readings and this pane belong to one run throughout.
+printf '%s\n' "${PIX_DEMO_RUN_STARTED:-$(date +%s)}" >"$STATE_DIR/started"
 
 echo "starting the localcluster (chain, 4 nodes, 12 channels) — this takes a few minutes"
 echo "full test output: $TEST_LOG"
-(cd "$REPO_ROOT" && cargo nextest run -p hoprd-localcluster --test session_pix_soak \
-  --run-ignored ignored-only -j 1 --no-capture) >"$TEST_LOG" 2>&1 &
+run_test() {
+  if [ -n "${PIX_DEMO_TEST_RUNNER:-}" ]; then
+    exec "$PIX_DEMO_TEST_RUNNER"
+  else
+    cd "$REPO_ROOT" || exit 1
+    exec cargo nextest run -p hoprd-localcluster --test session_pix_soak \
+      --run-ignored ignored-only -j 1 --no-capture
+  fi
+}
+run_test >"$TEST_LOG" 2>&1 &
 TEST_PID=$!
 
 # Killing the nextest process alone is not enough: the four `hoprd` children and the chain
@@ -726,6 +812,7 @@ done
 
 wait "$TEST_PID"
 STATUS=$?
+date +%s >"$STATE_DIR/finished"
 render "run finished"
 printf '\033[?25h'
 echo

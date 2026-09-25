@@ -19,7 +19,26 @@ hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b67
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
 
 # crates.io HOPR deps
-
+#
+# The six below used to come off the hoprnet branch alongside `hopr-lib`. They were the
+# `impls/` workspace members, and hoprnet 10f6d80 extracted them to the `hopr-impls` repo
+# and now consumes them from crates.io itself — so pointing them at the branch resolves to
+# nothing. Versions and feature flags mirror hoprnet's own declarations exactly; they are
+# the same crates it links against, and a divergence here would show up as two copies of a
+# type that ought to be one.
+#
+# `hopr-api` is documentation, not a constraint: no crate in this workspace declares
+# `hopr-api = { workspace = true }` and nothing here names `hopr_api::`, so the requirement never
+# reaches the resolver and the `=` binds nothing. What hoprd actually links is whatever `hopr-lib`
+# asks for. Stating the version it mirrors is the whole value it has, so it is kept in step by hand.
+#
+# Keeping it in step is not cosmetic. `hopr-api` majors cannot coexist across this boundary: its
+# node traits — `HasChainApi`, `ActionableEventSource`, `PacketTransport` and the rest — are
+# defined in `hopr-api` itself, so two majors are two unrelated traits and the node hoprd passes to
+# `hopr-strategy` satisfies only one of them. `hopr-types` is shared and single-versioned, which is
+# why the PIX deposit-address assertion still holds either way and does not catch this. When
+# `hopr-strategy` moved to 2.0 ahead of hoprnet, hoprd stopped compiling with 22 such errors until
+# hoprnet followed; this line is where that agreement is written down.
 hopr-api = { version = "=4.3.0" }
 hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
@@ -49,6 +68,9 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "std",
   "clock",
 ] }
+# Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
+# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
+curvy-abi = "=0.1.0-rc.7"
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
 console-subscriber = "0.5.0"
@@ -185,3 +207,14 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# `hopr-strategy` 5.0.0 is not on crates.io yet: it is the Curvy PIX branch, under review as a
+# PR against hoprnet/hopr-strategy. Pinned to a rev on the fork it is reviewed from, so a rebuild
+# is reproducible and moving it is a reviewable change. `c80fb88` pins the rs-sdk crates at
+# 0.1.0-rc.8 on top of `8eb34e0`, the merge that brings the fork up to upstream `main`: `hopr-api` 4.3.0 and `hopr-utilities` 0.14.0 (its
+# `TestChainConnector` now lives there, behind the `testing` feature), plus
+# `build_curvy_with_pool` for a connector-provided Curvy pool, which hoprd does not call yet —
+# it still constructs the bundled pool through `build_curvy`. The Curvy crates themselves stay
+# on crates.io at rs-sdk 0.1.0-rc.8. Drop this whole section once hoprnet releases 5.0.0.
+[patch.crates-io]
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy", rev = "c80fb88" }
