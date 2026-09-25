@@ -15,26 +15,6 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-# No PIX curve feature here on purpose. The curve is chosen by hoprd's `strategy-pix-*` pairing,
-# which bundles it with the matching deposit pool; pinning it at the workspace level would force
-# one curve on every build and make the other unreachable — which is exactly the state this
-# workspace was in before the split.
-#
-# Both are pinned to a `rev` rather than tracked on a branch, per the pr.yaml rule that unreleased
-# HOPR deps on main use a rev: `master` moves, and a `branch = "master"` here would re-resolve on
-# every lock refresh, so the commit the tests ran against and the one CI builds could differ
-# without either moving. The `rev` is what makes a rebuild reproducible, and moving it is a
-# reviewable change.
-#
-# `11b5f1b6` is where `main` pins them: the immutable hoprnet master rev that drops
-# `pix_ssa_quota` from the session client config (hoprnet#8430), on top of the PIX supervisor
-# (#143) and per-target PIX admission (#147) — `hopr-lib`'s `SupervisorConfig` is what
-# `hoprd/src/config.rs` flattens — and `hopr-api` 4.3.0 is the published stack that rev builds
-# against. The Curvy `hopr-strategy` below asks for `hopr-api` as a caret range from 4.3, so the
-# two agree on one 4.3.0.
-#
-# These two stay on git because hoprnet does not publish them. Everything it does publish is in
-# the crates.io block below, which `hopr-strategy` rejoined once it released 1.0.0.
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "11b5f1b6ec187b671a6aaa305bc3a01f516ba6ca", default-features = false }
 
@@ -64,59 +44,7 @@ hopr-chain-connector = "0.26.0"
 hopr-ct-full-network = { version = "0.6.0", default-features = false }
 hopr-network-graph = { version = "0.7.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.5.0", default-features = false }
-# A caret range, not `=`. The `=` on `hopr-api` above exists because that one is inert and its
-# only job is to document a version; this is a real dependency the resolver acts on, and pinning
-# it exactly would conflict with any other crate in the graph asking for a later 4.x.
-#
-# 5.0.0 is the first release whose Curvy deposit pool (`strategy-pix-curvy`) builds from
-# crates.io alone: the Curvy SDK crates (`curvy-sdk`, `curvy-chain-blokli` and the ones beneath
-# them, 0.1.0-rc.8) are published, `curvy-core` 0.1.0-rc.6 asks for `thiserror` as a caret range
-# that agrees with `hopr-api`'s, and the `vendor/` copies and the `[patch.crates-io]` lines every
-# consumer had to repeat are gone with it. Until hoprnet publishes 5.0.0 the crate is taken from
-# the `[patch.crates-io]` at the bottom of this manifest, pinned to a rev; the patch has to
-# satisfy this requirement, which is why it reads 5.0.0 ahead of the registry.
-#
-# The pool's proving artifacts are not in any crate. The SDK reads each circuit's zkey and
-# witness graph, digest-checked, from `CURVY_ZK_KEYS_DIR` at run time or, failing that, from
-# the directory `curvy-witnesscalc` was compiled with (`CURVY_ZK_KEYS_DIR_DEFAULT`). The ten
-# files ship with each rs-sdk release, packaged by its flake; `flake.nix` takes that as the
-# `curvy-zk-artifacts` input, pinned to the same rs-sdk ref as the crates here, and compiles
-# its store path into the `pix-curvy` binary, so the `hoprd-pix-curvy` image needs nothing
-# set. A node built any other way has to provide the files and the variable.
-#
-# Asks for `hopr-api` 4.3 as a caret range, which the `=4.3.0` line above satisfies, so the
-# `hopr-lib` rev is `main`'s. What the earlier majors changed for this workspace is recorded
-# below because the code still reflects it.
-#
-# What 4.0.0 changed (2.0.0 moved to `hopr-api` 3.0 and 3.0.0 to `hopr-api` 4.1; `hopr-api`
-# majors cannot coexist across this boundary, see the `hopr-api` line above):
-#   - `strategy-pix-secp256k1` became `strategy-pix-test`, and `pix::secp256k1` became
-#     `pix::pools::plain` — renamed upstream so that a pool offering no anonymity is named for how
-#     it settles rather than for the curve it settles on, and cannot be reached for in production
-#     by that curve name. hoprd's own feature, its flake outputs, its Docker image and
-#     `pix-demo.sh`'s `PIX_POOL` followed, so there is one name for it end to end.
-#   - **The Safe pays PIX deposits now, not the node's own account.** `hopr-types` 4.0.0 routes
-#     `SafePayloadGenerator::transfer` through the Safe module, so `withdraw` debits the Safe
-#     whoever signs. The pool follows that rather than fighting it. The node account still pays
-#     the sweep's *gas* top-up, which is signed on its own behalf. `localcluster` funds and
-#     asserts against both accordingly — see `PixSettings::safe_deposit_float`.
-#   - `build_non_anonymous` takes the node's `ChainKeypair`: the sweep and the gas top-up are
-#     signed by keys the node's Safe-bound connector cannot represent, so the pool builds its own.
-#   - `PoolConfig` gained `blokli_url` (where those connectors connect) and
-#     `tx_timeout_multiplier` (how long they wait for a confirmation — the node's setting does not
-#     reach them, and the default times out against Anvil).
-#   - `PixStrategyConfig` gained `max_spend_per_window` / `spend_window`;
-#     `NonAnonymousDepositPoolConfig` gained `min_node_xdai_reserve` / `min_safe_hopr_reserve`.
-#     All carry serde defaults, so existing `Pix` stanzas still parse unchanged.
-#   - Both builders now call `StrategyError::validate_config` before constructing anything, so a
-#     bad stanza fails at `build_strategies` instead of at the first deposit.
-hopr-strategy = { version = "5.0.0", default-features = false }
-# Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
-# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
-curvy-abi = "=0.1.0-rc.8"
-# Feature set stated explicitly, carried over from `main`. The default set is `cli` + `redb`;
-# `serde` is not in it, and `main` turns it on, so leaving this bare would silently drop a
-# feature the rest of the workspace expects.
+hopr-strategy = { version = "5.1.0", default-features = false }
 hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
   "redb",
   "cli",
@@ -140,6 +68,9 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "std",
   "clock",
 ] }
+# Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
+# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
+curvy-abi = "=0.1.0-rc.8"
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
 console-subscriber = "0.5.0"
