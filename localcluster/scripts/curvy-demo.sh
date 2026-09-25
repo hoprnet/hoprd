@@ -66,7 +66,10 @@ STATE_DIR="$PIX_DEMO_STATE_DIR"
 # or inside the chain container against its Anvil. Extra `-e VAR=val` args precede the command.
 chain_exec() {
   local seconds=15
-  if [ "${1:-}" = --timeout ]; then seconds=$2; shift 2; fi
+  if [ "${1:-}" = --timeout ]; then
+    seconds=$2
+    shift 2
+  fi
   local envs=()
   while [ "${1:-}" = "-e" ]; do
     envs+=("$2")
@@ -927,7 +930,10 @@ declare -a EXCERPT SAFE ADDR MODULE
 declare -A INDEXED EXIT_NOTES BOOTSTRAP
 
 render() {
-  gather || { printf 'Dashboard cache busy; retrying.\n'; return; }
+  gather || {
+    printf 'Dashboard cache busy; retrying.\n'
+    return
+  }
   local entry="${EXCERPT[$ENTRY_IDX]}" exit_="${EXCERPT[$EXIT_IDX]}"
   local seen correlated clock="--:--" shield_wei exit_wei
   seen=$(distinct "discovered Curvy PIX pending note" "$exit_" note_id)
@@ -971,8 +977,10 @@ render() {
   render_txs 5
   render_notes 4
   printf '  %sTOKEN TRANSFERS%s  %swxHOPR movements involving the Entry, Exit and pool%s\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
-  if [ -n "$PIX_ROWS" ]; then print_rows "$PIX_ROWS" 4
-  elif [ ! -f "${CACHE}_transfers" ]; then printf '    transfer data unavailable\n'
+  if [ -n "$PIX_ROWS" ]; then
+    print_rows "$PIX_ROWS" 4
+  elif [ ! -f "${CACHE}_transfers" ]; then
+    printf '    transfer data unavailable\n'
   else printf '    no matching transfers in the available data\n'; fi
   printf '\n'
   [ -z "${1:-}" ] || printf '\n  %s%s%s\n' "$C_DIM" "$1" "$C_RESET"
@@ -1110,7 +1118,7 @@ case "${1:-}" in
   LEDGER_REFRESH=0
   gather || exit 1
   [[ $(cat "${CACHE}_gas.status" 2>/dev/null) == live &&
-     $(cat "${CACHE}_transfers.status" 2>/dev/null) == live ]] || exit 1
+  $(cat "${CACHE}_transfers.status" 2>/dev/null) == live ]] || exit 1
   exit 0
   ;;
 --ledger)

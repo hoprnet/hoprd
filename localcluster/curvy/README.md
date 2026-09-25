@@ -46,11 +46,10 @@ registry flow requires no transferred image archive or local image tags.
 
 `--stack-only` brings up the same stack and leaves it running instead of
 running the soak, for a harness that starts its own nodes against it
-(gnosis_vpn-testenv's `up-curvy`). `HOPRD_BIN` and `HOPRD_PIX_SOAK_BIN` are not
+(gnosis*vpn-testenv's `up-curvy`). `HOPRD_BIN` and `HOPRD_PIX_SOAK_BIN` are not
 needed. The environment those nodes need — `HOPRD_CHAIN_URL`, the pool's
-`HOPRD_CURVY_*` overrides, `HOPRD_CURVY_SCOPE_AGGREGATOR` and
-`CURVY_ZK_KEYS_DIR` — is written to `stack.env` in the printed run directory;
-the service signers are not. `--down` removes the stack again.
+`HOPRD_CURVY*\*`overrides,`HOPRD_CURVY_SCOPE_AGGREGATOR`and`CURVY_ZK_KEYS_DIR`— is written to`stack.env`in the printed run directory;
+the service signers are not.`--down` removes the stack again.
 
 `CURVY_BIND_ADDR` (default `127.0.0.1`) and `CURVY_GATEWAY_PORT` (default
 `3000`) move where Blokli and the gateway are published, for callers whose

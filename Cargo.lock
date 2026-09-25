@@ -2365,9 +2365,9 @@ dependencies = [
 
 [[package]]
 name = "blokli-client"
-version = "0.33.1"
+version = "0.33.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b841703b39a44da4578c39433f770631f6405a89dfd33451ff041b16cf096ea4"
+checksum = "a9ebcb344ef0f25e9d0da565b4469182e0184077589e2f92583a6d2486e1ccc6"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -3176,9 +3176,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-abi"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4551ba4f5695f93680974402a2312cfd6a0be77ab4dfc210d650526a44a8b57"
+checksum = "f46804539674dbf15dcc7b628ac65309e54f345730466bd59090de2c4d0013c1"
 dependencies = [
  "alloy 1.8.3",
  "anyhow",
@@ -3189,9 +3189,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-chain-api"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bdf5c60537940c9caff4b7413b2ba9c358d7da0a6944a5c1dda9938c547cbf6"
+checksum = "1667b3b0b7943d3de82f63e7b2f857bd0de4a26d036164dd4f34d279bf2e4d46"
 dependencies = [
  "async-trait",
  "curvy-types",
@@ -3200,9 +3200,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-chain-blokli"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f6d88e85cc218b8125d728ea448e3e1756a56736379b8f627029d590f7d8b1"
+checksum = "cd473b49e8d26f9716706ece84ce22ed6e6fcbcd8acf255c3bf8d2244e821150"
 dependencies = [
  "async-trait",
  "curvy-chain-api",
@@ -3259,9 +3259,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-sdk"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "399a8849af3fb5fca8f9888a8302b994664756ac4c0f2657896e96178b661392"
+checksum = "60000dcac1d9385b7fec38e875e5c1abfc52c213a83deb662cc374b86096ce63"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -3280,9 +3280,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-types"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc2f92be7d3d4baaf23db1b8fc0832f7c8831ab7851c90252e34ed46a5ac9097"
+checksum = "38df86046b919eadd003ef16f62e4e9de79d9b154db990fb318a04c5474b4c19"
 dependencies = [
  "serde",
 ]
@@ -3304,9 +3304,9 @@ dependencies = [
 
 [[package]]
 name = "curvy-witnesscalc"
-version = "0.1.0-rc.8"
+version = "0.1.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e78adcfa7f75b804f20102e9823cbbb7a0b024814a83454a95e4bc2269806b43"
+checksum = "f30dda0cbfc8aeff8db0f7d285262516cd3d2765d25d6de0b75f5ea20b63743b"
 dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
@@ -5812,9 +5812,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-chain-connector"
-version = "0.26.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b46905f969c4ea754093e14eca3d7619dd390d6a37816ceb4320c5cac6314f0"
+checksum = "363fe8f89e2a9475ebe0844d6e07c1847b5b83071f218d77e5eb8e9c5dcc9dac"
 dependencies = [
  "ahash",
  "anyhow",
@@ -5828,7 +5828,7 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hopr-api",
- "hopr-utilities 0.13.0",
+ "hopr-utilities 0.15.0",
  "moka",
  "parking_lot",
  "petgraph",
@@ -6074,11 +6074,13 @@ dependencies = [
 
 [[package]]
 name = "hopr-strategy"
-version = "5.0.0"
-source = "git+https://github.com/0xCurvy/hopr-strategy?rev=c80fb88#c80fb882e8e9f7f84e3ecf4f463ec29fb9b18dce"
+version = "5.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d5dd54fec09bedcb66a251397fb6c62feea9ec39f880b772fd3b242de4ab852"
 dependencies = [
  "anyhow",
  "async-trait",
+ "atomic_enum",
  "babyjubjub-ec",
  "backon",
  "blokli-client",
@@ -6101,6 +6103,7 @@ dependencies = [
  "humantime-serde",
  "lazy_static",
  "moka",
+ "num_enum",
  "parking_lot",
  "redb",
  "reqwest",
@@ -6110,6 +6113,7 @@ dependencies = [
  "serde_with",
  "smart-default",
  "statrs",
+ "strum",
  "subtle",
  "thiserror 2.0.20",
  "tokio",
@@ -6396,25 +6400,6 @@ dependencies = [
 
 [[package]]
 name = "hopr-utilities"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "752062e541c6d679acec0bf94af8099bca83a225d0ce8b933aaf464ad7396877"
-dependencies = [
- "anyhow",
- "auto_impl",
- "blokli-client",
- "const-hex",
- "futures",
- "hopr-api",
- "hopr-types",
- "indexmap 2.14.0",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "hopr-utilities"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1a72f17ef546d06fdcc2804faada62bf16843552819909aeb0a23cc74fa265b"
@@ -6434,14 +6419,20 @@ version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a287a83a776cc8e3901c4441f6cf7631f61b8bc632a0001b22b3da722a566d4d"
 dependencies = [
+ "anyhow",
  "arrayvec",
+ "async-broadcast",
+ "async-trait",
  "auto_impl",
+ "blokli-client",
  "const-hex",
  "crossfire",
+ "dashmap",
  "flume",
  "futures",
  "futures-time",
  "hickory-resolver 0.26.1",
+ "hopr-api",
  "hopr-types",
  "indexmap 2.14.0",
  "lazy_static",
@@ -6646,6 +6637,7 @@ dependencies = [
  "hoprd",
  "hoprd-api",
  "hoprd-api-client",
+ "humantime-serde",
  "nix 0.31.3",
  "rand 0.10.2",
  "reqwest",
@@ -12509,3 +12501,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "hopr-strategy"
+version = "5.0.0"
+source = "git+https://github.com/0xCurvy/hopr-strategy?rev=c80fb88#c80fb882e8e9f7f84e3ecf4f463ec29fb9b18dce"

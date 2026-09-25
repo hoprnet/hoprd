@@ -9,7 +9,10 @@ export PIX_DEMO_STATE_DIR="$work/state"
 mkdir -p "$PIX_DEMO_STATE_DIR" "$work/bin"
 source "$repo/localcluster/scripts/curvy-demo.sh"
 export PATH="$work/bin:$PATH"
-fail() { echo "FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
 
 # Reproduce a companion opened while the next launch is still pulling images.
 # Run the real launcher through its first pull, with all Docker calls stubbed.
@@ -52,7 +55,10 @@ EOF
     fail 'launcher should stop at the stubbed pull failure'
   fi
   if [[ -f $work/launcher-run-dir ]]; then rm -rf "$(cat "$work/launcher-run-dir")"; fi
-  [[ -f $work/reset-before-pull ]] || { cat "$work/launcher.log"; fail 'run not reset before image pulls'; }
+  [[ -f $work/reset-before-pull ]] || {
+    cat "$work/launcher.log"
+    fail 'run not reset before image pulls'
+  }
   sync_run_cache
   [[ $ELAPSED -ge 0 && $ELAPSED -lt 60 && ! -e ${CACHE}_excerpt_3 && ! -e ${CACHE}_logpath_3 ]] ||
     fail 'previous run cache or elapsed time survived'
@@ -81,7 +87,10 @@ PIX_RPC_URL=
 
 # A failed reader returning syntactically valid JSON must not overwrite good data.
 good() { echo '[1]'; }
-bad() { echo '[999]'; return 1; }
+bad() {
+  echo '[999]'
+  return 1
+}
 empty() { echo '[]'; }
 [[ $(cache_json example good) == '[1]' ]] || fail cache
 [[ $(cache_json example bad) == '[1]' ]] || fail 'failed read replaced cache'
@@ -142,7 +151,8 @@ gas_scan 10 3
 [[ $(wc -l <"${CACHE}_gas") == 6 ]] || fail 'partial scan appended'
 
 # A shared vault must not be presented as a per-session link or anonymity proof.
-LABEL=(); BOOTSTRAP=()
+LABEL=()
+BOOTSTRAP=()
 LABEL[$VAULT]='Curvy vault'
 echo '[]' >"${CACHE}_transfers"
 linkability "$ROWS" "${SAFE[0]}" "${SAFE[3]}"
@@ -153,8 +163,19 @@ verdict=$(render_verdict)
 gather() { :; }
 EXCERPT[0]='INFO hopr_strategy::pix::pools::curvy: shielding the Curvy funding note directly from the Safe'
 EXCERPT[3]='INFO hopr_strategy::pix::pools::curvy: relayed a Curvy PIX withdrawal amount=21480920064000000000'
-ELAPSED=30; POOL=curvy; CHAIN_ID=31337; BLOCK=1; FEE_IN=10; FEE_OUT=20
-NOTES=; PENDING=0; COMMITTED=0; NULLIFIED=0; NOTE_ROWS=; INDEXED=(); EXIT_NOTES=()
+ELAPSED=30
+POOL=curvy
+CHAIN_ID=31337
+BLOCK=1
+FEE_IN=10
+FEE_OUT=20
+NOTES=
+PENDING=0
+COMMITTED=0
+NULLIFIED=0
+NOTE_ROWS=
+INDEXED=()
+EXIT_NOTES=()
 # Avoid extra receipt requests: cached summaries still report the actual signer.
 for h in alloc1 alloc2 commit withdraw shield; do
   printf '1 0xrelayer %s 100 1 4\n' "$AGGREGATOR" >"${CACHE}_tx_0x$h"
