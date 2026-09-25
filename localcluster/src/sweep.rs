@@ -2,7 +2,7 @@
 //!
 //! On a real chain every run leaves wxHOPR behind: each node's Safe holds whatever the channel
 //! stakes and the PIX float did not spend. The identities are kept on disk
-//! ([`KEEP_CLUSTER_DIR_ENV`](crate::identity) in the tests; `--data-dir` for the CLI), and each
+//! (`HOPRD_KEEP_CLUSTER_DIR` in the tests; `--cluster-dir` on the `sweep-safes` subcommand), and each
 //! node's chain key is the sole owner of its Safe, so this walks a cluster directory and moves
 //! every Safe's wxHOPR to `--to` — through the node's management module, which is how
 //! `withdraw` on a Safe-aware connector spends: the node key signs, the Safe pays.
