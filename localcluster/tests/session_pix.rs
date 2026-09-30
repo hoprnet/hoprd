@@ -148,10 +148,13 @@ const RESPONSE_BUFFER: &str = "16 kB";
 const MAX_SURB_UPSTREAM: &str = "20 Mb/s";
 
 /// Charged per byte of the agreed quota. With the dimensions above the quota is
-/// `8 × (2 + 2) × 1038` ≈ 33.2 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
+/// `8 × (2 + 2) × 3246` ≈ 103.9 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
 /// 1000 wxHOPR each Safe is provisioned with, but large enough to be unambiguous in a
 /// balance delta.
-const PRICE_PER_BYTE: &str = "0.0001 wxHOPR";
+///
+/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
+/// deposit, stayed put.
+const PRICE_PER_BYTE: &str = "0.000032 wxHOPR";
 /// Ceiling on a single deposit. Must exceed `PRICE_PER_BYTE × quota` or the strategy
 /// refuses to deposit at all and the Exit's kill switch closes the Session.
 ///

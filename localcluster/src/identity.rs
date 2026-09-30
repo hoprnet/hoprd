@@ -198,7 +198,7 @@ pub struct PixSettings {
     ///
     /// It has to clear a whole cycle at the widest quota the node accepts, and the check is made
     /// against `ASSUMED_SESSION_PACKET_RATE` (180 packets/s) rather than a measured rate, so the
-    /// floor is `quota_range_max / 1038 / 180`. A configuration below it is refused at load.
+    /// floor is `quota_range_max / 3246 / 180`. A configuration below it is refused at load.
     ///
     /// A `PixSettings` field rather than a pinned default because a test geometry is orders of
     /// magnitude smaller than the production window upstream's two hours was chosen for, and a
@@ -215,7 +215,7 @@ pub struct PixSettings {
     /// (`incoming_session_pix.fill_max_rate`).
     ///
     /// Validated against the widest accepted quota: it must clear
-    /// `quota_range_max / 1038 × 1.05 / (0.75 × max_recovery_time)`, or the configuration is
+    /// `quota_range_max / 3246 × 1.05 / (0.75 × max_recovery_time)`, or the configuration is
     /// refused at load. Sizing this is therefore paired with [`Self::max_recovery_time`] and
     /// [`Self::quota_range_max`] rather than chosen alone.
     pub fill_max_rate: u32,
@@ -408,7 +408,7 @@ struct RawPixSettings {
 /// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
 /// cluster started this way completes a cycle in a handful of seconds rather than the minutes
 /// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
-/// `8 × (2 + 2) × 1038` ≈ 33.2 kB against a production window of ~130 MiB–519 MiB, so the
+/// `8 × (2 + 2) × 3246` ≈ 103.9 kB against a production window of ~130 MiB–519 MiB, so the
 /// production window would reject every Session.
 ///
 /// Two deliberate departures from the tests:
@@ -422,7 +422,7 @@ struct RawPixSettings {
 ///   price below that is roughly 300 cycles per node.
 ///
 /// The settlement values are sized against those dimensions, not left at hoprd's own defaults:
-/// at the upstream `1 wxHOPR`/byte a ~33.2 kB quota prices one deposit at ~33 200 wxHOPR, well
+/// at the upstream `1 wxHOPR`/byte a ~103.9 kB quota prices one deposit at ~103 900 wxHOPR, well
 /// past any sane ceiling, so every deposit would be refused. `max_deposit_tracking_time` is
 /// likewise sized against the 80 s kill-switch fuse the two deadlines above imply, since its
 /// poll cadence is a tenth of it.
@@ -448,16 +448,17 @@ impl Default for PixSettings {
             // Upstream's default, which the interactive cluster's small response buffer leaves
             // ample room under — see the field.
             max_served_without_progress: 2048,
-            // Upstream's own three. The demo quota is ~33.2 kB, so the two-hour deadline is far
-            // above its floor of `quota_range_max / 1038 / 180` and nothing here needs it shorter:
+            // Upstream's own three. The demo quota is ~103.9 kB, so the two-hour deadline is far
+            // above its floor of `quota_range_max / 3246 / 180` and nothing here needs it shorter:
             // an interactive cluster is not waiting on an idle tariff. Fill stays on so the
             // interactive cluster behaves like a deployed Exit.
             max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
             fill_enabled: UserIncomingSessionPixConfig::default().fill_enabled,
             fill_max_rate: UserIncomingSessionPixConfig::default().fill_max_rate,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
-            // ~3.32 wxHOPR per SSA deposit against the dimensions above.
-            price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
+            // ~3.32 wxHOPR per SSA deposit against the dimensions above. Scaled with the packet
+            // payload (1038 → 3246 B) so the price per packet, and with it every deposit, stayed put.
+            price_per_byte: "0.000032 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
             // Matches `safe_deposit_float` above: an interactive cluster should stop when the
             // float it was given is gone, not before. The two are stated separately because they
@@ -1414,7 +1415,10 @@ additional_shares: 16
         assert_eq!(1024, parsed.num_ssa_parts);
         assert_eq!(64, parsed.ssa_part_size);
         assert_eq!(16, parsed.additional_shares);
-        assert_eq!(1024 * 80 * 1038, parsed.quota_per_ssa());
+        assert_eq!(
+            1024 * 80 * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64,
+            parsed.quota_per_ssa()
+        );
 
         let d = PixSettings::default();
         assert_eq!(d.price_per_byte, parsed.price_per_byte);

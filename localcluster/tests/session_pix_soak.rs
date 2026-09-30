@@ -423,7 +423,11 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // ── Money ───────────────────────────────────────────────────────────────────────
 
-/// At the committed ~21.52 MB quota this makes a deposit ~21.52 wxHOPR.
+/// At the committed ~67.31 MB quota this makes a deposit ~21.54 wxHOPR.
+///
+/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
+/// deposit, stayed put: at the old `0.000001` the same geometry would cost ~67 wxHOPR a cycle,
+/// over [`MAX_SSA_ALLOCATION`].
 ///
 /// Held constant as the geometry scales, so the deposit tracks the data rather than staying
 /// put — which is the point being demonstrated. [`MAX_SSA_ALLOCATION`] has to stay above it.
@@ -431,11 +435,11 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 /// PIX pricing is its own model, unrelated to channel ticket pricing; it only has to sit
 /// above the relay price re-counted per byte, which this does by roughly an order of
 /// magnitude.
-const PRICE_PER_BYTE: &str = "0.000001 wxHOPR";
+const PRICE_PER_BYTE: &str = "0.00000032 wxHOPR";
 /// Ceiling on one deposit. Below `price_per_byte × quota` the strategy refuses to deposit
 /// at all, which would end the run on the first cycle instead of on the last. The quota
 /// grows with the packet rate, so this has to leave room above it — at the committed
-/// geometry a deposit is ~21.52 wxHOPR.
+/// geometry a deposit is ~21.54 wxHOPR.
 ///
 /// It moved 20 → 30 when the surplus was priced into the quota upstream: the dimensions did
 /// not change, but what they cost went up by the 1.5× surplus factor, and 20 had become a
@@ -807,8 +811,12 @@ fn pix_settings(
         // to be opened up. The upper bound is left well clear of the committed quota so a
         // `HOPRD_PIX_SOAK_RATE` override does not have to move it too — the Exit rejects
         // the Session outright if the offered quota falls outside this.
+        //
+        // 192 MiB rather than the 64 MiB it was at a 1038 B payload: the committed quota is now
+        // ~67.31 MB, and 192 MiB / 3246 B is still under the old 64 MiB / 1038 B in shares, so
+        // the recovery-time and fill-rate floors validated against it are no stricter.
         quota_range_min: 0,
-        quota_range_max: 64 * 1024 * 1024,
+        quota_range_max: 192 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: match pool {
             Pool::Test => MAX_DEPOSIT_WAIT,
@@ -901,7 +909,7 @@ fn emissions_per_ssa() -> u64 {
 /// `hopr-transport`), because the balancer overshooting into a full ring buffer evicts the
 /// oldest SURBs, and an evicted SURB is a permanently lost share rather than a wasted SURB.
 fn response_buffer() -> String {
-    const SESSION_MTU: u64 = 1020;
+    const SESSION_MTU: u64 = 1452;
     format!("{} B", surb_buffer_target() * SESSION_MTU)
 }
 
