@@ -212,8 +212,9 @@ const EXIT_KEY_RECOVERED: &str = "private key recovered";
 const EXIT_SUPERVISOR_CLOSED: &str = "pix supervisor closed the session";
 /// The `reason` field of the line above, for the case this test is most likely to hit: a deposit
 /// that did not arrive inside the batch-scaled window. `SessionPixCloseReason` renders it through
-/// `strum::Display`. Named only so the failure message can say which of the reasons it was.
-const EXIT_CLOSE_DEPOSIT_TIMEOUT: &str = "reason=DepositTimeout";
+/// `strum::Display` in snake_case. Named only so the failure message can say which of the
+/// reasons it was.
+const EXIT_CLOSE_DEPOSIT_TIMEOUT: &str = "reason=deposit_timeout";
 /// Entry, once per SSA of an accepted batch, emitted only after that SSA's commitment is on
 /// the wire and its deposit has been handed to the strategy. This is the line that says the
 /// Entry *proceeded* with a batch entry rather than merely receiving it.
