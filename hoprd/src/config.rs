@@ -498,6 +498,7 @@ fn default_pix_fill_max_rate() -> u32 {
 }
 
 /// Subset of various selected HOPR library network-related configuration options.
+#[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserHoprNetworkConfig {
@@ -533,12 +534,14 @@ pub struct UserHoprNetworkConfig {
     pub outgoing_ticket_winning_prob: Option<f64>,
     /// Outgoing ticket price.
     #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub outgoing_ticket_price: Option<HoprBalance>,
     /// Minimum incoming ticket price.
     ///
     /// The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
     /// and will default to that value whenever it is lower.
     #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub min_incoming_ticket_price: Option<HoprBalance>,
     /// Packet mixer configuration.
     ///
