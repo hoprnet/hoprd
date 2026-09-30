@@ -531,6 +531,9 @@ pub struct UserHoprNetworkConfig {
     #[default(default_outgoing_ticket_winning_prob())]
     #[serde(default = "default_outgoing_ticket_winning_prob")]
     pub outgoing_ticket_winning_prob: Option<f64>,
+    /// Outgoing ticket price.
+    #[serde(default)]
+    pub outgoing_ticket_price: Option<HoprBalance>,
     /// Minimum incoming ticket price.
     ///
     /// The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
@@ -611,6 +614,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .outgoing_ticket_winning_prob
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
+                        outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
                         ..Default::default()
                     },
