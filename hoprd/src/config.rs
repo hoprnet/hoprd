@@ -619,7 +619,6 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
                         outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
-                        ..Default::default()
                     },
                     // Reply with the freshest SURBs first, so a return-path change takes effect
                     // immediately instead of only after a stale backlog has been drained.
