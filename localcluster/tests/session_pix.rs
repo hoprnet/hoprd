@@ -360,6 +360,7 @@ fn pix_settings(
         max_recovery_time: identity::PixSettings::default().max_recovery_time,
         fill_enabled: identity::PixSettings::default().fill_enabled,
         fill_max_rate: identity::PixSettings::default().fill_max_rate,
+        fill_finish_fraction: identity::PixSettings::default().fill_finish_fraction,
         safe_deposit_float: DEPOSIT_BUDGET.parse().context("parsing deposit float")?,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
