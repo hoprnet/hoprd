@@ -451,6 +451,22 @@ pub struct UserIncomingSessionPixConfig {
     #[default(default_pix_fill_max_rate())]
     #[serde(default = "default_pix_fill_max_rate")]
     pub fill_max_rate: u32,
+    /// Fraction of `max_recovery_time` by which fill aims to have an under-served cycle finished,
+    /// in `(0, 1]`.
+    ///
+    /// The rest of the budget is margin: for loss beyond the planner's allowance, for a mixnet
+    /// delay spike, and for the successor's commitment and deposit round trip. A lower fraction
+    /// finishes idle cycles sooner at a proportionally higher fill rate, and `fill_max_rate` is
+    /// validated against that rate.
+    ///
+    /// An operator setting, rather than pinned with the other fill dials, because it is what sets
+    /// the idle tariff's *timing* for a given `max_recovery_time`: a test Exit can keep a realistic
+    /// deadline and still finish an idle cycle in a wait a test can afford.
+    ///
+    /// Default is upstream's, 0.75.
+    #[default(default_pix_fill_finish_fraction())]
+    #[serde(default = "default_pix_fill_finish_fraction")]
+    pub fill_finish_fraction: f64,
 }
 
 // Every default below is read from upstream rather than restated, and the `#[default]` attributes
@@ -495,6 +511,9 @@ fn default_pix_fill_enabled() -> bool {
 }
 fn default_pix_fill_max_rate() -> u32 {
     SupervisorConfig::default().fill.max_rate
+}
+fn default_pix_fill_finish_fraction() -> f64 {
+    SupervisorConfig::default().fill.finish_fraction
 }
 
 /// Subset of various selected HOPR library network-related configuration options.
@@ -720,25 +739,30 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
-                        // Three of the seven are hoprd dials: whether the Exit fills at all, the
-                        // ceiling on what it originates for itself, and whether a close mid-cycle
-                        // drains or tears down. All three are deployment choices an operator can
-                        // make from the outside.
+                        // Four of the seven are hoprd dials: whether the Exit fills at all, the
+                        // ceiling on what it originates for itself, whether a close mid-cycle
+                        // drains or tears down, and where in `max_recovery_time` fill aims to be
+                        // done. All four are deployment choices an operator can make from the
+                        // outside; the aim point sets when an idle cycle completes, which is what a
+                        // test Exit with a realistic deadline needs to move.
                         //
-                        // The remaining four are the rate law's own shape rather than a deployment
+                        // The remaining three are the rate law's own shape rather than a deployment
                         // choice, and are named for the same reason everything above is.
                         // `heartbeat` is the floor while the application covers the need, and it is
-                        // what refreshes the Entry's idle eviction; the two fractions place the aim
-                        // point and pay for return-path loss, and both are validated against ranges
-                        // an operator cannot usefully explore from the outside; `min_surb_reserve`
-                        // is a ceiling on a value the Exit derives per Session from the buffer the
-                        // *Entry* announced, so a number set here is not the number that binds.
+                        // what refreshes the Entry's idle eviction; `loss_margin` pays for
+                        // return-path loss and is validated against a range an operator cannot
+                        // usefully explore from the outside; `min_surb_reserve` is a ceiling on a
+                        // value the Exit derives per Session from the buffer the *Entry* announced,
+                        // so a number set here is not the number that binds.
                         fill: PixFillConfig {
                             enabled: value.network.incoming_session_pix.fill_enabled,
                             max_rate: value.network.incoming_session_pix.fill_max_rate,
                             drain_after_close: value.network.incoming_session_pix.drain_after_close,
                             heartbeat: supervision_defaults.fill.heartbeat,
-                            finish_fraction: supervision_defaults.fill.finish_fraction,
+                            finish_fraction: value
+                                .network
+                                .incoming_session_pix
+                                .fill_finish_fraction,
                             loss_margin: supervision_defaults.fill.loss_margin,
                             min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
                         },
@@ -932,6 +956,7 @@ mod tests {
         exit.drain_after_close = !exit.drain_after_close;
         exit.fill_enabled = !exit.fill_enabled;
         exit.fill_max_rate = 137;
+        exit.fill_finish_fraction = 0.6;
 
         // Cloned so the assertions below read against what was set, not a moved-from value.
         let (pix, exit) = (
@@ -973,6 +998,7 @@ mod tests {
 
         assert_eq!(supervision.fill.enabled, exit.fill_enabled);
         assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
+        assert_eq!(supervision.fill.finish_fraction, exit.fill_finish_fraction);
         assert_eq!(supervision.fill.drain_after_close, exit.drain_after_close);
     }
 
@@ -1012,10 +1038,6 @@ mod tests {
         );
 
         assert_eq!(supervision.fill.heartbeat, defaults.fill.heartbeat);
-        assert_eq!(
-            supervision.fill.finish_fraction,
-            defaults.fill.finish_fraction
-        );
         assert_eq!(supervision.fill.loss_margin, defaults.fill.loss_margin);
         assert_eq!(
             supervision.fill.min_surb_reserve,

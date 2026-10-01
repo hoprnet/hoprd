@@ -93,9 +93,8 @@
 //!     delivering it. Because it drains at the *combined* rate, that delay is
 //!     `SURB_RUNWAY_SECS` seconds regardless of scale. Sized at `session_udp`'s 10 MB it
 //!     would be several cycles and nothing after the first would ever complete. The same
-//!     reasoning fixes [`CHUNK_SIZE`] large enough that SURBs cannot piggyback on data
-//!     packets, leaving the balancer as the only supply and so the only thing that sets the
-//!     buffer.
+//!     reasoning is why SURBs piggybacking on data packets must stay under the balancer's
+//!     control — which upstream now does itself; see [`CHUNK_SIZE`].
 //!
 //! The rate is not unbounded: the buffer must stay under `rb_capacity × 2/3` = 66 666 SURBs
 //! ([`SURB_BUFFER_CEILING`]) or the balancer's overshoot evicts shares, which caps this shape at
@@ -319,35 +318,29 @@ const PIX_ADDITIONAL_SHARES: u8 = 54;
 /// `session_udp` does ~4300/s over the same loopback with no SURB machinery at all.
 const DEFAULT_PACKET_RATE: u64 = 4000;
 
-/// Payload per datagram, and the least obvious constant in this file.
+/// Payload per datagram: as large as fits one Session segment, so every packet is as full as it
+/// can be.
 ///
-/// A packet's payload is `HoprPacket::PAYLOAD_SIZE` = 1038 B and a `HoprSurb` is 401 B, so
-/// what a forward packet has room to carry alongside its data is:
+/// A packet is billed its full `HoprPacket::PAYLOAD_SIZE` (3246 B) whatever it carries, and
+/// one datagram is one packet only up to `SESSION_MTU` (1452 B). Within that the packet rate,
+/// the cycle and the deposit are all fixed by the geometry, so the chunk size sets nothing but
+/// how much data a funded cycle moves. 1400 B leaves the MTU a little slack and moves ~60% more
+/// than the 900 B it replaced, at the same cycle length and the same spend (measured, one run
+/// each: 857 MB sent / 768 MB echoed against 537 / 480, cycles 12.8–15.6 s in both).
 ///
-/// | payload | SURBs carried |
-/// |---|---|
-/// | ≤ 236 B | 2 (`MAX_SURBS_IN_PACKET`) |
-/// | 237–637 B | 1 |
-/// | ≥ 638 B | 0 — SURBs need dedicated keep-alive packets |
+/// It used to be chosen for a different reason. At a 1038 B payload, 900 B left no room for a
+/// 401 B SURB, which made the balancer the only SURB supply — deliberately, because smaller
+/// datagrams that piggybacked SURBs on every packet over-minted: a share is bound to a SURB when
+/// the SURB is minted, so the surplus burned the SSA's emission budget into a buffer the Exit
+/// was not draining, and cycles stretched from ~16 s to ~90 s by the sixth. At 3246 B no
+/// single-segment datagram can crowd SURBs out, and it no longer has to: hoprd leaves
+/// `max_surbs_per_data_packet` at 1, which upstream gates on the balancer's target
+/// (`cap_organic_surbs`), so piggybacked supply stops once the Exit's buffer is full. Cycles
+/// held flat at both chunk sizes.
 ///
-/// 900 B lands in the last row deliberately, so **the balancer is the only source of
-/// SURBs**. That looks like a handicap and measuring it suggested as much: at 900 B the
-/// Exit replied at ~60/s against a 200/s forward rate. But 200 B, which piggybacks two
-/// SURBs on every datagram, was worse. Supply then runs at twice the forward rate against
-/// a demand of one SURB per reply, and the surplus is not free: a share is bound to a SURB
-/// when the SURB is minted, so over-minting burns the SSA's emission budget into a buffer
-/// the Exit is not draining. The buffer inflates, the pipeline delay grows with it, and
-/// cycles that started at ~16 s had stretched to ~90 s by the sixth.
-///
-/// Keeping supply under closed-loop control is what makes the run stable. The reply rate
-/// then tracks the balancer's target buffer — measured at roughly `target / 8` per second
-/// across two runs (521 SURBs → 60/s, 1920 → 239/s), which is what [`SURB_RUNWAY_SECS`]
-/// encodes and [`response_buffer`] inverts to get a buffer from a rate.
-///
-/// Note this also makes the payload a fixed 900 of the 1038 B a packet is *billed* for, so
-/// the datagram rate and the HOPR packet rate are one to one in the forward direction —
-/// which is what lets the demo quote a packet rate at all.
-const CHUNK_SIZE: usize = 900;
+/// One datagram per packet also keeps the datagram rate and the HOPR packet rate one to one in
+/// the forward direction, which is what lets the demo quote a packet rate at all.
+const CHUNK_SIZE: usize = 1400;
 
 // ── Run bounds ──────────────────────────────────────────────────────────────────
 
@@ -423,7 +416,11 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // ── Money ───────────────────────────────────────────────────────────────────────
 
-/// At the committed ~21.52 MB quota this makes a deposit ~21.52 wxHOPR.
+/// At the committed ~67.31 MB quota this makes a deposit ~21.54 wxHOPR.
+///
+/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
+/// deposit, stayed put: at the old `0.000001` the same geometry would cost ~67 wxHOPR a cycle,
+/// over [`MAX_SSA_ALLOCATION`].
 ///
 /// Held constant as the geometry scales, so the deposit tracks the data rather than staying
 /// put — which is the point being demonstrated. [`MAX_SSA_ALLOCATION`] has to stay above it.
@@ -431,11 +428,11 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 /// PIX pricing is its own model, unrelated to channel ticket pricing; it only has to sit
 /// above the relay price re-counted per byte, which this does by roughly an order of
 /// magnitude.
-const PRICE_PER_BYTE: &str = "0.000001 wxHOPR";
+const PRICE_PER_BYTE: &str = "0.00000032 wxHOPR";
 /// Ceiling on one deposit. Below `price_per_byte × quota` the strategy refuses to deposit
 /// at all, which would end the run on the first cycle instead of on the last. The quota
 /// grows with the packet rate, so this has to leave room above it — at the committed
-/// geometry a deposit is ~21.52 wxHOPR.
+/// geometry a deposit is ~21.54 wxHOPR.
 ///
 /// It moved 20 → 30 when the surplus was priced into the quota upstream: the dimensions did
 /// not change, but what they cost went up by the 1.5× surplus factor, and 20 had become a
@@ -807,8 +804,12 @@ fn pix_settings(
         // to be opened up. The upper bound is left well clear of the committed quota so a
         // `HOPRD_PIX_SOAK_RATE` override does not have to move it too — the Exit rejects
         // the Session outright if the offered quota falls outside this.
+        //
+        // 192 MiB rather than the 64 MiB it was at a 1038 B payload: the committed quota is now
+        // ~67.31 MB, and 192 MiB / 3246 B is still under the old 64 MiB / 1038 B in shares, so
+        // the recovery-time and fill-rate floors validated against it are no stricter.
         quota_range_min: 0,
-        quota_range_max: 64 * 1024 * 1024,
+        quota_range_max: 192 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: match pool {
             Pool::Test => MAX_DEPOSIT_WAIT,
@@ -856,6 +857,7 @@ fn pix_settings(
         max_recovery_time: identity::PixSettings::default().max_recovery_time,
         fill_enabled: identity::PixSettings::default().fill_enabled,
         fill_max_rate: identity::PixSettings::default().fill_max_rate,
+        fill_finish_fraction: identity::PixSettings::default().fill_finish_fraction,
         safe_deposit_float,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
@@ -901,7 +903,7 @@ fn emissions_per_ssa() -> u64 {
 /// `hopr-transport`), because the balancer overshooting into a full ring buffer evicts the
 /// oldest SURBs, and an evicted SURB is a permanently lost share rather than a wasted SURB.
 fn response_buffer() -> String {
-    const SESSION_MTU: u64 = 1020;
+    const SESSION_MTU: u64 = 1452;
     format!("{} B", surb_buffer_target() * SESSION_MTU)
 }
 
