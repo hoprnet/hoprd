@@ -53,6 +53,9 @@ hopr:
   network:
     probe_interval: "3s"
     probe_recheck_threshold: "10s"
+    # outgoing_ticket_winning_prob: 1.0
+    # outgoing_ticket_price: "0.03 wxHOPR"
+    # min_incoming_ticket_price: "0.06 wxHOPR"
   safe_module:
     safe_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
     module_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
