@@ -76,6 +76,7 @@ session-server = ["hopr-lib/session-server"]
 [dependencies]
 anyhow = { workspace = true }
 async-signal = { workspace = true }
+bytesize = { workspace = true }
 clap = { workspace = true }
 lazy_static = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
@@ -157,7 +158,4 @@ hopr-lib = { workspace = true, features = [
 ] }
 
 [package.metadata.cargo-machete]
-ignored = ["humantime-serde", "lazy_static"]
-
-[package.metadata.cargo-shear]
 ignored = ["humantime-serde", "lazy_static"]

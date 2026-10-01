@@ -2828,7 +2828,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.3",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "defmt"
+version = "0.3.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0963443817029b2024136fc4dd07a5107eb8f977eaf18fcd1fdeb11306b64ad"
+dependencies = [
+ "defmt 1.1.1",
 ]
 
 [[package]]
@@ -5358,11 +5367,11 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88b80cfdf4632f8ffc73ad4d5c9bfadaa14783c7f4bf44c7ac7e9940fcd03137"
+source = "git+https://github.com/hoprnet/hopr-strategy?branch=compat%2Fv4#ef95cdda211c2d4edee232af8735535cc5fb9b27"
 dependencies = [
  "anyhow",
  "async-trait",
+ "atomic_enum",
  "bytesize",
  "dashmap",
  "futures",
@@ -5374,11 +5383,13 @@ dependencies = [
  "lazy_static",
  "moka",
  "multiaddr",
+ "num_enum",
  "parking_lot",
  "serde",
  "serde_with",
  "smart-default",
  "statrs",
+ "strum",
  "thiserror 2.0.20",
  "tracing",
  "validator",
@@ -5698,6 +5709,7 @@ version = "4.1.4"
 dependencies = [
  "anyhow",
  "async-signal",
+ "bytesize",
  "clap",
  "console-subscriber",
  "flagset",
