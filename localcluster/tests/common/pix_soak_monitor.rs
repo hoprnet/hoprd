@@ -36,12 +36,13 @@ impl SessionEvents {
             .split_once("hopr_transport_session::manager: ")
             .map(|(_, msg)| msg);
         // The PIX supervisor closes the session and the manager logs the reason; only the
-        // `DepositTimeout` reason is the budget-exhaustion closure this soak expects. Neither
+        // `DepositTimeout` reason is the budget-exhaustion closure this soak expects.
+        // `SessionPixCloseReason` renders snake_case, so it reads `deposit_timeout` here. Neither
         // "timeout set" nor "timeout - session not found" proves a closure.
         let deposit_timeout = role == "Exit"
             && manager.is_some_and(|msg| {
                 msg.starts_with("pix supervisor closed the session ")
-                    && msg.contains("reason=DepositTimeout")
+                    && msg.contains("reason=deposit_timeout")
             });
         let closed = deposit_timeout
             || manager.is_some_and(|msg| msg.starts_with("closed session "))
@@ -160,7 +161,7 @@ mod tests {
     use super::*;
 
     const MANAGER: &str = "INFO hopr_transport_session::manager: ";
-    const TIMEOUT: &str = "pix session deposit timeout session_id=abc ssa_index=5";
+    const TIMEOUT: &str = "pix supervisor closed the session session_id=abc reason=deposit_timeout";
 
     #[test]
     fn handshake_failure_closes_without_a_pool_timeout() {
@@ -175,7 +176,7 @@ mod tests {
         events.observe("Exit", &format!("{MANAGER}{TIMEOUT}"));
         events.observe("Exit", "INFO hopr_session_server_forwarder: server bridged session to UDP ended session_id=abc");
         let closure = events.closure.as_ref().unwrap();
-        assert!(closure.description.contains("ssa_index=5"));
+        assert!(closure.description.contains("reason=deposit_timeout"));
         assert!(!closure.is_budget_exhaustion(4, 10, 0));
         assert!(
             events
@@ -247,12 +248,12 @@ mod tests {
         tail.poll("Exit", &mut events).unwrap();
         assert!(events.closure.is_none());
 
-        tail.reader.get_mut().extend_from_slice(b"\x1b[31mERROR\x1b[0m hopr_transport_session::manager: pix session deposit timeout session_");
+        tail.reader.get_mut().extend_from_slice(b"\x1b[31mERROR\x1b[0m hopr_transport_session::manager: pix supervisor closed the session session_");
         tail.poll("Exit", &mut events).unwrap();
         assert!(events.closure.is_none());
         tail.reader
             .get_mut()
-            .extend_from_slice(b"id=abc ssa_index=5\n");
+            .extend_from_slice(b"id=abc reason=deposit_timeout\n");
         tail.poll("Exit", &mut events).unwrap();
         assert!(events.closure.as_ref().unwrap().deposit_timeout);
         assert!(!events.summary().contains('\u{1b}'));

@@ -193,12 +193,13 @@ pub struct PixSettings {
     ///
     /// A resource backstop on the Session slot and the reconstructor state a cycle holds, and — now
     /// that the Exit fills an idle cycle rather than letting it strand — also the idle tariff: a
-    /// Session with no application traffic completes its cycle at `0.75 × this` and pays for the
-    /// next one.
+    /// Session with no application traffic completes its cycle at
+    /// [`Self::fill_finish_fraction`] `× this` and pays for the next one.
     ///
     /// It has to clear a whole cycle at the widest quota the node accepts, and the check is made
-    /// against `ASSUMED_SESSION_PACKET_RATE` (180 packets/s) rather than a measured rate, so the
-    /// floor is `quota_range_max / 1038 / 180`. A configuration below it is refused at load.
+    /// against `ASSUMED_SESSION_PACKET_RATE` (1.5 Mbps in packets, 57 packets/s at the 3246 B
+    /// payload) rather than a measured rate, so the floor is `quota_range_max / 3246 / 57`. A
+    /// configuration below it is refused at load.
     ///
     /// A `PixSettings` field rather than a pinned default because a test geometry is orders of
     /// magnitude smaller than the production window upstream's two hours was chosen for, and a
@@ -215,10 +216,18 @@ pub struct PixSettings {
     /// (`incoming_session_pix.fill_max_rate`).
     ///
     /// Validated against the widest accepted quota: it must clear
-    /// `quota_range_max / 1038 × 1.05 / (0.75 × max_recovery_time)`, or the configuration is
-    /// refused at load. Sizing this is therefore paired with [`Self::max_recovery_time`] and
-    /// [`Self::quota_range_max`] rather than chosen alone.
+    /// `quota_range_max / 3246 × 1.05 / (fill_finish_fraction × max_recovery_time)`, or the
+    /// configuration is refused at load. Sizing this is therefore paired with
+    /// [`Self::max_recovery_time`], [`Self::fill_finish_fraction`] and [`Self::quota_range_max`]
+    /// rather than chosen alone.
     pub fill_max_rate: u32,
+    /// Fraction of [`Self::max_recovery_time`] by which fill aims to have a cycle finished
+    /// (`incoming_session_pix.fill_finish_fraction`), in `(0, 1]`.
+    ///
+    /// Upstream's 0.75 by default. A test geometry lowers it to finish idle cycles in a wait it can
+    /// afford while keeping `max_recovery_time` above its load-time floor; the price is a
+    /// proportionally higher fill rate, which [`Self::fill_max_rate`] is validated against.
+    pub fill_finish_fraction: f64,
     /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
     /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
@@ -330,6 +339,7 @@ impl PixSettings {
             max_recovery_time: raw.max_recovery_time.unwrap_or(d.max_recovery_time),
             fill_enabled: raw.fill_enabled.unwrap_or(d.fill_enabled),
             fill_max_rate: raw.fill_max_rate.unwrap_or(d.fill_max_rate),
+            fill_finish_fraction: raw.fill_finish_fraction.unwrap_or(d.fill_finish_fraction),
             safe_deposit_float: balance(
                 "safe_deposit_float",
                 raw.safe_deposit_float,
@@ -391,6 +401,7 @@ struct RawPixSettings {
     max_recovery_time: Option<std::time::Duration>,
     fill_enabled: Option<bool>,
     fill_max_rate: Option<u32>,
+    fill_finish_fraction: Option<f64>,
     safe_deposit_float: Option<String>,
     price_per_byte: Option<String>,
     max_ssa_allocation: Option<String>,
@@ -408,7 +419,7 @@ struct RawPixSettings {
 /// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
 /// cluster started this way completes a cycle in a handful of seconds rather than the minutes
 /// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
-/// `8 × (2 + 2) × 1038` ≈ 33.2 kB against a production window of ~130 MiB–519 MiB, so the
+/// `8 × (2 + 2) × 3246` ≈ 103.9 kB against a production window of ~130 MiB–519 MiB, so the
 /// production window would reject every Session.
 ///
 /// Two deliberate departures from the tests:
@@ -422,7 +433,7 @@ struct RawPixSettings {
 ///   price below that is roughly 300 cycles per node.
 ///
 /// The settlement values are sized against those dimensions, not left at hoprd's own defaults:
-/// at the upstream `1 wxHOPR`/byte a ~33.2 kB quota prices one deposit at ~33 200 wxHOPR, well
+/// at the upstream `1 wxHOPR`/byte a ~103.9 kB quota prices one deposit at ~103 900 wxHOPR, well
 /// past any sane ceiling, so every deposit would be refused. `max_deposit_tracking_time` is
 /// likewise sized against the 80 s kill-switch fuse the two deadlines above imply, since its
 /// poll cadence is a tenth of it.
@@ -448,16 +459,18 @@ impl Default for PixSettings {
             // Upstream's default, which the interactive cluster's small response buffer leaves
             // ample room under — see the field.
             max_served_without_progress: 2048,
-            // Upstream's own three. The demo quota is ~33.2 kB, so the two-hour deadline is far
-            // above its floor of `quota_range_max / 1038 / 180` and nothing here needs it shorter:
+            // Upstream's own three. The demo quota is ~103.9 kB, so the two-hour deadline is far
+            // above its floor of `quota_range_max / 3246 / 180` and nothing here needs it shorter:
             // an interactive cluster is not waiting on an idle tariff. Fill stays on so the
             // interactive cluster behaves like a deployed Exit.
             max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
             fill_enabled: UserIncomingSessionPixConfig::default().fill_enabled,
             fill_max_rate: UserIncomingSessionPixConfig::default().fill_max_rate,
+            fill_finish_fraction: UserIncomingSessionPixConfig::default().fill_finish_fraction,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
-            // ~3.32 wxHOPR per SSA deposit against the dimensions above.
-            price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
+            // ~3.32 wxHOPR per SSA deposit against the dimensions above. Scaled with the packet
+            // payload (1038 → 3246 B) so the price per packet, and with it every deposit, stayed put.
+            price_per_byte: "0.000032 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
             // Matches `safe_deposit_float` above: an interactive cluster should stop when the
             // float it was given is gone, not before. The two are stated separately because they
@@ -514,6 +527,7 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             max_recovery_time: pix.max_recovery_time,
             fill_enabled: pix.fill_enabled,
             fill_max_rate: pix.fill_max_rate,
+            fill_finish_fraction: pix.fill_finish_fraction,
             // Not a [`PixSettings`] field, because nothing here has a reason to move it: it is
             // sized against `quota_range_max`, and every configuration in this crate sits orders of
             // magnitude below the production window that default was chosen for. It is named
@@ -1414,13 +1428,17 @@ additional_shares: 16
         assert_eq!(1024, parsed.num_ssa_parts);
         assert_eq!(64, parsed.ssa_part_size);
         assert_eq!(16, parsed.additional_shares);
-        assert_eq!(1024 * 80 * 1038, parsed.quota_per_ssa());
+        assert_eq!(
+            1024 * 80 * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64,
+            parsed.quota_per_ssa()
+        );
 
         let d = PixSettings::default();
         assert_eq!(d.price_per_byte, parsed.price_per_byte);
         assert_eq!(d.max_deposit_wait, parsed.max_deposit_wait);
         assert_eq!(d.max_recovery_time, parsed.max_recovery_time);
         assert_eq!(d.fill_enabled, parsed.fill_enabled);
+        assert_eq!(d.fill_finish_fraction, parsed.fill_finish_fraction);
         Ok(())
     }
 
@@ -1436,6 +1454,7 @@ max_spend_per_window: "500 wxHOPR"
 gas_xdai_per_sweep: "0.02 xDai"
 fill_enabled: false
 fill_max_rate: 300
+fill_finish_fraction: 0.6
 enforce_on_nodes: [2]
 "#,
         )
@@ -1460,6 +1479,7 @@ enforce_on_nodes: [2]
         );
         assert!(!parsed.fill_enabled);
         assert_eq!(300, parsed.fill_max_rate);
+        assert_eq!(0.6, parsed.fill_finish_fraction);
         assert_eq!(vec![2], parsed.enforce_on_nodes);
         Ok(())
     }
