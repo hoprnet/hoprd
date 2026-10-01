@@ -148,10 +148,13 @@ const RESPONSE_BUFFER: &str = "16 kB";
 const MAX_SURB_UPSTREAM: &str = "20 Mb/s";
 
 /// Charged per byte of the agreed quota. With the dimensions above the quota is
-/// `8 × (2 + 2) × 1038` ≈ 33.2 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
+/// `8 × (2 + 2) × 3246` ≈ 103.9 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
 /// 1000 wxHOPR each Safe is provisioned with, but large enough to be unambiguous in a
 /// balance delta.
-const PRICE_PER_BYTE: &str = "0.0001 wxHOPR";
+///
+/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
+/// deposit, stayed put.
+const PRICE_PER_BYTE: &str = "0.000032 wxHOPR";
 /// Ceiling on a single deposit. Must exceed `PRICE_PER_BYTE × quota` or the strategy
 /// refuses to deposit at all and the Exit's kill switch closes the Session.
 ///
@@ -209,8 +212,9 @@ const EXIT_KEY_RECOVERED: &str = "private key recovered";
 const EXIT_SUPERVISOR_CLOSED: &str = "pix supervisor closed the session";
 /// The `reason` field of the line above, for the case this test is most likely to hit: a deposit
 /// that did not arrive inside the batch-scaled window. `SessionPixCloseReason` renders it through
-/// `strum::Display`. Named only so the failure message can say which of the reasons it was.
-const EXIT_CLOSE_DEPOSIT_TIMEOUT: &str = "reason=DepositTimeout";
+/// `strum::Display` in snake_case. Named only so the failure message can say which of the
+/// reasons it was.
+const EXIT_CLOSE_DEPOSIT_TIMEOUT: &str = "reason=deposit_timeout";
 /// Entry, once per SSA of an accepted batch, emitted only after that SSA's commitment is on
 /// the wire and its deposit has been handed to the strategy. This is the line that says the
 /// Entry *proceeded* with a batch entry rather than merely receiving it.
@@ -356,6 +360,7 @@ fn pix_settings(
         max_recovery_time: identity::PixSettings::default().max_recovery_time,
         fill_enabled: identity::PixSettings::default().fill_enabled,
         fill_max_rate: identity::PixSettings::default().fill_max_rate,
+        fill_finish_fraction: identity::PixSettings::default().fill_finish_fraction,
         safe_deposit_float: DEPOSIT_BUDGET.parse().context("parsing deposit float")?,
         // Settlement knobs. These used to travel as environment variables; they are written
         // into the generated node config's `Pix` strategy stanza now.
