@@ -351,11 +351,42 @@
             '';
           });
 
+          mkPixTestHoprdBinary =
+            builder:
+            builder.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
+              }
+            );
+
+          mkCurvyHoprdBinary =
+            builder:
+            let
+              zkKeysDefault = {
+                CURVY_ZK_KEYS_DIR_DEFAULT = "${curvyZkArtifacts}";
+              };
+            in
+            (builder.callPackage nixLib.mkRustPackage (
+              projectBuildArgs
+              // {
+                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
+              }
+            )).overrideAttrs
+              (
+                previous:
+                {
+                  cargoArtifacts = previous.cargoArtifacts.overrideAttrs (_: zkKeysDefault);
+                }
+                // zkKeysDefault
+              );
+
           hoprdPackages = {
             binary-hoprd = rust-builder-local.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
+
             binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
               projectBuildArgs
               // {
@@ -363,36 +394,15 @@
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
               }
             );
-            binary-hoprd-pix-test-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-test";
-              }
-            );
+            binary-hoprd-pix-test-x86_64-linux = mkPixTestHoprdBinary rust-builder-x86_64-linux;
+            binary-hoprd-pix-test-aarch64-linux = mkPixTestHoprdBinary rust-builder-aarch64-linux;
             # The production PIX pool. Same binary shape as `pix-test`, plus the proving artifacts
             # the pool needs at run time: `curvy-witnesscalc` compiles the store path of
             # `curvyZkArtifacts` in as its fallback location, so the binary finds them with nothing
             # set and Nix carries them in its closure. `CURVY_ZK_KEYS_DIR` still overrides at run
             # time. Set on the dependency build too, since that is where the crate is compiled.
-            binary-hoprd-pix-curvy-x86_64-linux =
-              let
-                zkKeysDefault = {
-                  CURVY_ZK_KEYS_DIR_DEFAULT = "${curvyZkArtifacts}";
-                };
-              in
-              (rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
-                projectBuildArgs
-                // {
-                  cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
-                }
-              )).overrideAttrs
-                (
-                  previous:
-                  {
-                    cargoArtifacts = previous.cargoArtifacts.overrideAttrs (_: zkKeysDefault);
-                  }
-                  // zkKeysDefault
-                );
+            binary-hoprd-pix-curvy-x86_64-linux = mkCurvyHoprdBinary rust-builder-x86_64-linux;
+            binary-hoprd-pix-curvy-aarch64-linux = mkCurvyHoprdBinary rust-builder-aarch64-linux;
             # The artifacts on their own, for a node built outside Nix: `nix build
             # .#curvy-zk-artifacts` and point `CURVY_ZK_KEYS_DIR` at `result`.
             curvy-zk-artifacts = curvyZkArtifacts;
@@ -555,17 +565,28 @@
           # the layout the crate expects; `binary-hoprd-pix-curvy-x86_64-linux` compiles its path in.
           curvyZkArtifacts = inputs.curvy-zk-artifacts.packages.${system}.curvy-zk-artifacts;
 
-          hoprdDocker = {
-            docker-hoprd-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd";
+          mkHoprdDocker =
+            {
+              name,
+              binary,
+              architecture,
+            }:
+            nixLib.mkDockerImage {
+              inherit name;
+              # nix-lib's mkDockerImage defaults to a hardcoded x86_64-linux
+              # nixpkgs import for the image-building tooling (base.json,
+              # layers.json, etc). Building that tooling for x86_64-linux can
+              # fail on non-x86_64 Linux runners, so pass the ambient pkgs
+              # (native for the current runner) explicitly.
+              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
               pathsToLink = [
                 "/bin"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
-                hoprdPackages.binary-hoprd-x86_64-linux
-                hoprdPackages.binary-ticket-inspector-x86_64-linux
+                binary
+                hoprdPackages."binary-ticket-inspector-${architecture}"
                 pkgs.cacert
                 pkgs.curl
               ];
@@ -582,96 +603,19 @@
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
-            docker-hoprd-dev-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd";
+
+          mkHoprdProfileDocker =
+            architecture:
+            nixLib.mkDockerImage {
+              name = "hoprd-profile";
+              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
               pathsToLink = [
                 "/bin"
               ];
               extraContents = [
                 dockerHoprdEntrypoint
                 pkgs.tini
-                hoprdPackages.binary-hoprd-dev-x86_64-linux
-                hoprdPackages.binary-ticket-inspector-x86_64-linux
-                pkgs.cacert
-                pkgs.curl
-              ];
-              Entrypoint = [
-                "/bin/tini"
-                "--"
-                "/bin/docker-entrypoint.sh"
-              ];
-              Cmd = [ "hoprd" ];
-              env = [
-                "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-              ];
-            };
-            docker-hoprd-pix-test-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd-pix-test";
-              pathsToLink = [
-                "/bin"
-              ];
-              extraContents = [
-                dockerHoprdEntrypoint
-                pkgs.tini
-                hoprdPackages.binary-hoprd-pix-test-x86_64-linux
-                hoprdPackages.binary-ticket-inspector-x86_64-linux
-                pkgs.cacert
-                pkgs.curl
-              ];
-              Entrypoint = [
-                "/bin/tini"
-                "--"
-                "/bin/docker-entrypoint.sh"
-              ];
-              Cmd = [ "hoprd" ];
-              env = [
-                "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-              ];
-            };
-            # the environment at run time (`HOPRD_CURVY_OPERATOR_PRIVATE_KEY` by default).
-            # The proving artifacts ride along in the binary's closure (see
-            # `binary-hoprd-pix-curvy-x86_64-linux`), so the image neither links nor names them.
-            docker-hoprd-pix-curvy-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd-pix-curvy";
-              pathsToLink = [
-                "/bin"
-              ];
-              extraContents = [
-                dockerHoprdEntrypoint
-                pkgs.tini
-                hoprdPackages.binary-hoprd-pix-curvy-x86_64-linux
-                hoprdPackages.binary-ticket-inspector-x86_64-linux
-                pkgs.cacert
-                pkgs.curl
-              ];
-              Entrypoint = [
-                "/bin/tini"
-                "--"
-                "/bin/docker-entrypoint.sh"
-              ];
-              Cmd = [ "hoprd" ];
-              env = [
-                "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-              ];
-            };
-            docker-hoprd-profile-x86_64-linux = nixLib.mkDockerImage {
-              name = "hoprd";
-              pathsToLink = [
-                "/bin"
-              ];
-              extraContents = [
-                dockerHoprdEntrypoint
-                pkgs.tini
-                hoprdPackages.binary-hoprd-profile-x86_64-linux
+                hoprdPackages."binary-hoprd-profile-${architecture}"
                 pkgs.cacert
                 pkgs.curl
                 analyzeMemoryScript
@@ -698,40 +642,37 @@
                 "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
               ];
             };
-            docker-hoprd-aarch64-linux = nixLib.mkDockerImage {
+
+          hoprdDocker = {
+            # the environment at run time (`HOPRD_CURVY_OPERATOR_PRIVATE_KEY` by default).
+            # The proving artifacts ride along in the binary's closure (see
+            # `binary-hoprd-pix-curvy-x86_64-linux`), so the image neither links nor names them.
+            docker-hoprd-x86_64-linux = mkHoprdDocker {
               name = "hoprd";
-              # nix-lib's mkDockerImage defaults to a hardcoded x86_64-linux
-              # nixpkgs import for the image-building tooling (base.json,
-              # layers.json, etc). Building that tooling for x86_64-linux can
-              # fail on non-x86_64 Linux runners, so pass the ambient pkgs
-              # (native for the current runner) explicitly.
-              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
-              pathsToLink = [
-                "/bin"
-              ];
-              extraContents = [
-                dockerHoprdEntrypoint
-                pkgs.tini
-                hoprdPackages.binary-hoprd-aarch64-linux
-                hoprdPackages.binary-ticket-inspector-aarch64-linux
-                pkgs.cacert
-                pkgs.curl
-              ];
-              Entrypoint = [
-                "/bin/tini"
-                "--"
-                "/bin/docker-entrypoint.sh"
-              ];
-              Cmd = [ "hoprd" ];
-              env = [
-                "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-              ];
+              binary = hoprdPackages.binary-hoprd-pix-curvy-x86_64-linux;
+              architecture = "x86_64-linux";
             };
+            docker-hoprd-aarch64-linux = mkHoprdDocker {
+              name = "hoprd";
+              binary = hoprdPackages.binary-hoprd-pix-curvy-aarch64-linux;
+              architecture = "aarch64-linux";
+            };
+            docker-hoprd-pix-test-x86_64-linux = mkHoprdDocker {
+              name = "hoprd-pix-test";
+              binary = hoprdPackages.binary-hoprd-pix-test-x86_64-linux;
+              architecture = "x86_64-linux";
+            };
+            docker-hoprd-pix-test-aarch64-linux = mkHoprdDocker {
+              name = "hoprd-pix-test";
+              binary = hoprdPackages.binary-hoprd-pix-test-aarch64-linux;
+              architecture = "aarch64-linux";
+            };
+            docker-hoprd-profile-x86_64-linux = mkHoprdProfileDocker "x86_64-linux";
+            docker-hoprd-profile-aarch64-linux = mkHoprdProfileDocker "aarch64-linux";
+
             docker-hoprd-localcluster-x86_64-linux = nixLib.mkDockerImage {
               name = "hoprd-localcluster";
+              pkgsLinux = if pkgs.stdenv.isLinux then pkgs else null;
               pathsToLink = [
                 "/bin"
               ];
@@ -909,9 +850,26 @@
                 touch $out
               '';
 
+          dockerWorkflowTests =
+            pkgs.runCommand "docker-workflows"
+              {
+                nativeBuildInputs = [
+                  pkgs.python3
+                  pkgs.ast-grep
+                ];
+              }
+              ''
+                python3 ${self}/scripts/test-docker-workflows.py unit
+                touch "$out"
+              '';
+
           # Cacheable equivalent of the complete lint app: formatting, Cargo
           # check, Clippy, and the Docker entrypoint shell check.
           quick = pkgs.linkFarm "quick" [
+            {
+              name = "docker-workflows";
+              path = dockerWorkflowTests;
+            }
             {
               name = "format";
               path = config.treefmt.build.check self;
@@ -1000,6 +958,7 @@
 
           checks = {
             inherit (hoprdPackages) check clippy;
+            docker-workflows = dockerWorkflowTests;
             shellcheck-docker-entrypoint = shellcheckDockerEntrypoint;
             shellcheck-localcluster-smoke = shellcheckLocalclusterSmoke;
             localcluster-test-check = localclusterTestCheckDerivation;
