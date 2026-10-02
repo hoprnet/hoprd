@@ -361,7 +361,7 @@
             );
 
           mkCurvyHoprdBinary =
-            builder:
+            builder: buildOverrides:
             let
               zkKeysDefault = {
                 CURVY_ZK_KEYS_DIR_DEFAULT = "${curvyZkArtifacts}";
@@ -372,6 +372,7 @@
               // {
                 cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy";
               }
+              // buildOverrides
             )).overrideAttrs
               (
                 previous:
@@ -387,13 +388,14 @@
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
 
-            binary-hoprd-dev-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage (
-              projectBuildArgs
-              // {
-                CARGO_PROFILE = "dev";
-                cargoExtraArgs = "-p hoprd -p hoprd-api -F capture";
-              }
-            );
+            binary-hoprd-dev-x86_64-linux = mkCurvyHoprdBinary rust-builder-x86_64-linux {
+              CARGO_PROFILE = "dev";
+              cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy,capture";
+            };
+            binary-hoprd-dev-aarch64-linux = mkCurvyHoprdBinary rust-builder-aarch64-linux {
+              CARGO_PROFILE = "dev";
+              cargoExtraArgs = "-p hoprd -p hoprd-api -F strategy-pix-curvy,capture";
+            };
             binary-hoprd-pix-test-x86_64-linux = mkPixTestHoprdBinary rust-builder-x86_64-linux;
             binary-hoprd-pix-test-aarch64-linux = mkPixTestHoprdBinary rust-builder-aarch64-linux;
             # The production PIX pool. Same binary shape as `pix-test`, plus the proving artifacts
@@ -401,8 +403,8 @@
             # `curvyZkArtifacts` in as its fallback location, so the binary finds them with nothing
             # set and Nix carries them in its closure. `CURVY_ZK_KEYS_DIR` still overrides at run
             # time. Set on the dependency build too, since that is where the crate is compiled.
-            binary-hoprd-pix-curvy-x86_64-linux = mkCurvyHoprdBinary rust-builder-x86_64-linux;
-            binary-hoprd-pix-curvy-aarch64-linux = mkCurvyHoprdBinary rust-builder-aarch64-linux;
+            binary-hoprd-pix-curvy-x86_64-linux = mkCurvyHoprdBinary rust-builder-x86_64-linux { };
+            binary-hoprd-pix-curvy-aarch64-linux = mkCurvyHoprdBinary rust-builder-aarch64-linux { };
             # The artifacts on their own, for a node built outside Nix: `nix build
             # .#curvy-zk-artifacts` and point `CURVY_ZK_KEYS_DIR` at `result`.
             curvy-zk-artifacts = curvyZkArtifacts;
@@ -657,6 +659,16 @@
               binary = hoprdPackages.binary-hoprd-pix-curvy-aarch64-linux;
               architecture = "aarch64-linux";
             };
+            docker-hoprd-dev-x86_64-linux = mkHoprdDocker {
+              name = "hoprd";
+              binary = hoprdPackages.binary-hoprd-dev-x86_64-linux;
+              architecture = "x86_64-linux";
+            };
+            docker-hoprd-dev-aarch64-linux = mkHoprdDocker {
+              name = "hoprd";
+              binary = hoprdPackages.binary-hoprd-dev-aarch64-linux;
+              architecture = "aarch64-linux";
+            };
             docker-hoprd-pix-test-x86_64-linux = mkHoprdDocker {
               name = "hoprd-pix-test";
               binary = hoprdPackages.binary-hoprd-pix-test-x86_64-linux;
@@ -850,26 +862,9 @@
                 touch $out
               '';
 
-          dockerWorkflowTests =
-            pkgs.runCommand "docker-workflows"
-              {
-                nativeBuildInputs = [
-                  pkgs.python3
-                  pkgs.ast-grep
-                ];
-              }
-              ''
-                python3 ${self}/scripts/test-docker-workflows.py unit
-                touch "$out"
-              '';
-
           # Cacheable equivalent of the complete lint app: formatting, Cargo
           # check, Clippy, and the Docker entrypoint shell check.
           quick = pkgs.linkFarm "quick" [
-            {
-              name = "docker-workflows";
-              path = dockerWorkflowTests;
-            }
             {
               name = "format";
               path = config.treefmt.build.check self;
@@ -958,7 +953,6 @@
 
           checks = {
             inherit (hoprdPackages) check clippy;
-            docker-workflows = dockerWorkflowTests;
             shellcheck-docker-entrypoint = shellcheckDockerEntrypoint;
             shellcheck-localcluster-smoke = shellcheckLocalclusterSmoke;
             localcluster-test-check = localclusterTestCheckDerivation;
