@@ -6518,6 +6518,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "signal-hook",
  "smart-default",
  "strum",

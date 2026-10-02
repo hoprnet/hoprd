@@ -60,6 +60,9 @@ hopr:
   network:
     probe_interval: "3s"
     probe_recheck_threshold: "10s"
+    # outgoing_ticket_winning_prob: 1.0
+    # outgoing_ticket_price: "0.03 wxHOPR"
+    # min_incoming_ticket_price: "0.06 wxHOPR"
   host:
     address:
       IPv4: 127.0.0.1 # NOTE: adapt this to reflect your public IP
