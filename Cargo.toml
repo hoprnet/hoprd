@@ -15,24 +15,24 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "a065fa22596b23081ea9fcfcf0513e0175975bb9", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "a065fa22596b23081ea9fcfcf0513e0175975bb9", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "61120e7748dd75905fc8ae44edd95dea61687240", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "61120e7748dd75905fc8ae44edd95dea61687240", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=4.3.0" }
-hopr-chain-connector = "0.26.0"
-hopr-ct-full-network = { version = "0.6.0", default-features = false }
-hopr-network-graph = { version = "0.7.0", default-features = false }
-hopr-session-server-forwarder = { version = "0.5.0", default-features = false }
-hopr-strategy = { version = "5.1.0", default-features = false }
-hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
+hopr-api = { version = "=4.3.2" }
+hopr-chain-connector = "0.27.0"
+hopr-ct-full-network = { version = "0.7.0", default-features = false }
+hopr-network-graph = { version = "0.8.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
+hopr-strategy = { version = "5.2.0", default-features = false }
+hopr-ticket-manager = { version = "0.8.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
 # `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
 # the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
-hopr-transport-p2p = { version = "0.11.0", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.12.0", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
@@ -50,7 +50,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
 ] }
 # Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
 # Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
-curvy-abi = "=0.1.0-rc.7"
+curvy-abi = "=0.1.0-rc.9"
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
 console-subscriber = "0.5.0"
