@@ -5952,7 +5952,7 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "rand 0.10.3",
- "rstest",
+ "rstest 0.26.1",
  "serde",
  "serde_with",
  "smart-default",
@@ -6389,9 +6389,9 @@ dependencies = [
  "libp2p-identity",
  "multiaddr",
  "num_enum",
- "opentelemetry",
+ "opentelemetry 0.32.0",
  "opentelemetry-prometheus-text-exporter",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "poly1305 0.9.1",
  "primitive-types 0.14.0",
  "rand 0.10.3",
@@ -6486,7 +6486,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "5.0.0-rc.1"
+version = "5.0.0-rc.2"
 dependencies = [
  "anyhow",
  "async-signal",
@@ -6510,10 +6510,10 @@ dependencies = [
  "if-addrs",
  "lazy_static",
  "mimalloc",
- "opentelemetry",
+ "opentelemetry 0.33.0",
  "opentelemetry-otlp",
  "opentelemetry-prometheus-text-exporter",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.33.0",
  "proc-macro-regex",
  "serde",
  "serde-saphyr",
@@ -6554,7 +6554,7 @@ dependencies = [
  "oas3",
  "parking_lot",
  "regex",
- "rstest",
+ "rstest 0.27.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -6565,7 +6565,7 @@ dependencies = [
  "tower",
  "tower-http 0.7.1",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-scalar",
  "utoipa-swagger-ui",
  "validator",
@@ -6591,7 +6591,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "syn 3.0.6",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
 ]
 
@@ -8426,29 +8426,44 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry-http"
-version = "0.32.0"
+name = "opentelemetry"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
+checksum = "6cdb0b1b267eb9db3331b434ed9ddab10d50e280a9adf9d13e5233e2002b61b5"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "pin-project-lite",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "opentelemetry-http"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee2c3625b8aa04209f7e01e513bc8044da9687fa38a9eacf59628ca5f3b87300"
 dependencies = [
  "async-trait",
  "bytes",
  "http",
- "opentelemetry",
+ "opentelemetry 0.33.0",
  "reqwest",
 ]
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.32.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
+checksum = "699a67345e21962a231955b9059a157e428b219fa5df8efe11f08346fb23a344"
 dependencies = [
  "http",
- "opentelemetry",
+ "httpdate",
+ "opentelemetry 0.33.0",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.33.0",
  "prost",
  "reqwest",
  "serde_json",
@@ -8464,21 +8479,21 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4fe57ea90b12f643a366aa7c4fa5cfb54bd1cf252f55368337e40534b278a68"
 dependencies = [
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.32.0",
+ "opentelemetry_sdk 0.32.1",
  "smartstring",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.32.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
+checksum = "25da1ac11a0aeccf38d7f77ee0348715adaf8340f65ad46c94a02c6b20e2f65d"
 dependencies = [
  "base64 0.22.1",
  "const-hex",
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.33.0",
+ "opentelemetry_sdk 0.33.0",
  "prost",
  "serde",
  "tonic",
@@ -8494,7 +8509,23 @@ dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
- "opentelemetry",
+ "opentelemetry 0.32.0",
+ "percent-encoding",
+ "portable-atomic",
+ "rand 0.9.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb39533d9d1c912123efd7d41d7e0c29d16917b60ce15b4c8d87cb1af7f67520"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry 0.33.0",
  "percent-encoding",
  "portable-atomic",
  "rand 0.9.5",
@@ -9055,9 +9086,9 @@ dependencies = [
 
 [[package]]
 name = "progenitor"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8ba1d77160e6d5c95bdf0792527f76bf528791093fa83015bc2908a0ba9d076"
+checksum = "b5e58f442cdad0db9db03ac94cc7b65938dccf1b282a56c440528a7da41ec947"
 dependencies = [
  "progenitor-client",
  "progenitor-impl",
@@ -9066,9 +9097,9 @@ dependencies = [
 
 [[package]]
 name = "progenitor-client"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e8a874cf25a33cac7a01b9c1de87bcfbc8aea93f3156d09dcc3bee516a78926"
+checksum = "53034c7e99439e366d243ed9847977d349243a862284d2e509a2abba7d003654"
 dependencies = [
  "bytes",
  "futures-core",
@@ -9081,9 +9112,9 @@ dependencies = [
 
 [[package]]
 name = "progenitor-impl"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e349eed84b9a1a6a5dbe478d335e3df73d32a93c5eefe571c9b8cb298aab5d"
+checksum = "83aef4388cf237992f3f55aeead8417f45e9305fdbb77e97a551e8166629c692"
 dependencies = [
  "heck 0.5.0",
  "http",
@@ -9095,7 +9126,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "syn 2.0.119",
+ "syn 3.0.6",
  "thiserror 2.0.21",
  "typify",
  "unicode-ident",
@@ -9103,9 +9134,9 @@ dependencies = [
 
 [[package]]
 name = "progenitor-macro"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efa969a1349979c5f64347f204e794781a86d738206d75672e6c9493f5910002"
+checksum = "dafac71de913f41e24fa43c9460308f3b85f687bcbb03bac42c3dd2b0ae82bdd"
 dependencies = [
  "openapiv3",
  "proc-macro2",
@@ -9116,7 +9147,7 @@ dependencies = [
  "serde_json",
  "serde_tokenstream",
  "serde_yaml",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -9539,11 +9570,10 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "regress"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "158a764437582235e3501f683b93a0a6f8d825d04a789dbe5ed30b8799b8908a"
+checksum = "32eef8b209c3c1c15dbad02c1f30f9539f00dc7253e0cbcdaae442a50a09d7c1"
 dependencies = [
- "hashbrown 0.16.1",
  "memchr",
 ]
 
@@ -9671,7 +9701,18 @@ checksum = "f5a3193c063baaa2a95a33f03035c8a72b83d97a54916055ba22d35ed3839d49"
 dependencies = [
  "futures-timer",
  "futures-util",
- "rstest_macros",
+ "rstest_macros 0.26.1",
+]
+
+[[package]]
+name = "rstest"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "948203e6d13b83e51a90d7cf236dd58a0065f23f4b902f00f306e7eb2bd09b9c"
+dependencies = [
+ "futures-timer",
+ "futures-util",
+ "rstest_macros 0.27.0",
 ]
 
 [[package]]
@@ -9679,6 +9720,24 @@ name = "rstest_macros"
 version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c845311f0ff7951c5506121a9ad75aec44d083c31583b2ea5a30bcb0b0abba0"
+dependencies = [
+ "cfg-if",
+ "glob",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "relative-path",
+ "rustc_version 0.4.1",
+ "syn 2.0.119",
+ "unicode-ident",
+]
+
+[[package]]
+name = "rstest_macros"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8d92eaf7b6e51e12471d71ddc72608e7151573de44099aacfbb1128177c0da4"
 dependencies = [
  "cfg-if",
  "glob",
@@ -9994,12 +10053,10 @@ version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
- "chrono",
  "dyn-clone",
  "schemars_derive",
  "serde",
  "serde_json",
- "uuid",
 ]
 
 [[package]]
@@ -10165,10 +10222,6 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
-dependencies = [
- "serde",
- "serde_core",
-]
 
 [[package]]
 name = "semver-parser"
@@ -10297,14 +10350,14 @@ dependencies = [
 
 [[package]]
 name = "serde_tokenstream"
-version = "0.2.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c49585c52c01f13c5c2ebb333f14f6885d76daa768d8a037d28017ec538c69"
+checksum = "db95b8acf6eca5bc1bc771a7d7fb1a0d1485bdef0c46eec2f573bbaf4b4118f8"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -11061,9 +11114,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.53.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
 dependencies = [
  "bytes",
  "libc",
@@ -11340,12 +11393,12 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.33.0"
+version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adbc64cba7137545b8044cb1fe9814f7aacf3c6b5f9b45be8bb5db538befdb26"
+checksum = "0a904802a1b902f43638b677ff2a650847e3b4404101b6c586d648e8c1e3e8fe"
 dependencies = [
  "js-sys",
- "opentelemetry",
+ "opentelemetry 0.33.0",
  "smallvec",
  "tracing",
  "tracing-core",
@@ -11405,9 +11458,9 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "typify"
-version = "0.6.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc0b89f47309feaeb23c4509c15c9a04234f7deccef6f96c3bfe95319819a304"
+checksum = "71187d2e983363e9a6ca884f7b061620bc6da4316902058e74bbc9d61c347696"
 dependencies = [
  "typify-impl",
  "typify-macro",
@@ -11415,9 +11468,9 @@ dependencies = [
 
 [[package]]
 name = "typify-impl"
-version = "0.6.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa7b026f540b148b81043c720889dbb942b08659aa8a43f624ac4f04dbfc1861"
+checksum = "1cbc3132686085f84a068ad86fc281cb3d566dd940c8911fd3562013851e9ae8"
 dependencies = [
  "heck 0.5.0",
  "log",
@@ -11428,16 +11481,16 @@ dependencies = [
  "semver 1.0.28",
  "serde",
  "serde_json",
- "syn 2.0.119",
+ "syn 3.0.6",
  "thiserror 2.0.21",
  "unicode-ident",
 ]
 
 [[package]]
 name = "typify-macro"
-version = "0.6.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ed96c57f06ae0839416b986921a98f18b220da63bbb243a8570a00c8492183"
+checksum = "b3a7f8d08ec85254fb8b383a6c66fe43b81f7f6b288fa71eb365f0867fc8f3a6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11446,7 +11499,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_tokenstream",
- "syn 2.0.119",
+ "syn 3.0.6",
  "typify-impl",
 ]
 
@@ -11609,7 +11662,19 @@ dependencies = [
  "indexmap 2.14.2",
  "serde",
  "serde_json",
- "utoipa-gen",
+ "utoipa-gen 5.5.0",
+]
+
+[[package]]
+name = "utoipa"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8765fe27aeff71012a3f90fa474cf1df863a7d0dd81ed25de4e63fff2544994f"
+dependencies = [
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+ "utoipa-gen 6.0.1",
 ]
 
 [[package]]
@@ -11624,15 +11689,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "utoipa-scalar"
-version = "0.3.0"
+name = "utoipa-gen"
+version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59559e1509172f6b26c1cdbc7247c4ddd1ac6560fe94b584f81ee489b141f719"
+checksum = "d935f1c83fdf8b88f09bbe050d0cea78ea4afee6d7b0317403228c1200b2c8ab"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "utoipa-scalar"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eb5bc76936ceb2bb790a62bec7fb99e22b8ecffca739e3d5a5afec0081ea7f3"
 dependencies = [
  "axum",
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 6.0.0",
 ]
 
 [[package]]
@@ -11649,7 +11725,7 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui-vendored",
  "zip",
 ]
@@ -11662,9 +11738,9 @@ checksum = "e2eebbbfe4093922c2b6734d7c679ebfebd704a0d7e56dfcb0d05818ce28977d"
 
 [[package]]
 name = "uuid"
-version = "1.26.1"
+version = "1.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
+checksum = "97277d36b9c3ace13e58fa6e753f8b0bbbf302a18dd193240d70f9e29681059a"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
