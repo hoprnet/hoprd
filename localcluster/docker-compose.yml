@@ -5,7 +5,7 @@ services:
     container_name: hoprd-blokli-anvil
     platform: linux/amd64
     # Pinned by digest; keep in sync with CHAIN_IMAGE in .github/workflows/pr.yaml.
-    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:75956aede10a71fbb8a46fae05d1aa1caed10ae6ed410c4385df3d565b4fe4fc
+    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:37e3b9a1788c175a5821b5f81d8d9d1f91eae8f852a0afeb815d47c2f5cc889d
     ports:
       - "8080:8080"
     healthcheck:
