@@ -281,12 +281,12 @@ pub struct UserIncomingSessionPixConfig {
     /// Maximum acceptable PIX data quota in bytes.
     ///
     /// Widening this is not free, and not only in traffic: upstream refuses a configuration whose
-    /// [`max_recovery_time`](Self::max_recovery_time) cannot cover one cycle at the top of this
-    /// window, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
+    /// [`max_recovery_time`](Self::max_recovery_time) cannot leave one cycle at the top of this
+    /// window time to complete, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
     /// single Session offering it. Both are exposed below precisely so that raising this one stays
     /// possible.
     ///
-    /// Default is upstream's, ≈649 MiB.
+    /// Default is upstream's, ≈908 MiB.
     #[default(default_pix_quota_range_max())]
     #[serde(default = "default_pix_quota_range_max")]
     pub quota_range_max: u64,
@@ -442,12 +442,12 @@ pub struct UserIncomingSessionPixConfig {
     /// The one bound on egress this node originates for itself, so it is refused rather than
     /// silently clamped: `validate_incoming_session_pix_config` rejects a ceiling below what a
     /// cycle of the widest accepted quota needs to finish inside
-    /// `fill.finish_fraction × max_recovery_time`, which is 128 packets/s at the shipped defaults.
+    /// `fill.finish_fraction × max_recovery_time`, which is 64 packets/s at the shipped defaults.
     ///
     /// Raising it only matters for a Session that has fallen behind; the planner asks for the rate
     /// the deadline needs and no more.
     ///
-    /// Default is upstream's 250 packets/s, about 2 Mbps.
+    /// Default is upstream's 250 packets/s, about 2.9 Mbps of Session data.
     #[default(default_pix_fill_max_rate())]
     #[serde(default = "default_pix_fill_max_rate")]
     pub fill_max_rate: u32,
