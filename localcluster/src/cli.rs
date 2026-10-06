@@ -176,6 +176,11 @@ pub struct Args {
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
 
+    /// Use the fixed built-in node keys instead of random ones. Generation is idempotent, so on a
+    /// chain kept alive from an earlier bring-up the nodes skip funding, Safes and channels.
+    #[arg(long)]
+    pub frozen_identities: bool,
+
     /// Inject artificial latency on inter-node P2P traffic via per-node UDP relays.
     ///
     /// One value selects the delay source; an optional `@<port>` suffix overrides the
