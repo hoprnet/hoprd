@@ -321,8 +321,8 @@ const DEFAULT_PACKET_RATE: u64 = 4000;
 /// Payload per datagram: as large as fits one Session segment, so every packet is as full as it
 /// can be.
 ///
-/// A packet is billed its full `HoprPacket::PAYLOAD_SIZE` (3246 B) whatever it carries, and
-/// one datagram is one packet only up to `SESSION_MTU` (1452 B). Within that the packet rate,
+/// A packet is billed one full Session segment (`SESSION_MTU`, 1452 B) whatever it carries, and
+/// one datagram is one packet only up to that size. Within that the packet rate,
 /// the cycle and the deposit are all fixed by the geometry, so the chunk size sets nothing but
 /// how much data a funded cycle moves. 1400 B leaves the MTU a little slack and moves ~60% more
 /// than the 900 B it replaced, at the same cycle length and the same spend (measured, one run
@@ -416,11 +416,10 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 
 // ── Money ───────────────────────────────────────────────────────────────────────
 
-/// At the committed ~67.31 MB quota this makes a deposit ~21.54 wxHOPR.
+/// At the committed ~30.11 MB quota this makes a deposit ~21.53 wxHOPR.
 ///
-/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
-/// deposit, stayed put: at the old `0.000001` the same geometry would cost ~67 wxHOPR a cycle,
-/// over [`MAX_SSA_ALLOCATION`].
+/// Rescaled whenever the bytes a share is priced at change (1038 B, then the 3246 B HOPR payload,
+/// now the 1452 B Session MTU), so the price per packet, and with it the deposit, stays put.
 ///
 /// Held constant as the geometry scales, so the deposit tracks the data rather than staying
 /// put — which is the point being demonstrated. [`MAX_SSA_ALLOCATION`] has to stay above it.
@@ -428,11 +427,11 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(5);
 /// PIX pricing is its own model, unrelated to channel ticket pricing; it only has to sit
 /// above the relay price re-counted per byte, which this does by roughly an order of
 /// magnitude.
-const PRICE_PER_BYTE: &str = "0.00000032 wxHOPR";
+const PRICE_PER_BYTE: &str = "0.000000715 wxHOPR";
 /// Ceiling on one deposit. Below `price_per_byte × quota` the strategy refuses to deposit
 /// at all, which would end the run on the first cycle instead of on the last. The quota
 /// grows with the packet rate, so this has to leave room above it — at the committed
-/// geometry a deposit is ~21.54 wxHOPR.
+/// geometry a deposit is ~21.53 wxHOPR.
 ///
 /// It moved 20 → 30 when the surplus was priced into the quota upstream: the dimensions did
 /// not change, but what they cost went up by the 1.5× surplus factor, and 20 had become a
@@ -563,10 +562,10 @@ fn curvy_max_deposit_wait() -> anyhow::Result<Duration> {
 /// derived from the quota.
 ///
 /// Every emitted share is charged for, surplus included, so this is exactly
-/// [`emissions_per_ssa`] priced at the full packet payload — the Exit is paid for each
-/// return packet it sends rather than for the subset that happened to be needed.
+/// [`emissions_per_ssa`] priced at one Session segment each — the Exit is paid for each return
+/// packet it sends rather than for the subset that happened to be needed.
 fn quota_bytes() -> u64 {
-    emissions_per_ssa() * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
+    emissions_per_ssa() * hopr_lib::exports::transport::session::PIX_QUOTA_BYTES_PER_SHARE
 }
 
 /// wxHOPR the Entry gets to spend on deposits, from `HOPRD_PIX_SOAK_FLOAT` or
@@ -805,11 +804,12 @@ fn pix_settings(
         // `HOPRD_PIX_SOAK_RATE` override does not have to move it too — the Exit rejects
         // the Session outright if the offered quota falls outside this.
         //
-        // 192 MiB rather than the 64 MiB it was at a 1038 B payload: the committed quota is now
-        // ~67.31 MB, and 192 MiB / 3246 B is still under the old 64 MiB / 1038 B in shares, so
-        // the recovery-time and fill-rate floors validated against it are no stricter.
+        // Sized in shares, which is what the floors validated against it count: 85 MiB at the
+        // 1452 B a share is now priced at is still under the 192 MiB / 3246 B and 64 MiB / 1038 B
+        // it was, so the recovery-time and fill-rate floors are no stricter. The committed quota
+        // is ~30.11 MB.
         quota_range_min: 0,
-        quota_range_max: 192 * 1024 * 1024,
+        quota_range_max: 85 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
         max_deposit_wait: match pool {
             Pool::Test => MAX_DEPOSIT_WAIT,

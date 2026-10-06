@@ -196,14 +196,15 @@ pub struct PixSettings {
     /// Session with no application traffic completes its cycle at
     /// [`Self::fill_finish_fraction`] `× this` and pays for the next one.
     ///
-    /// It has to clear a whole cycle at the widest quota the node accepts, and the check is made
-    /// against `ASSUMED_SESSION_PACKET_RATE` (1.5 Mbps in packets, 57 packets/s at the 3246 B
-    /// payload) rather than a measured rate, so the floor is `quota_range_max / 3246 / 57`. A
-    /// configuration below it is refused at load.
+    /// It has to leave a whole cycle at the widest quota the node accepts time to complete. With fill
+    /// on that is judged at [`Self::fill_max_rate`] (counted up to upstream's
+    /// `MAX_ASSUMED_SESSION_PACKET_RATE`, 5000 packets/s); with fill off, at those 5000 packets/s, so
+    /// the floor is `quota_range_max / PIX_QUOTA_BYTES_PER_SHARE / 5000`. A configuration below it
+    /// is refused at load.
     ///
     /// A `PixSettings` field rather than a pinned default because a test geometry is orders of
-    /// magnitude smaller than the production window upstream's two hours was chosen for, and a
-    /// two-hour idle tariff is not something a test can wait out.
+    /// magnitude smaller than the production window upstream's four hours was chosen for, and a
+    /// three-hour idle tariff is not something a test can wait out.
     pub max_recovery_time: std::time::Duration,
     /// Whether the Exit sends its own keep-alives to finish a funded cycle the application is not
     /// finishing (`incoming_session_pix.fill_enabled`).
@@ -216,7 +217,7 @@ pub struct PixSettings {
     /// (`incoming_session_pix.fill_max_rate`).
     ///
     /// Validated against the widest accepted quota: it must clear
-    /// `quota_range_max / 3246 × 1.05 / (fill_finish_fraction × max_recovery_time)`, or the
+    /// `quota_range_max / PIX_QUOTA_BYTES_PER_SHARE × 1.05 / (fill_finish_fraction × max_recovery_time)`, or the
     /// configuration is refused at load. Sizing this is therefore paired with
     /// [`Self::max_recovery_time`], [`Self::fill_finish_fraction`] and [`Self::quota_range_max`]
     /// rather than chosen alone.
@@ -289,7 +290,7 @@ impl PixSettings {
     pub fn quota_per_ssa(&self) -> u64 {
         self.num_ssa_parts as u64
             * (self.ssa_part_size + self.additional_shares) as u64
-            * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
+            * hopr_lib::exports::transport::session::PIX_QUOTA_BYTES_PER_SHARE
     }
 
     /// Load overrides from YAML, leaving anything unnamed at [`Default`].
@@ -419,7 +420,7 @@ struct RawPixSettings {
 /// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
 /// cluster started this way completes a cycle in a handful of seconds rather than the minutes
 /// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
-/// `8 × (2 + 2) × 3246` ≈ 103.9 kB against a production window of ~130 MiB–519 MiB, so the
+/// `8 × (2 + 2) × 1452` ≈ 46.5 kB against a production window of ~227 MiB–908 MiB, so the
 /// production window would reject every Session.
 ///
 /// Two deliberate departures from the tests:
@@ -433,7 +434,7 @@ struct RawPixSettings {
 ///   price below that is roughly 300 cycles per node.
 ///
 /// The settlement values are sized against those dimensions, not left at hoprd's own defaults:
-/// at the upstream `1 wxHOPR`/byte a ~103.9 kB quota prices one deposit at ~103 900 wxHOPR, well
+/// at the upstream `1 wxHOPR`/byte a ~46.5 kB quota prices one deposit at ~46 500 wxHOPR, well
 /// past any sane ceiling, so every deposit would be refused. `max_deposit_tracking_time` is
 /// likewise sized against the 80 s kill-switch fuse the two deadlines above imply, since its
 /// poll cadence is a tenth of it.
@@ -459,8 +460,8 @@ impl Default for PixSettings {
             // Upstream's default, which the interactive cluster's small response buffer leaves
             // ample room under — see the field.
             max_served_without_progress: 2048,
-            // Upstream's own three. The demo quota is ~103.9 kB, so the two-hour deadline is far
-            // above its floor of `quota_range_max / 3246 / 180` and nothing here needs it shorter:
+            // Upstream's own three. The demo quota is ~46.5 kB, so the four-hour deadline is far
+            // above any load-time floor and nothing here needs it shorter:
             // an interactive cluster is not waiting on an idle tariff. Fill stays on so the
             // interactive cluster behaves like a deployed Exit.
             max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
@@ -468,9 +469,10 @@ impl Default for PixSettings {
             fill_max_rate: UserIncomingSessionPixConfig::default().fill_max_rate,
             fill_finish_fraction: UserIncomingSessionPixConfig::default().fill_finish_fraction,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
-            // ~3.32 wxHOPR per SSA deposit against the dimensions above. Scaled with the packet
-            // payload (1038 → 3246 B) so the price per packet, and with it every deposit, stayed put.
-            price_per_byte: "0.000032 wxHOPR".parse().expect("valid static amount"),
+            // ~3.32 wxHOPR per SSA deposit against the dimensions above. Rescaled whenever the bytes
+            // a share is priced at change (1038 B, then the 3246 B HOPR payload, now the 1452 B
+            // Session MTU), so the price per packet, and with it every deposit, stays put.
+            price_per_byte: "0.0000715 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
             // Matches `safe_deposit_float` above: an interactive cluster should stop when the
             // float it was given is gone, not before. The two are stated separately because they
@@ -1429,7 +1431,7 @@ additional_shares: 16
         assert_eq!(64, parsed.ssa_part_size);
         assert_eq!(16, parsed.additional_shares);
         assert_eq!(
-            1024 * 80 * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64,
+            1024 * 80 * hopr_lib::exports::transport::session::PIX_QUOTA_BYTES_PER_SHARE,
             parsed.quota_per_ssa()
         );
 

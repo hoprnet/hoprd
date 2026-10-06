@@ -148,13 +148,13 @@ const RESPONSE_BUFFER: &str = "16 kB";
 const MAX_SURB_UPSTREAM: &str = "20 Mb/s";
 
 /// Charged per byte of the agreed quota. With the dimensions above the quota is
-/// `8 × (2 + 2) × 3246` ≈ 103.9 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
+/// `8 × (2 + 2) × 1452` ≈ 46.5 kB, so one SSA deposit is ~3.32 wxHOPR — small against the
 /// 1000 wxHOPR each Safe is provisioned with, but large enough to be unambiguous in a
 /// balance delta.
 ///
-/// Scaled with the packet payload (1038 → 3246 B) so the price per packet, and with it the
-/// deposit, stayed put.
-const PRICE_PER_BYTE: &str = "0.000032 wxHOPR";
+/// Rescaled whenever the bytes a share is priced at change (1038 B, then the 3246 B HOPR payload,
+/// now the 1452 B Session MTU), so the price per packet, and with it the deposit, stays put.
+const PRICE_PER_BYTE: &str = "0.0000715 wxHOPR";
 /// Ceiling on a single deposit. Must exceed `PRICE_PER_BYTE × quota` or the strategy
 /// refuses to deposit at all and the Exit's kill switch closes the Session.
 ///
@@ -327,9 +327,9 @@ fn pix_settings(
         num_ssa_parts: PIX_POLYS as usize,
         ssa_part_size: PIX_SHARES as usize,
         additional_shares: PIX_ADDITIONAL_SHARES as usize,
-        // The Exit rejects any quota outside this window. Ours is ~33.2 kB — the surplus is
+        // The Exit rejects any quota outside this window. Ours is ~46.5 kB — the surplus is
         // in the product, see `quota_per_ssa` — against a production default window of
-        // ~130 MiB–519 MiB, so it has to be widened. Per SSA, so batching does not move it.
+        // ~227 MiB–908 MiB, so it has to be widened. Per SSA, so batching does not move it.
         quota_range_min: 0,
         quota_range_max: 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
