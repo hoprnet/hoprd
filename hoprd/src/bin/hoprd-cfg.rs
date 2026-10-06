@@ -93,6 +93,13 @@ struct CliArgs {
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
+    // Surfaces config warnings (e.g. deprecated options) on stderr, keeping stdout
+    // clean for the `--default` YAML dump.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::WARN)
+        .init();
+
     if args.default {
         println!(
             "{}",
@@ -220,6 +227,22 @@ mod tests {
             "unexpected error: {err}"
         );
         Ok(())
+    }
+
+    #[test]
+    fn validate_passes_for_config_with_deprecated_funding_keys() -> anyhow::Result<()> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/hoprd-legacy-funding.cfg.yaml"
+        );
+
+        validate_effective_config(&[
+            "--configurationFilePath".to_string(),
+            path.to_string(),
+            "--password".to_string(),
+            "a-securely-provided-password".to_string(),
+        ])
+        .context("expected a config with deprecated funding keys to validate")
     }
 
     #[test]
