@@ -8,7 +8,7 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.24.0";
-    nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
+    nix-lib.url = "github:hoprnet/nix-lib/tb/202610-musl-arm-builder";
     # No `hoprnet` input. It existed for one output — `binary-ticket-inspector` — which is now
     # built here instead; see `ticketInspectorBuildArgs` for why and how.
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
