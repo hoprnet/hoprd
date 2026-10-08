@@ -147,11 +147,11 @@ fn default_session_establish_max_retries() -> usize {
 }
 
 fn default_probe_recheck_threshold() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(60)
 }
 
 fn default_probe_interval() -> Duration {
-    Duration::from_secs(3)
+    Duration::from_secs(30)
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
@@ -1124,7 +1124,11 @@ min_incoming_ticket_price: "0.06 wxHOPR"
                         "min_incoming_ticket_price:",
                     ]
                     .iter()
-                    .find_map(|key| l.strip_prefix(&format!("    # {key}")).map(|v| (key, v)))
+                    .find_map(|key| {
+                        l.trim_start()
+                            .strip_prefix(&format!("# {key}"))
+                            .map(|v| (key, v))
+                    })
                     .map_or_else(|| l.to_owned(), |(key, v)| format!("    {key}{v}"))
                 })
                 .collect::<Vec<_>>()
