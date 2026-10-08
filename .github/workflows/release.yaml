@@ -110,23 +110,54 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Bump dappnode testnet package
+      - name: Generate GitHub App token
+        id: bot-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.GH_APP_GNOSISVPN_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_GNOSISVPN_BOT_PRIVATE_KEY }}
+          owner: gnosis
+          repositories: gnosis_vpn-infrastructure
+          permission-contents: write
+      - name: Deploy to Gnosis Staging - Main
+        if: github.ref_name == 'main'
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          repository: dappnode/DAppNodePackage-Hopr-testnet
-          event-type: bump
-          client-payload: |-
-            {
-              "hoprd_version": "${{ needs.release.outputs.released_version }}"
-            }
-      - name: Deploy to Gnosis Staging
-        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
-        with:
-          token: ${{ secrets.GNOSIS_GITHUB_WORKFLOW_TOKEN }}
+          token: ${{ steps.bot-token.outputs.token }}
           repository: gnosis/gnosis_vpn-infrastructure
           event-type: restart_hoprd
           client-payload: |-
             {
-              "environment": "staging"
+              "network": "piz-palu-staging"
+            }
+      - name: Deploy to Gnosis Staging - Maintenance
+        if: github.ref_name == vars.MAINTENANCE_RELEASE_BRANCH
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ steps.bot-token.outputs.token }}
+          repository: gnosis/gnosis_vpn-infrastructure
+          event-type: restart_hoprd
+          client-payload: |-
+            {
+              "network": "jura-staging"
+            }
+      - name: Generate DAppNode token
+        if: always()
+        id: dappnode-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.GH_APP_GNOSISVPN_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_GNOSISVPN_BOT_PRIVATE_KEY }}
+          owner: dappnode
+          repositories: DAppNodePackage-Hopr
+      - name: Bump dappnode package
+        if: always()
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ steps.dappnode-token.outputs.token }}
+          repository: dappnode/DAppNodePackage-Hopr
+          event-type: bump
+          client-payload: |-
+            {
+              "hoprd_version": "${{ needs.release.outputs.released_version }}"
             }
