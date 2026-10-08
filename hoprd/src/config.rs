@@ -147,11 +147,11 @@ fn default_session_establish_max_retries() -> usize {
 }
 
 fn default_probe_recheck_threshold() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(60)
 }
 
 fn default_probe_interval() -> Duration {
-    Duration::from_secs(3)
+    Duration::from_secs(30)
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
