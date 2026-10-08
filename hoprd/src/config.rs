@@ -1124,7 +1124,11 @@ min_incoming_ticket_price: "0.06 wxHOPR"
                         "min_incoming_ticket_price:",
                     ]
                     .iter()
-                    .find_map(|key| l.strip_prefix(&format!("    # {key}")).map(|v| (key, v)))
+                    .find_map(|key| {
+                        l.trim_start()
+                            .strip_prefix(&format!("# {key}"))
+                            .map(|v| (key, v))
+                    })
                     .map_or_else(|| l.to_owned(), |(key, v)| format!("    {key}{v}"))
                 })
                 .collect::<Vec<_>>()

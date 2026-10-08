@@ -17,6 +17,9 @@ strategy:
           min_open_channels: 5
           target_open_channels: 20
         funding:
+          sizing_mode:
+            probabilistic:
+              success_probability: 0.99
           initial_capacity: "1 GiB"
           topup_capacity: "512 MiB"
           lower_capacity_threshold: "512 MiB"
@@ -25,6 +28,10 @@ strategy:
         concurrency:
           max_concurrent_actions: 5
 hopr:
+  network:
+  # outgoing_ticket_winning_prob: 1.0
+  # outgoing_ticket_price: "0.03 wxHOPR"
+  # min_incoming_ticket_price: "0.06 wxHOPR"
   safe_module:
     safe_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
     module_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
