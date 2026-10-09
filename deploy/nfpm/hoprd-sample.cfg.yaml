@@ -12,6 +12,11 @@ strategy:
   strategies:
     - AutoRedeeming:
         redeem_all_on_close: true
+    # Keeps the Safe's wxHOPR allowance for the Channels contract topped up, so that
+    # channel opening and funding do not revert once the allowance is spent.
+    - AutoApproval:
+        min_allowance_threshold: "100 wxHOPR"
+        allowance_amount: "1000 wxHOPR"
     - ChannelLifecycle:
         population:
           min_open_channels: 5

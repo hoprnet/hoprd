@@ -407,6 +407,14 @@ impl ChainWriteSafeOperations for StubChain {
     {
         Err(StubError("stub cannot deploy safe".into()))
     }
+
+    async fn set_safe_allowance<'a>(
+        &'a self,
+        _amount: HoprBalance,
+    ) -> Result<futures::future::BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot set safe allowance".into()))
+    }
 }
 
 // --- ChainReadServiceOperations ---

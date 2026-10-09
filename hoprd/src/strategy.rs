@@ -202,6 +202,10 @@ pub enum StrategyKind {
     AutoRedeeming(hopr_strategy::auto_redeeming::AutoRedeemingStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
     AutoFunding(hopr_strategy::auto_funding::AutoFundingStrategyConfig),
+    /// Keeps the wxHOPR allowance that the node's Safe grants to the Channels contract above a
+    /// threshold, so channel opening and funding do not revert.
+    #[cfg(feature = "runtime-tokio")]
+    AutoApproval(hopr_strategy::auto_approval::AutoApprovalStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
     ClosureFinalizer(hopr_strategy::channel_finalizer::ClosureFinalizerStrategyConfig),
     #[cfg(feature = "runtime-tokio")]
@@ -231,6 +235,8 @@ impl validator::Validate for StrategyKind {
             Self::AutoRedeeming(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
             Self::AutoFunding(cfg) => cfg.validate(),
+            #[cfg(feature = "runtime-tokio")]
+            Self::AutoApproval(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
             Self::ClosureFinalizer(cfg) => cfg.validate(),
             #[cfg(feature = "runtime-tokio")]
@@ -294,6 +300,9 @@ pub struct MultiStrategyConfig {
 /// ## Strategies included
 /// - `AutoRedeeming` *(requires `runtime-tokio` feature)*: redeems single tickets on channel close if worth at least 1
 ///   wxHOPR.
+/// - `AutoApproval` *(requires `runtime-tokio` feature)*: sets the wxHOPR allowance of the node's Safe for the
+///   Channels contract back to 1000 wxHOPR when it drops below 100 wxHOPR, so channel opening and funding
+///   do not revert.
 /// - `ChannelLifecycle` *(requires `runtime-tokio` feature)*: unified strategy that automatically opens, funds,
 ///   tops up, closes, and finalizes outgoing payment channels based on peer connectivity and quality.
 ///
@@ -302,6 +311,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
         use hopr_strategy::{
+            auto_approval::AutoApprovalStrategyConfig,
             auto_redeeming::AutoRedeemingStrategyConfig,
             channel_lifecycle::{CapacitySizingMode, ChannelLifecycleConfig, FundingConfig},
         };
@@ -313,6 +323,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                     redeem_on_winning: true,
                     ..Default::default()
                 }),
+                StrategyKind::AutoApproval(AutoApprovalStrategyConfig::default()),
                 StrategyKind::ChannelLifecycle(Box::new(ChannelLifecycleConfig {
                     funding: FundingConfig {
                         sizing_mode: CapacitySizingMode::Probabilistic {
@@ -450,6 +461,14 @@ where
             #[cfg(feature = "runtime-tokio")]
             StrategyKind::AutoFunding(sub_cfg) => strategies.push(
                 hopr_strategy::auto_funding::AutoFundingStrategy::new(
+                    *sub_cfg,
+                    cfg.execution_interval,
+                )
+                .build(Arc::clone(&node))?,
+            ),
+            #[cfg(feature = "runtime-tokio")]
+            StrategyKind::AutoApproval(sub_cfg) => strategies.push(
+                hopr_strategy::auto_approval::AutoApprovalStrategy::new(
                     *sub_cfg,
                     cfg.execution_interval,
                 )
@@ -605,6 +624,63 @@ mod tests {
     /// before `hopr-strategy` 1.0.1 a balance was a positional `[U256, currency]` pair and
     /// `price_per_byte: 0.0001 wxHOPR` failed to parse with "expected sequence start".
     #[cfg(feature = "pix")]
+    #[test]
+    fn default_strategies_keep_the_safe_allowance_topped_up() -> anyhow::Result<()> {
+        let cfg = hopr_default_strategies();
+        cfg.validate()?;
+        assert!(
+            cfg.strategies
+                .iter()
+                .any(|s| matches!(s, StrategyKind::AutoApproval(c) if *c == Default::default())),
+            "the default strategies must include AutoApproval"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn auto_approval_stanza_parses_and_validates() -> anyhow::Result<()> {
+        let cfg: MultiStrategyConfig = serde_saphyr::from_str(
+            r#"
+strategies:
+  - AutoApproval:
+      min_allowance_threshold: 37.5 wxHOPR
+      allowance_amount: 1000 wxHOPR
+"#,
+        )?;
+        cfg.validate()?;
+
+        let StrategyKind::AutoApproval(approval) = &cfg.strategies[0] else {
+            anyhow::bail!(
+                "expected an AutoApproval stanza, got {:?}",
+                cfg.strategies[0]
+            );
+        };
+        assert_eq!(approval.min_allowance_threshold, "37.5 wxHOPR".parse()?);
+        assert_eq!(approval.allowance_amount, "1000 wxHOPR".parse()?);
+
+        let defaults: MultiStrategyConfig =
+            serde_saphyr::from_str("strategies:\n  - AutoApproval: {}\n")?;
+        assert_eq!(
+            defaults.strategies[0],
+            StrategyKind::AutoApproval(Default::default())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn auto_approval_amount_not_above_threshold_is_rejected() -> anyhow::Result<()> {
+        let cfg: MultiStrategyConfig = serde_saphyr::from_str(
+            r#"
+strategies:
+  - AutoApproval:
+      min_allowance_threshold: 100 wxHOPR
+      allowance_amount: 100 wxHOPR
+"#,
+        )?;
+        assert!(cfg.validate().is_err());
+        Ok(())
+    }
+
     #[test]
     fn pix_stanza_parses_from_yaml() -> anyhow::Result<()> {
         let cfg: MultiStrategyConfig = serde_saphyr::from_str(
