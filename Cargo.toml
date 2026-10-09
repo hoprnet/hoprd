@@ -15,11 +15,11 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "15094cb9914790f7e318bbb3f6f7c490c7f1cff4", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "15094cb9914790f7e318bbb3f6f7c490c7f1cff4", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=4.3.2" }
+hopr-api = { version = "=4.3.3" }
 hopr-chain-connector = "0.28.0"
 hopr-ct-full-network = { version = "0.7.0", default-features = false }
 hopr-network-graph = { version = "0.8.0", default-features = false }
@@ -187,3 +187,13 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# Development only: build against the unreleased CORE-1024 branches of the upstream repos.
+# Run `fill-revs.sh` to set the revisions, and remove this section once the crates are released.
+[patch.crates-io]
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
+blokli-client = { git = "https://github.com/hoprnet/blokli-client", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
+hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
+hopr-chain-connector = { git = "https://github.com/hoprnet/hopr-impls", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
