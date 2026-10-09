@@ -300,6 +300,9 @@ pub struct MultiStrategyConfig {
 /// ## Strategies included
 /// - `AutoRedeeming` *(requires `runtime-tokio` feature)*: redeems single tickets on channel close if worth at least 1
 ///   wxHOPR.
+/// - `AutoApproval` *(requires `runtime-tokio` feature)*: sets the wxHOPR allowance of the node's Safe for the
+///   Channels contract back to 1000 wxHOPR when it drops below 100 wxHOPR, so channel opening and funding
+///   do not revert.
 /// - `ChannelLifecycle` *(requires `runtime-tokio` feature)*: unified strategy that automatically opens, funds,
 ///   tops up, closes, and finalizes outgoing payment channels based on peer connectivity and quality.
 ///
@@ -308,6 +311,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
     #[cfg(feature = "runtime-tokio")]
     {
         use hopr_strategy::{
+            auto_approval::AutoApprovalStrategyConfig,
             auto_redeeming::AutoRedeemingStrategyConfig,
             channel_lifecycle::{CapacitySizingMode, ChannelLifecycleConfig, FundingConfig},
         };
@@ -319,6 +323,7 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
                     redeem_on_winning: true,
                     ..Default::default()
                 }),
+                StrategyKind::AutoApproval(AutoApprovalStrategyConfig::default()),
                 StrategyKind::ChannelLifecycle(Box::new(ChannelLifecycleConfig {
                     funding: FundingConfig {
                         sizing_mode: CapacitySizingMode::Probabilistic {
@@ -619,6 +624,19 @@ mod tests {
     /// before `hopr-strategy` 1.0.1 a balance was a positional `[U256, currency]` pair and
     /// `price_per_byte: 0.0001 wxHOPR` failed to parse with "expected sequence start".
     #[cfg(feature = "pix")]
+    #[test]
+    fn default_strategies_keep_the_safe_allowance_topped_up() -> anyhow::Result<()> {
+        let cfg = hopr_default_strategies();
+        cfg.validate()?;
+        assert!(
+            cfg.strategies
+                .iter()
+                .any(|s| matches!(s, StrategyKind::AutoApproval(c) if *c == Default::default())),
+            "the default strategies must include AutoApproval"
+        );
+        Ok(())
+    }
+
     #[test]
     fn auto_approval_stanza_parses_and_validates() -> anyhow::Result<()> {
         let cfg: MultiStrategyConfig = serde_saphyr::from_str(
