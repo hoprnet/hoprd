@@ -620,10 +620,6 @@ mod tests {
         Ok(())
     }
 
-    /// The `Pix` stanza in the form the docs promise. This is the whole point of the change:
-    /// before `hopr-strategy` 1.0.1 a balance was a positional `[U256, currency]` pair and
-    /// `price_per_byte: 0.0001 wxHOPR` failed to parse with "expected sequence start".
-    #[cfg(feature = "pix")]
     #[test]
     fn default_strategies_keep_the_safe_allowance_topped_up() -> anyhow::Result<()> {
         let cfg = hopr_default_strategies();
@@ -681,6 +677,10 @@ strategies:
         Ok(())
     }
 
+    /// The `Pix` stanza in the form the docs promise. This is the whole point of the change:
+    /// before `hopr-strategy` 1.0.1 a balance was a positional `[U256, currency]` pair and
+    /// `price_per_byte: 0.0001 wxHOPR` failed to parse with "expected sequence start".
+    #[cfg(feature = "pix")]
     #[test]
     fn pix_stanza_parses_from_yaml() -> anyhow::Result<()> {
         let cfg: MultiStrategyConfig = serde_saphyr::from_str(
