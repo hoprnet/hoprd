@@ -2367,9 +2367,8 @@ dependencies = [
 
 [[package]]
 name = "blokli-client"
-version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8478d012a20a01bd39c6b0033e6794f6a98d5ac2819d8c89264db02fc251e84c"
+version = "0.35.1"
+source = "git+https://github.com/hoprnet/blokli-client?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#f9aedb948475b90a413894a7486c71c4cbed4b6f"
 dependencies = [
  "anyhow",
  "async-broadcast",
@@ -5818,9 +5817,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "4.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20b3701bf6462bff1b49a5f37d148e79b73174ae111046c65d3c723c6372f29a"
+version = "4.3.3"
+source = "git+https://github.com/hoprnet/hopr-api?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#8bf698f71ec698f53cff60d4df8d1e70992f15a0"
 dependencies = [
  "async-trait",
  "atomic_enum",
@@ -5853,38 +5851,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "hopr-chain-connector"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aa0ec8acc3a19e49b7e5b7eac42a4cd1edb9225cfc3655a29fb21074f4bcb73"
-dependencies = [
- "ahash",
- "anyhow",
- "async-broadcast",
- "async-trait",
- "atomic_enum",
- "blokli-client",
- "const-hex",
- "dashmap",
- "futures",
- "futures-concurrency",
- "futures-time",
- "hopr-api",
- "hopr-utilities 0.17.3",
- "moka",
- "parking_lot",
- "petgraph",
- "postcard",
- "redb",
- "serde_json",
- "smart-default",
- "tempfile",
- "thiserror 2.0.21",
- "tracing",
- "validator",
 ]
 
 [[package]]
@@ -5972,7 +5938,7 @@ dependencies = [
  "futures-time",
  "hex-literal",
  "hopr-api",
- "hopr-chain-connector 0.29.0",
+ "hopr-chain-connector",
  "hopr-ct-full-network",
  "hopr-network-graph",
  "hopr-ticket-manager",
@@ -6151,9 +6117,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-strategy"
-version = "5.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "533751b24418cfd2c091d7e36313d61ab01edb7ee10e861e5eaa8246624062aa"
+version = "5.3.1"
+source = "git+https://github.com/hoprnet/hopr-strategy?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#2f2cc15d310ed52634538d05f832778fe2da3e88"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6175,8 +6140,8 @@ dependencies = [
  "futures-concurrency",
  "futures-time",
  "hopr-api",
- "hopr-chain-connector 0.28.0",
- "hopr-utilities 0.17.3",
+ "hopr-chain-connector",
+ "hopr-utilities 0.18.0",
  "humantime-serde",
  "lazy_static",
  "moka",
@@ -6386,9 +6351,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9edbc7eef689f0dde57fb481404f15b671f0877dd75ff1e88c125f19a09efaf7"
+version = "4.1.1"
+source = "git+https://github.com/hoprnet/hopr-types?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#5df6f2be99433dcb506b79fc11f49583784eab92"
 dependencies = [
  "aes 0.9.3",
  "anyhow",
@@ -6559,7 +6523,7 @@ dependencies = [
  "flagset",
  "futures",
  "home",
- "hopr-chain-connector 0.28.0",
+ "hopr-chain-connector",
  "hopr-ct-full-network",
  "hopr-lib",
  "hopr-network-graph",
@@ -6667,7 +6631,7 @@ dependencies = [
  "clap",
  "curvy-abi",
  "futures",
- "hopr-chain-connector 0.28.0",
+ "hopr-chain-connector",
  "hopr-lib",
  "hopr-session-server-forwarder",
  "hopr-strategy",
@@ -9290,7 +9254,7 @@ dependencies = [
  "quinn-udp 0.5.16",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9330,7 +9294,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9343,7 +9307,7 @@ checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "windows-sys 0.61.2",
 ]
 
@@ -12546,23 +12510,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "blokli-client"
-version = "0.35.1"
-source = "git+https://github.com/hoprnet/blokli-client?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#f9aedb948475b90a413894a7486c71c4cbed4b6f"
-
-[[patch.unused]]
-name = "hopr-api"
-version = "4.3.3"
-source = "git+https://github.com/hoprnet/hopr-api?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#8bf698f71ec698f53cff60d4df8d1e70992f15a0"
-
-[[patch.unused]]
-name = "hopr-strategy"
-version = "5.3.1"
-source = "git+https://github.com/hoprnet/hopr-strategy?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#2f2cc15d310ed52634538d05f832778fe2da3e88"
-
-[[patch.unused]]
-name = "hopr-types"
-version = "4.1.1"
-source = "git+https://github.com/hoprnet/hopr-types?branch=q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel#5df6f2be99433dcb506b79fc11f49583784eab92"

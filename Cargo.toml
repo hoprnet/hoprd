@@ -20,11 +20,11 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", branch = "q-c
 
 # crates.io HOPR deps
 hopr-api = { version = "=4.3.3" }
-hopr-chain-connector = "0.28.0"
+hopr-chain-connector = "0.29.0"
 hopr-ct-full-network = { version = "0.7.0", default-features = false }
 hopr-network-graph = { version = "0.8.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
-hopr-strategy = { version = "5.3.0", default-features = false }
+hopr-strategy = { version = "5.3.1", default-features = false }
 hopr-ticket-manager = { version = "0.8.0", default-features = false, features = [
   "redb",
   "cli",
