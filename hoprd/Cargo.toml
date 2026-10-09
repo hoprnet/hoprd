@@ -32,6 +32,7 @@ runtime-tokio = [
   "opentelemetry_sdk?/experimental_logs_batch_log_processor_with_async_runtime",
   "opentelemetry_sdk?/experimental_metrics_periodicreader_with_async_runtime",
   "hopr-strategy/runtime-tokio",
+  "hopr-strategy/strategy-auto-approval",
   "hopr-strategy/strategy-auto-funding",
   "hopr-strategy/strategy-auto-redeeming",
   "hopr-strategy/strategy-closure-finalizer",
