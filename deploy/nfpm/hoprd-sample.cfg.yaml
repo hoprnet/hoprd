@@ -29,6 +29,8 @@ strategy:
           max_concurrent_actions: 5
 hopr:
   network:
+    probe_interval: "60s"
+    probe_recheck_threshold: "120s"
   # outgoing_ticket_winning_prob: 1.0
   # outgoing_ticket_price: "0.03 wxHOPR"
   # min_incoming_ticket_price: "0.06 wxHOPR"
