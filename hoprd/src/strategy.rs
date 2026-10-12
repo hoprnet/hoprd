@@ -589,14 +589,16 @@ mod tests {
 
         // jura: ticket price 1e13 wei, win_prob 4e-6 (1/250 000)
         let jura = funding.resolve::<TestTransport>(wei(10_000_000_000_000), 4.0e-6);
-        assert_eq!(jura.initial_balance, wei(67_500_000_000_000_000_000));
-        assert_eq!(jura.topup_balance, wei(45_000_000_000_000_000_000));
+        assert_eq!(jura.initial_balance, wei(67_500_000_001_805_995_332));
+        assert_eq!(jura.topup_balance, wei(45_000_000_001_203_996_888));
         assert_eq!(
             jura.lower_balance_threshold,
-            wei(45_000_000_000_000_000_000)
+            wei(45_000_000_001_203_996_888)
         );
-        // 1e13 × 3 / 4e-6; the stakes above are 9 and 6 tickets.
-        assert_eq!(jura.face_value, wei(7_500_000_000_000_000_000));
+        // Face value is `1e13 × 3 / 4e-6`, divided exactly in U256 (hopr-strategy 5.4.0's
+        // `div_f64`). 4e-6 has no exact f64 form, so the quotient keeps a sub-nano-wxHOPR tail
+        // instead of a clean 7.5; the two stakes above are still exact 9× and 6× multiples of it.
+        assert_eq!(jura.face_value, wei(7_500_000_000_200_666_148));
 
         Ok(())
     }
