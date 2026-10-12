@@ -8,7 +8,7 @@ use hopr_lib::{
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
-        config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
+        config::{HoprCodecConfig, PixGlobalConfig},
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
 };
@@ -147,11 +147,11 @@ fn default_session_establish_max_retries() -> usize {
 }
 
 fn default_probe_recheck_threshold() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(60)
 }
 
 fn default_probe_interval() -> Duration {
-    Duration::from_secs(3)
+    Duration::from_secs(30)
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
@@ -281,12 +281,12 @@ pub struct UserIncomingSessionPixConfig {
     /// Maximum acceptable PIX data quota in bytes.
     ///
     /// Widening this is not free, and not only in traffic: upstream refuses a configuration whose
-    /// [`max_recovery_time`](Self::max_recovery_time) cannot cover one cycle at the top of this
-    /// window, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
+    /// [`max_recovery_time`](Self::max_recovery_time) cannot leave one cycle at the top of this
+    /// window time to complete, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
     /// single Session offering it. Both are exposed below precisely so that raising this one stays
     /// possible.
     ///
-    /// Default is upstream's, ≈649 MiB.
+    /// Default is upstream's, ≈908 MiB.
     #[default(default_pix_quota_range_max())]
     #[serde(default = "default_pix_quota_range_max")]
     pub quota_range_max: u64,
@@ -442,12 +442,12 @@ pub struct UserIncomingSessionPixConfig {
     /// The one bound on egress this node originates for itself, so it is refused rather than
     /// silently clamped: `validate_incoming_session_pix_config` rejects a ceiling below what a
     /// cycle of the widest accepted quota needs to finish inside
-    /// `fill.finish_fraction × max_recovery_time`, which is 128 packets/s at the shipped defaults.
+    /// `fill.finish_fraction × max_recovery_time`, which is 64 packets/s at the shipped defaults.
     ///
     /// Raising it only matters for a Session that has fallen behind; the planner asks for the rate
     /// the deadline needs and no more.
     ///
-    /// Default is upstream's 250 packets/s, about 2 Mbps.
+    /// Default is upstream's 250 packets/s, about 2.9 Mbps of Session data.
     #[default(default_pix_fill_max_rate())]
     #[serde(default = "default_pix_fill_max_rate")]
     pub fill_max_rate: u32,
@@ -517,6 +517,7 @@ fn default_pix_fill_finish_fraction() -> f64 {
 }
 
 /// Subset of various selected HOPR library network-related configuration options.
+#[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserHoprNetworkConfig {
@@ -550,11 +551,16 @@ pub struct UserHoprNetworkConfig {
     #[default(default_outgoing_ticket_winning_prob())]
     #[serde(default = "default_outgoing_ticket_winning_prob")]
     pub outgoing_ticket_winning_prob: Option<f64>,
+    /// Outgoing ticket price.
+    #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    pub outgoing_ticket_price: Option<HoprBalance>,
     /// Minimum incoming ticket price.
     ///
     /// The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
     /// and will default to that value whenever it is lower.
     #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub min_incoming_ticket_price: Option<HoprBalance>,
     /// Packet mixer configuration.
     ///
@@ -630,35 +636,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .outgoing_ticket_winning_prob
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
+                        outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
-                        ..Default::default()
-                    },
-                    // Reply with the freshest SURBs first, so a return-path change takes effect
-                    // immediately instead of only after a stale backlog has been drained.
-                    //
-                    // Not under PIX, which needs the opposite end. A PIX share is delivered to the
-                    // reconstructor only when its SURB is *used*, and the ring buffer evicts from
-                    // the oldest end — so popping newest-first leaves the oldest SURBs unspent
-                    // until they are overwritten, and each overwrite is a permanently lost share.
-                    // Under sustained traffic the Exit then never assembles `ssa_part_size` shares
-                    // for any polynomial: the key is never reconstructed, nothing is swept, and the
-                    // Entry never gets a second deposit request. Observed exactly that — one
-                    // deposit confirmed, then a stall with no error anywhere — before this gate.
-                    //
-                    // `Fifo` is upstream's default for this reason; see `SurbPopOrder`, whose own
-                    // documentation calls out the lost-share hazard.
-                    //
-                    // Gated on the feature rather than on `enforce_pix` so the pop order is a
-                    // property of the binary rather than something a config toggle changes
-                    // underneath a running deployment. The cost is that a PIX-capable build whose
-                    // strategy list has no `Pix` stanza also gets `Fifo` — that is upstream's
-                    // default, so it forgoes an optimisation rather than regressing.
-                    surb_store: SurbStoreConfig {
-                        #[cfg(not(feature = "pix"))]
-                        pop_order: SurbPopOrder::Lifo,
-                        #[cfg(feature = "pix")]
-                        pop_order: SurbPopOrder::Fifo,
-                        ..Default::default()
                     },
                     ..Default::default()
                 },
@@ -1039,6 +1018,130 @@ mod tests {
         );
 
         assert_eq!(lib.protocol.pix.reconstructor, Default::default());
+    }
+
+    #[test]
+    fn custom_ticket_parameters_should_parse_from_yaml_and_reach_the_library_config()
+    -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str(
+            r#"
+outgoing_ticket_winning_prob: 0.5
+outgoing_ticket_price: "0.03 wxHOPR"
+min_incoming_ticket_price: "0.06 wxHOPR"
+"#,
+        )?;
+
+        assert_eq!(network.outgoing_ticket_winning_prob, Some(0.5));
+        assert_eq!(
+            network.outgoing_ticket_price,
+            Some(HoprBalance::from_str("0.03 wxHOPR")?)
+        );
+        assert_eq!(
+            network.min_incoming_ticket_price,
+            Some(HoprBalance::from_str("0.06 wxHOPR")?)
+        );
+
+        let lib = HoprLibConfig::from(UserHoprLibConfig {
+            network: network.clone(),
+            ..Default::default()
+        });
+        let codec = &lib.protocol.packet.codec;
+
+        assert_eq!(
+            codec.outgoing_win_prob.map(|p| p.as_f64()),
+            network.outgoing_ticket_winning_prob
+        );
+        assert_eq!(codec.outgoing_ticket_price, network.outgoing_ticket_price);
+        assert_eq!(
+            codec.min_incoming_ticket_price,
+            network.min_incoming_ticket_price
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_parameters_should_default_when_omitted() -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str("{}")?;
+
+        assert_eq!(
+            network.outgoing_ticket_winning_prob,
+            default_outgoing_ticket_winning_prob()
+        );
+        assert_eq!(network.outgoing_ticket_price, None);
+        assert_eq!(network.min_incoming_ticket_price, None);
+        assert_eq!(network, UserHoprNetworkConfig::default());
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_prices_should_round_trip_through_yaml() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.outgoing_ticket_winning_prob = Some(0.25);
+        cfg.hopr.network.outgoing_ticket_price = Some(HoprBalance::from_str("0.03 wxHOPR")?);
+        cfg.hopr.network.min_incoming_ticket_price = Some(HoprBalance::from_str("0.06 wxHOPR")?);
+
+        let yaml = serde_saphyr::to_string(&cfg)?;
+        let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
+
+        assert_eq!(cfg, from_yaml);
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_prices_should_reject_malformed_balances() {
+        for bad in [
+            "outgoing_ticket_price: \"not a balance\"",
+            "outgoing_ticket_price: 0.03",
+            "min_incoming_ticket_price: \"0.06 xDAI\"",
+        ] {
+            assert!(
+                serde_saphyr::from_str::<UserHoprNetworkConfig>(bad).is_err(),
+                "`{bad}` must not parse"
+            );
+        }
+    }
+
+    /// The ticket parameters ship commented out in the sample configs, so the plain parse tests
+    /// above never see them. Uncomment them here so the documented values stay valid.
+    #[test]
+    fn sample_config_ticket_examples_should_parse_when_uncommented() -> anyhow::Result<()> {
+        for (name, sample) in [
+            (
+                "compose",
+                include_str!("../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"),
+            ),
+            (
+                "nfpm",
+                include_str!("../../deploy/nfpm/hoprd-sample.cfg.yaml"),
+            ),
+        ] {
+            let uncommented = sample
+                .lines()
+                .map(|l| {
+                    [
+                        "outgoing_ticket_winning_prob:",
+                        "outgoing_ticket_price:",
+                        "min_incoming_ticket_price:",
+                    ]
+                    .iter()
+                    .find_map(|key| {
+                        l.trim_start()
+                            .strip_prefix(&format!("# {key}"))
+                            .map(|v| (key, v))
+                    })
+                    .map_or_else(|| l.to_owned(), |(key, v)| format!("    {key}{v}"))
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let cfg = serde_saphyr::from_str::<HoprdConfig>(&uncommented)
+                .with_context(|| format!("{name} sample with ticket examples must deserialize"))?;
+            let network = &cfg.hopr.network;
+            assert!(network.outgoing_ticket_winning_prob.is_some(), "{name}");
+            assert!(network.outgoing_ticket_price.is_some(), "{name}");
+            assert!(network.min_incoming_ticket_price.is_some(), "{name}");
+        }
+        Ok(())
     }
 
     #[test]
