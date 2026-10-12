@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
             num_nodes: args.size,
             config_home: data_dir.to_path_buf(),
             identity_password: args.identity_password.clone(),
-            random_identities: true,
+            random_identities: !args.frozen_identities,
             reuse_identities: explicit_chain_url.is_some(),
             num_extras: args.extra_identities,
             p2p_host: args.p2p_host.clone(),
