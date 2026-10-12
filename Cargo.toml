@@ -30,9 +30,7 @@ hopr-ticket-manager = { version = "0.8.0", default-features = false, features = 
   "cli",
   "serde",
 ] }
-# `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
-# the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
-hopr-transport-p2p = { version = "0.12.0", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.12.1", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
