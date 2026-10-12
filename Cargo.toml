@@ -30,7 +30,7 @@ hopr-ticket-manager = { version = "0.8.0", default-features = false, features = 
   "cli",
   "serde",
 ] }
-hopr-transport-p2p = { version = "0.12.1", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.12.3", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
