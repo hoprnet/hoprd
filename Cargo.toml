@@ -47,7 +47,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "clock",
 ] }
 # Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
-# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Matches the curvy-abi hopr-strategy pins.
+# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
 curvy-abi = "=0.1.1"
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
