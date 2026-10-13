@@ -19,8 +19,8 @@ hoprd-api-client = { path = "rest-api-client" }
 # (hopr-types#52), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a branch.
 # A branch here would re-resolve on every lock refresh, so the commit the tests ran against and the
 # one CI builds could differ without either moving. Repoint at master once the train is merged.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "fe25c053181c1acffb8dacc9c781ae6e3c5f72a0", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "fe25c053181c1acffb8dacc9c781ae6e3c5f72a0", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8aba3e86d5482f74aa26098c911d55963bc1315c", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8aba3e86d5482f74aa26098c911d55963bc1315c", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=5.0.0" }
