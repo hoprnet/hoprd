@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, PixGlobalConfig},
+        protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
 };
@@ -638,6 +639,15 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
                         outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
+                    },
+                    pipeline: PacketPipelineConfig {
+                        // Tighter than the library default, which errs long because it cannot know
+                        // the session frame timeout. Ours is 3 s, past which a held return packet
+                        // is discarded by the receiver anyway -- so waiting longer cannot deliver
+                        // it and only holds up every other packet this node originates, since
+                        // routing resolution preserves submission order.
+                        surb_resolution_wait: Some(Duration::from_secs(1)),
+                        ..Default::default()
                     },
                     ..Default::default()
                 },
@@ -1354,6 +1364,25 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             Duration::from_millis(15)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn the_surb_resolution_wait_should_be_tightened_for_hoprd() -> anyhow::Result<()> {
+        use std::time::Duration;
+
+        // hoprd knows something the library cannot: its sessions time frames out at 3 s, past which
+        // a held return packet is discarded by the receiver anyway. The library default errs long
+        // for want of that knowledge, so leaving it unset would stall every other packet this node
+        // originates behind one that can no longer be delivered.
+        let cfg = example_cfg()?;
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+
+        assert_eq!(
+            lib_cfg.protocol.packet.pipeline.surb_resolution_wait,
+            Some(Duration::from_secs(1)),
+            "hoprd must override the library default rather than inherit it"
+        );
         Ok(())
     }
 
