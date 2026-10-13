@@ -15,12 +15,16 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
+# Pinned to the immutable hoprnet rev carrying the compact/expanded `OffchainPublicKey` split
+# (hopr-types#52), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a branch.
+# A branch here would re-resolve on every lock refresh, so the commit the tests ran against and the
+# one CI builds could differ without either moving. Repoint at master once the train is merged.
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8aba3e86d5482f74aa26098c911d55963bc1315c", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8aba3e86d5482f74aa26098c911d55963bc1315c", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=4.3.2" }
-hopr-chain-connector = "0.28.0"
+hopr-api = { version = "=5.0.0" }
+hopr-chain-connector = "0.29.0"
 hopr-ct-full-network = { version = "0.7.0", default-features = false }
 hopr-network-graph = { version = "0.8.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
@@ -185,3 +189,20 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# Points at the branches carrying the compact/expanded `OffchainPublicKey` split
+# (hopr-types#52). Drop these once the train is published.
+[patch.crates-io]
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/extended-offchain-key" }
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", branch = "lukas/extended-offchain-key" }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lukas/extended-offchain-key" }
+# The connector must come from the branch too, not just be *built against* the patched
+# hopr-types: the published 0.26.0 would pick up the compact key's length-only parser without
+# the curve check that compensates for it, and admit off-curve keys into the account tables.
+hopr-chain-connector = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "lukas/extended-offchain-key" }
