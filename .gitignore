@@ -46,3 +46,6 @@ deploy/nfpm/*.1.gz
 *.swp
 .pre-commit-config.yaml
 result*
+
+# PIX demo state written by localcluster/scripts/pix-demo.sh with the Curvy pool
+/localcluster/curvy-pix-*.redb

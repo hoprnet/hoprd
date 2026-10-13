@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "platform": "linux/amd64",
+  "images": {
+    "chain": "europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:e07eb3ac522d69e02fe599a352b26df5dd6189d37a28406b245ca435041ff185",
+    "localdb": "public.ecr.aws/f2n2s2w2/hopr-localcluster-pg@sha256:d833b161b7b0e4e5cd0bd5028127472d9e25a643aa2803a014215085dacb9022",
+    "indexer": "public.ecr.aws/f2n2s2w2/staging-indexer@sha256:4c0be3af7381ffebcc417723a83c56c736e12d73496d28bb6b7eccec57250c54",
+    "relayer": "public.ecr.aws/f2n2s2w2/staging-relayer@sha256:86cd994685ed5102bba32087465f267f442a6a96b4e5e540eeafd5a2de50df4d",
+    "batch_prover": "public.ecr.aws/f2n2s2w2/staging-batch-prover@sha256:acb005abee2c64b7acfc72ef780330098e90fd189c8ac7464715a7d5cb1c8acd",
+    "gateway": "docker.io/library/nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c"
+  },
+  "database": {
+    "pgdata": "/var/lib/postgresql/cluster",
+    "configure_localnet": true
+  },
+  "artifacts": {
+    "base_url": "https://github.com/0xCurvy/rs-sdk/releases/download/v0.1.0-rc.9",
+    "files": {
+      "aggregation-2-3-30.signet.zst": "8c6eb16f41cc147fca8809804c0f0743d463aeba2ee45a02e7b32b6a27904386",
+      "pending-5-30.signet.zst": "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0",
+      "pix-aggregation-2-9-30.signet.zst": "b974028ba40afdc067524819d61bdd9172a5e56369cfc05a75ba5d469c379c3a",
+      "pix-withdrawal-10-30.signet.zst": "90d301a189ceea1a7574f410bd94e53e9da0da0e75d8bfb99d47c42295fdfa56",
+      "withdrawal-2-30.signet.zst": "04b2fa84394548a971c757c61280b81fb7699a367eeb45834201675f8a0aad74",
+      "verifyPendingNotesCommitment_5_30-final.zkey": "5a9761127ad5d0a34c3f0b9bb11d34d13d6d68afb0089c3b74d24bcb25fa7477",
+      "verifyPixAggregation_2_9_30-final.zkey": "7611d3ade361c02b70b27620aca12aa8c15f7c7aba352d3e7add6409974fb13d",
+      "verifyPixMultiOwnerWithdrawal_10_30-final.zkey": "869080de2e351bd383e9f8f1ec84457bb6d0bf635c3f6163acf3186a982ab1ba",
+      "verifySingleAggregation_2_3_30-final.zkey": "c4a15849fa57c19dd4fd43a63e60a4c902a6847310e95137b69aa895307182e6",
+      "verifySingleWithdrawal_2_30-final.zkey": "a241bb706a69de18a6c95d6b83fc06012adc2a0e3cb7ac8688fe0fdce603f564"
+    }
+  },
+  "pending": {
+    "graph": "pending-5-30.signet.zst",
+    "graph_sha256": "69fa449825732a0958ccd0689ad361d9e8df1223231d8b71932d0efc4a07d8f0",
+    "zkey": "verifyPendingNotesCommitment_5_30-final.zkey",
+    "zkey_sha256": "5a9761127ad5d0a34c3f0b9bb11d34d13d6d68afb0089c3b74d24bcb25fa7477"
+  }
+}

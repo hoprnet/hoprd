@@ -19,25 +19,22 @@ hoprd-api-client = { path = "rest-api-client" }
 # (hopr-types#52), per the pr.yaml rule that unreleased HOPR deps on main use a rev, not a branch.
 # A branch here would re-resolve on every lock refresh, so the commit the tests ran against and the
 # one CI builds could differ without either moving. Repoint at master once the train is merged.
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "598de7d11e01708aace649139873960e048f06c8", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "598de7d11e01708aace649139873960e048f06c8", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "fe25c053181c1acffb8dacc9c781ae6e3c5f72a0", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "fe25c053181c1acffb8dacc9c781ae6e3c5f72a0", default-features = false }
 
 # crates.io HOPR deps
-
-hopr-api = { version = "=4.3.0" }
-hopr-chain-connector = "0.26.0"
-hopr-ct-full-network = { version = "0.6.0", default-features = false }
-hopr-network-graph = { version = "0.7.0", default-features = false }
-hopr-session-server-forwarder = { version = "0.5.0", default-features = false }
-hopr-strategy = { version = "4.0.0", default-features = false }
-hopr-ticket-manager = { version = "0.7.0", default-features = false, features = [
+hopr-api = { version = "=5.0.0" }
+hopr-chain-connector = "0.29.0"
+hopr-ct-full-network = { version = "0.7.0", default-features = false }
+hopr-network-graph = { version = "0.8.0", default-features = false }
+hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
+hopr-strategy = { version = "5.4.0", default-features = false }
+hopr-ticket-manager = { version = "0.8.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
-# `transport-quic` explicitly: published 0.9.4 predates hoprnet's QUIC-by-default change, so
-# the feature is what keeps the transport hoprd builds the same as the one hoprnet ships.
-hopr-transport-p2p = { version = "0.11.0", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.12.3", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
@@ -53,6 +50,9 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "std",
   "clock",
 ] }
+# Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
+# Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
+curvy-abi = "=0.1.1"
 clap = { version = "4.6.5", features = ["derive", "env", "string"] }
 const_format = "0.2.36"
 console-subscriber = "0.5.0"
@@ -200,3 +200,9 @@ hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", branch = "lu
 # hopr-types: the published 0.26.0 would pick up the compact key's length-only parser without
 # the curve check that compensates for it, and admit off-curve keys into the account tables.
 hopr-chain-connector = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", branch = "lukas/extended-offchain-key" }
+hopr-utilities = { git = "https://github.com/hoprnet/hopr-utilities", branch = "lukas/extended-offchain-key" }

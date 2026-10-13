@@ -1,5 +1,5 @@
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
 };
 
@@ -475,11 +475,69 @@ pub struct NodeStartConfig<'a> {
     pub p2p_port_base: u16,
     pub identity_password: &'a str,
     pub api_token: Option<String>,
+    /// Extra environment for every node process, on top of what it inherits.
+    ///
+    /// A test that runs a deposit pool with knobs of its own — the Curvy pool reads its funding
+    /// and operator key from the environment — sets them here rather than in its own process
+    /// environment. The nodes would inherit that too, but writing it from a multi-threaded test
+    /// is a data race, and stating it per cluster keeps it out of every other suite.
+    pub env: &'a [(String, String)],
+}
+
+/// Resolve paths relative to the caller before giving each node its own working directory.
+fn node_command(hoprd_bin: &Path, node_dir: &Path, env: &[(String, String)]) -> Result<Command> {
+    // Keep bare names for PATH lookup; explicit relative paths must survive chdir.
+    let binary = if hoprd_bin.components().count() > 1 {
+        std::path::absolute(hoprd_bin)?
+    } else {
+        hoprd_bin.to_owned()
+    };
+    let mut cmd = Command::new(binary);
+    cmd.current_dir(node_dir)
+        .env(
+            "HOPRD_OTEL_SIGNALS",
+            std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
+        )
+        .env(
+            "HOPRD_OTLP_ENDPOINT",
+            std::env::var("HOPRD_OTLP_ENDPOINT")
+                .unwrap_or_else(|_| "http://localhost:4318".to_string()),
+        )
+        .env(
+            "HOPRD_METRIC_EXPORT_INTERVAL",
+            std::env::var("HOPRD_METRIC_EXPORT_INTERVAL")
+                .unwrap_or_else(|_| "15000,hopr_session=1000".to_string()),
+        )
+        .env(
+            "HOPR_TX_TIMEOUT_MULTIPLIER",
+            crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
+        )
+        .envs(env.iter().map(|(k, v)| (k, v)));
+
+    // The SDK's proving keys are inputs from the caller, unlike its state database.
+    let keys_dir = env
+        .iter()
+        .rev()
+        .find(|(key, _)| key == "CURVY_ZK_KEYS_DIR")
+        .map(|(_, value)| value.into())
+        .or_else(|| std::env::var_os("CURVY_ZK_KEYS_DIR"));
+    if let Some(keys_dir) = keys_dir {
+        cmd.env(
+            "CURVY_ZK_KEYS_DIR",
+            std::path::absolute(PathBuf::from(keys_dir))?,
+        );
+    }
+    Ok(cmd)
 }
 
 /// Spawn `config.num_nodes` hoprd processes and return their handles.
+/// Each node's working directory is `db_<id>`, so default relative pool state
+/// (including Curvy's `curvy-pix-<address>.redb`) follows the chain's lifetime.
+/// Spawning/restarting nodes never resets this state.
 pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess>> {
     use std::fs;
+
+    let data_dir = fs::canonicalize(config.data_dir).context("resolving data directory")?;
 
     let api_client_host = if config.api_host == "0.0.0.0" {
         "127.0.0.1"
@@ -493,11 +551,11 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
     for id in 0..effective_num_nodes {
         let api_port = config.api_port_base + id as u16;
         let p2p_port = config.p2p_port_base + id as u16;
-        let cfg_file = config.data_dir.join(format!("hoprd_cfg_{id}.yaml"));
+        let cfg_file = data_dir.join(format!("hoprd_cfg_{id}.yaml"));
         if !cfg_file.exists() {
             anyhow::bail!("missing hoprd config file: {}", cfg_file.display());
         }
-        let db_dir = config.data_dir.join(format!("db_{id}"));
+        let db_dir = data_dir.join(format!("db_{id}"));
         fs::create_dir_all(db_dir.join("node_db")).with_context(|| {
             format!(
                 "failed to create db directory {}",
@@ -511,7 +569,7 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             .try_clone()
             .context("failed to clone hoprd log file handle")?;
 
-        let mut cmd = Command::new(config.hoprd_bin);
+        let mut cmd = node_command(config.hoprd_bin, &db_dir, config.env)?;
         cmd.arg("--configurationFilePath")
             .arg(&cfg_file)
             .arg("--api")
@@ -523,24 +581,6 @@ pub async fn start_nodes(config: &NodeStartConfig<'_>) -> Result<Vec<NodeProcess
             .arg(format!("{}:{}", config.p2p_host, p2p_port))
             .arg("--password")
             .arg(config.identity_password)
-            .env(
-                "HOPRD_OTEL_SIGNALS",
-                std::env::var("HOPRD_OTEL_SIGNALS").unwrap_or_else(|_| "metrics".to_string()),
-            )
-            .env(
-                "HOPRD_OTLP_ENDPOINT",
-                std::env::var("HOPRD_OTLP_ENDPOINT")
-                    .unwrap_or_else(|_| "http://localhost:4318".to_string()),
-            )
-            .env(
-                "HOPRD_METRIC_EXPORT_INTERVAL",
-                std::env::var("HOPRD_METRIC_EXPORT_INTERVAL")
-                    .unwrap_or_else(|_| "15000,hopr_session=1000".to_string()),
-            )
-            .env(
-                "HOPR_TX_TIMEOUT_MULTIPLIER",
-                crate::identity::DEFAULT_TX_TIMEOUT_MULTIPLIER.to_string(),
-            )
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err));
 
@@ -685,6 +725,85 @@ pub async fn open_full_mesh_channels(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn node_working_directories_isolate_state_and_survive_restarts() -> Result<()> {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        // Exercise relative --data-dir, --hoprd-bin and CURVY_ZK_KEYS_DIR together.
+        let dir = tempfile::tempdir_in(".")?;
+        let data_dir = dir.path().join("data");
+        let log_dir = dir.path().join("logs");
+        fs::create_dir(&data_dir)?;
+        fs::create_dir(&log_dir)?;
+        for id in 0..2 {
+            fs::write(data_dir.join(format!("hoprd_cfg_{id}.yaml")), "test")?;
+        }
+        let binary = dir.path().join("hoprd");
+        fs::write(
+            &binary,
+            concat!(
+                "#!/bin/sh\n",
+                "printf 'started\\n' >> curvy-pix-test.redb\n",
+                "printf '%s\\n' \"$@\" > arguments\n",
+                "printf '%s\\n' \"$CURVY_ZK_KEYS_DIR\" > keys-dir\n",
+                "printf '%s\\n' \"$HOPR_TX_TIMEOUT_MULTIPLIER\" > timeout\n",
+            ),
+        )?;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o700))?;
+        let env = vec![
+            ("CURVY_ZK_KEYS_DIR".into(), "proving-keys".into()),
+            ("HOPR_TX_TIMEOUT_MULTIPLIER".into(), "42".into()),
+        ];
+        let config = NodeStartConfig {
+            num_nodes: 2,
+            hoprd_bin: &binary,
+            data_dir: &data_dir,
+            log_dir: &log_dir,
+            api_host: "127.0.0.1",
+            api_port_base: 3000,
+            p2p_host: "127.0.0.1",
+            p2p_port_base: 9000,
+            identity_password: "password",
+            api_token: None,
+            env: &env,
+        };
+        for _ in 0..2 {
+            for mut node in start_nodes(&config).await? {
+                assert!(node.child.wait()?.success());
+            }
+        }
+        for id in 0..2 {
+            let node_dir = data_dir.join(format!("db_{id}"));
+            assert_eq!(
+                fs::read_to_string(node_dir.join("curvy-pix-test.redb"))?,
+                "started\nstarted\n"
+            );
+            let arguments = fs::read_to_string(node_dir.join("arguments"))?;
+            assert_eq!(
+                arguments.lines().nth(1),
+                data_dir
+                    .join(format!("hoprd_cfg_{id}.yaml"))
+                    .canonicalize()?
+                    .to_str()
+            );
+            assert_eq!(
+                fs::read_to_string(node_dir.join("keys-dir"))?.trim(),
+                std::path::absolute("proving-keys")?.to_str().unwrap()
+            );
+            assert_eq!(fs::read_to_string(node_dir.join("timeout"))?, "42\n");
+        }
+        assert!(!data_dir.join("curvy-pix-test.redb").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn bare_node_binary_names_still_use_path_lookup() -> Result<()> {
+        let cmd = node_command(Path::new("hoprd"), Path::new("/tmp"), &[])?;
+        assert_eq!(cmd.get_program(), "hoprd");
+        Ok(())
+    }
 
     /// Shaped like a real scrape: `_total` on the counters, one label on the series that
     /// carry one, and a decoy whose label *name* ends in the one being filtered for.

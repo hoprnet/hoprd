@@ -50,7 +50,7 @@ use hoprd_localcluster::client_helper;
 use hoprd_localcluster::identity;
 use tokio::net::UdpSocket;
 
-/// Payload data per chunk.  Datagrams stay well under SESSION_MTU = 1020.
+/// Payload data per chunk.  Datagrams stay well under SESSION_MTU = 1452.
 const CHUNK_SIZE: usize = 900;
 const TAG_SIZE: usize = 4;
 

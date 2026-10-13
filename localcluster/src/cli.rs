@@ -47,6 +47,31 @@ pub enum Command {
     /// Always exits 0 with a parseable answer: the live state of a running/starting
     /// cluster, or `not_running` when nothing is listening on the control socket.
     Status(StatusArgs),
+    /// Move every Safe's wxHOPR of a kept cluster directory to one address.
+    ///
+    /// For clusters run against a real chain with `HOPRD_KEEP_CLUSTER_DIR`: reads each
+    /// `node_id_<i>.id` and the Safe/module its `hoprd_cfg_<i>.yaml` names, and withdraws the
+    /// Safe's whole wxHOPR balance through the node's module. Stop the cluster first.
+    SweepSafes(SweepArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct SweepArgs {
+    /// The kept cluster directory (holds node_id_<i>.id and hoprd_cfg_<i>.yaml).
+    #[arg(long)]
+    pub cluster_dir: PathBuf,
+
+    /// Recipient of every Safe's wxHOPR.
+    #[arg(long)]
+    pub to: String,
+
+    /// Blokli the sweep submits through.
+    #[arg(long, env = "HOPRD_CHAIN_URL", default_value = "http://127.0.0.1:8080")]
+    pub blokli_url: String,
+
+    /// Password the identities were encrypted with.
+    #[arg(long, default_value = "password")]
+    pub identity_password: String,
 }
 
 #[derive(Parser, Debug)]
@@ -151,6 +176,11 @@ pub struct Args {
     #[arg(long, default_value_t = DEFAULT_NUM_EXTRA_IDENTITIES, value_parser = parse_extras)]
     pub extra_identities: usize,
 
+    /// Use the fixed built-in node keys instead of random ones. Generation is idempotent, so on a
+    /// chain kept alive from an earlier bring-up the nodes skip funding, Safes and channels.
+    #[arg(long)]
+    pub frozen_identities: bool,
+
     /// Inject artificial latency on inter-node P2P traffic via per-node UDP relays.
     ///
     /// One value selects the delay source; an optional `@<port>` suffix overrides the
@@ -166,8 +196,23 @@ pub struct Args {
     ///
     /// Each node will participate in PIX as both entry and exit, handling
     /// deposit addresses and sweeps.
+    ///
+    /// Selects the demo geometry documented on `PixSettings::default` — a cycle of a handful of
+    /// seconds, sized for interactive use rather than for any measured workload. Use
+    /// `--pix-config` to name a geometry instead.
     #[arg(long)]
     pub enable_pix: bool,
+
+    /// Enable the PIX strategy with the settings in this YAML file.
+    ///
+    /// Implies `--enable-pix`. Every field is optional and merges onto the demo defaults, so a
+    /// file naming only `num_ssa_parts` / `ssa_part_size` / `additional_shares` is valid — though
+    /// a geometry moved far from the default usually has to move `quota_range_*` with it, since
+    /// the Exit refuses a Session whose offered quota falls outside that window.
+    ///
+    /// e.g. `--pix-config profiles/traffic-shapes.yaml`
+    #[arg(long, value_name = "PATH")]
+    pub pix_config: Option<PathBuf>,
 }
 
 impl Args {

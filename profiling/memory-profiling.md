@@ -42,7 +42,7 @@ nix build .#binary-hoprd-profile-aarch64-linux   # ARM64
 1. Build and load the profiling Docker image:
 
    ```bash
-   nix build .#hoprd-profile-docker
+   nix build .#docker-hoprd-profile-x86_64-linux
    docker load <result
    ```
 
@@ -52,7 +52,7 @@ nix build .#binary-hoprd-profile-aarch64-linux   # ARM64
    docker run -d --name hoprd-profile \
      -e "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix:/app/.tmp/jeprof,lg_prof_sample:19,lg_prof_interval:26" \
      -e "HOPRD_PASSWORD=my-password" \
-     hoprd:latest \
+     hoprd-profile:latest \
      bash -c "mkdir -p /tmp/hoprd /app/.tmp && exec hoprd --data /tmp/hoprd --identity /tmp/hoprd/identity --apiHost 0.0.0.0 --blokliUrl https://your-blokli-url"
    ```
 
@@ -75,7 +75,7 @@ docker run --rm \
   -v ./heap-dumps:/profiles:ro \
   -v ./scripts/analyze_memory.sh:/analyze_memory.sh:ro \
   -v ./output:/output \
-  hoprd:latest \
+  hoprd-profile:latest \
   bash /analyze_memory.sh /bin/hoprd /profiles/jeprof.12345.0.heap /output/analysis
 ```
 

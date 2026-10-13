@@ -8,8 +8,9 @@ use hopr_lib::{
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
-        config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
-        session::{IncomingSessionPixConfig, SupervisorConfig},
+        config::{HoprCodecConfig, PixGlobalConfig},
+        protocol::PacketPipelineConfig,
+        session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
@@ -147,11 +148,11 @@ fn default_session_establish_max_retries() -> usize {
 }
 
 fn default_probe_recheck_threshold() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(120)
 }
 
 fn default_probe_interval() -> Duration {
-    Duration::from_secs(3)
+    Duration::from_secs(60)
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
@@ -281,12 +282,12 @@ pub struct UserIncomingSessionPixConfig {
     /// Maximum acceptable PIX data quota in bytes.
     ///
     /// Widening this is not free, and not only in traffic: upstream refuses a configuration whose
-    /// [`max_recovery_time`](Self::max_recovery_time) cannot cover one cycle at the top of this
-    /// window, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
+    /// [`max_recovery_time`](Self::max_recovery_time) cannot leave one cycle at the top of this
+    /// window time to complete, or whose [`max_live_cycle_bytes`](Self::max_live_cycle_bytes) could not hold a
     /// single Session offering it. Both are exposed below precisely so that raising this one stays
     /// possible.
     ///
-    /// Default is upstream's, ≈649 MiB.
+    /// Default is upstream's, ≈908 MiB.
     #[default(default_pix_quota_range_max())]
     #[serde(default = "default_pix_quota_range_max")]
     pub quota_range_max: u64,
@@ -391,6 +392,82 @@ pub struct UserIncomingSessionPixConfig {
     #[default(default_pix_allow_dynamic_ssa_batches())]
     #[serde(default = "default_pix_allow_dynamic_ssa_batches")]
     pub allow_dynamic_ssa_batches: bool,
+    /// Keep spending buffered SURBs on a funded cycle after the Session has closed at this Exit.
+    ///
+    /// Upstream's `fill.drain_after_close`, hoisted like the rest of this block. A Session can end
+    /// long before the cycle it was paid for does — the forwarder closing it, an operator closing
+    /// it, or the peer reporting an error — and the deposit that cycle carries is only released once
+    /// its whole emission has ridden back to the Entry. Since the deposit address derives from both
+    /// nodes' commitments, a cycle abandoned midway strands money both sides have already parted
+    /// with. With this on, the Exit answers such a close by keeping its keep-alive stream running
+    /// until the cycle recovers, spending SURBs it already holds on shares it has already been paid
+    /// for.
+    ///
+    /// It is entered only when the SURBs the Exit still has, net of the reserve fill must leave
+    /// behind, cover the cycle's whole remaining emission — a drain that runs out partway spends the
+    /// reserve and recovers nothing. It is bounded by the same ceiling and reserve as ordinary fill,
+    /// and ended by [`max_recovery_time`](Self::max_recovery_time) whether or not it succeeds.
+    ///
+    /// It needs [`fill_enabled`](Self::fill_enabled) on. Upstream gates the drain on
+    /// `fill.enabled && fill.drain_after_close`: a drain is fill on the close path, planned by the
+    /// same rate law and carried by the same stream, so switching fill off leaves this field inert
+    /// rather than in conflict with it. [`fill_max_rate`](Self::fill_max_rate) is the ceiling it
+    /// runs under. The rest of the rate law — the heartbeat, the two fractions, the SURB reserve —
+    /// is not exposed, for the reason the supervision deadlines above are not: it is sized against
+    /// the reconstructor and the SURB buffer, neither of which hoprd surfaces. Turning this off
+    /// restores the immediate teardown on every close path.
+    ///
+    /// Default is upstream's, on.
+    #[default(default_pix_drain_after_close())]
+    #[serde(default = "default_pix_drain_after_close")]
+    pub drain_after_close: bool,
+    /// Whether the Exit sends its own keep-alives to carry a funded cycle to completion when the
+    /// application is not sending enough return traffic to finish it.
+    ///
+    /// A PIX Exit is paid per return packet, and a cycle only recovers its deposit once its whole
+    /// emission has gone back. Nothing in the protocol makes the *application* send those packets,
+    /// so an idle or read-heavy Session strands the deposit at `max_recovery_time` — and because
+    /// the address derives from both sides' commitments, the money is stranded rather than
+    /// refunded. With this on, the Exit makes up the shortfall itself; the client pays one quota
+    /// per deadline while idle, which is the tariff it implicitly accepts by opening the Session.
+    ///
+    /// Turning it off restores the pre-fill behaviour and is how a deployment measures what fill
+    /// actually contributes.
+    ///
+    /// Default is upstream's, on.
+    #[default(default_pix_fill_enabled())]
+    #[serde(default = "default_pix_fill_enabled")]
+    pub fill_enabled: bool,
+    /// Ceiling on the Exit's self-generated fill traffic, in packets per second.
+    ///
+    /// The one bound on egress this node originates for itself, so it is refused rather than
+    /// silently clamped: `validate_incoming_session_pix_config` rejects a ceiling below what a
+    /// cycle of the widest accepted quota needs to finish inside
+    /// `fill.finish_fraction × max_recovery_time`, which is 64 packets/s at the shipped defaults.
+    ///
+    /// Raising it only matters for a Session that has fallen behind; the planner asks for the rate
+    /// the deadline needs and no more.
+    ///
+    /// Default is upstream's 250 packets/s, about 2.9 Mbps of Session data.
+    #[default(default_pix_fill_max_rate())]
+    #[serde(default = "default_pix_fill_max_rate")]
+    pub fill_max_rate: u32,
+    /// Fraction of `max_recovery_time` by which fill aims to have an under-served cycle finished,
+    /// in `(0, 1]`.
+    ///
+    /// The rest of the budget is margin: for loss beyond the planner's allowance, for a mixnet
+    /// delay spike, and for the successor's commitment and deposit round trip. A lower fraction
+    /// finishes idle cycles sooner at a proportionally higher fill rate, and `fill_max_rate` is
+    /// validated against that rate.
+    ///
+    /// An operator setting, rather than pinned with the other fill dials, because it is what sets
+    /// the idle tariff's *timing* for a given `max_recovery_time`: a test Exit can keep a realistic
+    /// deadline and still finish an idle cycle in a wait a test can afford.
+    ///
+    /// Default is upstream's, 0.75.
+    #[default(default_pix_fill_finish_fraction())]
+    #[serde(default = "default_pix_fill_finish_fraction")]
+    pub fill_finish_fraction: f64,
 }
 
 // Every default below is read from upstream rather than restated, and the `#[default]` attributes
@@ -427,8 +504,21 @@ fn default_pix_max_served_without_progress() -> u64 {
 fn default_pix_allow_dynamic_ssa_batches() -> bool {
     SupervisorConfig::default().allow_dynamic_ssa_batches
 }
+fn default_pix_drain_after_close() -> bool {
+    SupervisorConfig::default().fill.drain_after_close
+}
+fn default_pix_fill_enabled() -> bool {
+    SupervisorConfig::default().fill.enabled
+}
+fn default_pix_fill_max_rate() -> u32 {
+    SupervisorConfig::default().fill.max_rate
+}
+fn default_pix_fill_finish_fraction() -> f64 {
+    SupervisorConfig::default().fill.finish_fraction
+}
 
 /// Subset of various selected HOPR library network-related configuration options.
+#[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserHoprNetworkConfig {
@@ -462,11 +552,16 @@ pub struct UserHoprNetworkConfig {
     #[default(default_outgoing_ticket_winning_prob())]
     #[serde(default = "default_outgoing_ticket_winning_prob")]
     pub outgoing_ticket_winning_prob: Option<f64>,
+    /// Outgoing ticket price.
+    #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    pub outgoing_ticket_price: Option<HoprBalance>,
     /// Minimum incoming ticket price.
     ///
     /// The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
     /// and will default to that value whenever it is lower.
     #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub min_incoming_ticket_price: Option<HoprBalance>,
     /// Packet mixer configuration.
     ///
@@ -542,34 +637,16 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .outgoing_ticket_winning_prob
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
+                        outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
-                        ..Default::default()
                     },
-                    // Reply with the freshest SURBs first, so a return-path change takes effect
-                    // immediately instead of only after a stale backlog has been drained.
-                    //
-                    // Not under PIX, which needs the opposite end. A PIX share is delivered to the
-                    // reconstructor only when its SURB is *used*, and the ring buffer evicts from
-                    // the oldest end — so popping newest-first leaves the oldest SURBs unspent
-                    // until they are overwritten, and each overwrite is a permanently lost share.
-                    // Under sustained traffic the Exit then never assembles `ssa_part_size` shares
-                    // for any polynomial: the key is never reconstructed, nothing is swept, and the
-                    // Entry never gets a second deposit request. Observed exactly that — one
-                    // deposit confirmed, then a stall with no error anywhere — before this gate.
-                    //
-                    // `Fifo` is upstream's default for this reason; see `SurbPopOrder`, whose own
-                    // documentation calls out the lost-share hazard.
-                    //
-                    // Gated on the feature rather than on `enforce_pix` so the pop order is a
-                    // property of the binary rather than something a config toggle changes
-                    // underneath a running deployment. The cost is that a PIX-capable build whose
-                    // strategy list has no `Pix` stanza also gets `Fifo` — that is upstream's
-                    // default, so it forgoes an optimisation rather than regressing.
-                    surb_store: SurbStoreConfig {
-                        #[cfg(not(feature = "pix"))]
-                        pop_order: SurbPopOrder::Lifo,
-                        #[cfg(feature = "pix")]
-                        pop_order: SurbPopOrder::Fifo,
+                    pipeline: PacketPipelineConfig {
+                        // Tighter than the library default, which errs long because it cannot know
+                        // the session frame timeout. Ours is 3 s, past which a held return packet
+                        // is discarded by the receiver anyway -- so waiting longer cannot deliver
+                        // it and only holds up every other packet this node originates, since
+                        // routing resolution preserves submission order.
+                        surb_resolution_wait: Some(Duration::from_secs(1)),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -643,12 +720,35 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         min_share_order_sample: supervision_defaults.min_share_order_sample,
                         max_predeposit_packets: supervision_defaults.max_predeposit_packets,
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
-                        // Recommit cadence and the SURB-fill policy are internal PIX timing, with no
-                        // hoprd-side knob to disagree with upstream's tuning — kept at its defaults
-                        // for the same reason as the block above.
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
-                        fill: supervision_defaults.fill.clone(),
+                        // Four of the seven are hoprd dials: whether the Exit fills at all, the
+                        // ceiling on what it originates for itself, whether a close mid-cycle
+                        // drains or tears down, and where in `max_recovery_time` fill aims to be
+                        // done. All four are deployment choices an operator can make from the
+                        // outside; the aim point sets when an idle cycle completes, which is what a
+                        // test Exit with a realistic deadline needs to move.
+                        //
+                        // The remaining three are the rate law's own shape rather than a deployment
+                        // choice, and are named for the same reason everything above is.
+                        // `heartbeat` is the floor while the application covers the need, and it is
+                        // what refreshes the Entry's idle eviction; `loss_margin` pays for
+                        // return-path loss and is validated against a range an operator cannot
+                        // usefully explore from the outside; `min_surb_reserve` is a ceiling on a
+                        // value the Exit derives per Session from the buffer the *Entry* announced,
+                        // so a number set here is not the number that binds.
+                        fill: PixFillConfig {
+                            enabled: value.network.incoming_session_pix.fill_enabled,
+                            max_rate: value.network.incoming_session_pix.fill_max_rate,
+                            drain_after_close: value.network.incoming_session_pix.drain_after_close,
+                            heartbeat: supervision_defaults.fill.heartbeat,
+                            finish_fraction: value
+                                .network
+                                .incoming_session_pix
+                                .fill_finish_fraction,
+                            loss_margin: supervision_defaults.fill.loss_margin,
+                            min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
+                        },
                     },
                 },
                 path_planner: Default::default(),
@@ -796,6 +896,262 @@ mod tests {
             identity,
             ..HoprdConfig::default()
         })
+    }
+
+    /// Every PIX knob this module hoists must survive the trip into [`HoprLibConfig`].
+    ///
+    /// The conversion is a hand-written literal of ~20 fields, half of them taken from the user
+    /// config and half deliberately pinned to upstream's defaults, and the two halves look
+    /// identical at the call site. So a field can stop being read — by a bad merge, or by a
+    /// rewrite of one arm of the literal — while it still parses, still validates, still
+    /// round-trips through YAML, and still carries a doc comment describing what it does. Nothing
+    /// else in the tree notices: `localcluster` writes these knobs into a config file and asserts
+    /// on node behaviour, which is downstream of the value hoprd actually passed.
+    ///
+    /// That is not hypothetical. `fill_enabled` and `fill_max_rate` were wired on `main`, and the
+    /// merge that brought them onto the branch adding `drain_after_close` took the new fields from
+    /// one side and the conversion block from the other — leaving both settable and inert, through
+    /// a green CI and a full localcluster run.
+    ///
+    /// Hence: set every hoisted field to something that is *not* its default, convert once, and
+    /// assert each one arrived. A field pinned to an upstream default on purpose does not belong
+    /// here — the point is the ones that claim to be operator-facing.
+    #[test]
+    fn hoisted_pix_knobs_reach_the_library_config() {
+        let mut cfg = UserHoprLibConfig::default();
+        let pix = &mut cfg.network.pix;
+        pix.num_ssa_parts = 2048;
+        pix.ssa_part_size = 64;
+        pix.additional_shares = Some(9);
+        pix.max_ssas_per_request = 7;
+
+        let exit = &mut cfg.network.incoming_session_pix;
+        exit.enforce_pix = true;
+        exit.quota_range_min = 111_000;
+        exit.quota_range_max = 222_000;
+        exit.max_ssa_delivery_time = Duration::from_secs(11);
+        exit.max_deposit_wait = Duration::from_secs(13);
+        exit.max_live_cycle_bytes = 17_000_000;
+        exit.max_recovery_time = Duration::from_secs(1900);
+        exit.max_served_without_progress = 19;
+        exit.ssas_per_request = 3;
+        exit.allow_dynamic_ssa_batches = !exit.allow_dynamic_ssa_batches;
+        exit.drain_after_close = !exit.drain_after_close;
+        exit.fill_enabled = !exit.fill_enabled;
+        exit.fill_max_rate = 137;
+        exit.fill_finish_fraction = 0.6;
+
+        // Cloned so the assertions below read against what was set, not a moved-from value.
+        let (pix, exit) = (
+            cfg.network.pix.clone(),
+            cfg.network.incoming_session_pix.clone(),
+        );
+        let lib = HoprLibConfig::from(cfg);
+        let global = &lib.protocol.pix;
+        let incoming = &lib.protocol.incoming_session_pix_config;
+        let supervision = &incoming.supervision;
+
+        assert_eq!(global.num_ssa_parts, pix.num_ssa_parts);
+        assert_eq!(global.ssa_part_size, pix.ssa_part_size);
+        assert_eq!(global.additional_shares, pix.additional_shares);
+        assert_eq!(global.max_ssas_per_request, pix.max_ssas_per_request);
+
+        assert_eq!(incoming.enforce_pix, exit.enforce_pix);
+        assert_eq!(
+            incoming.quota_range,
+            exit.quota_range_min..=exit.quota_range_max
+        );
+        assert_eq!(incoming.max_live_cycle_bytes, exit.max_live_cycle_bytes);
+
+        assert_eq!(
+            supervision.max_ssa_delivery_time,
+            exit.max_ssa_delivery_time
+        );
+        assert_eq!(supervision.max_deposit_wait, exit.max_deposit_wait);
+        assert_eq!(supervision.max_recovery_time, exit.max_recovery_time);
+        assert_eq!(supervision.ssas_per_request, exit.ssas_per_request);
+        assert_eq!(
+            supervision.allow_dynamic_ssa_batches,
+            exit.allow_dynamic_ssa_batches
+        );
+        assert_eq!(
+            supervision.max_served_without_progress,
+            exit.max_served_without_progress
+        );
+
+        assert_eq!(supervision.fill.enabled, exit.fill_enabled);
+        assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
+        assert_eq!(supervision.fill.finish_fraction, exit.fill_finish_fraction);
+        assert_eq!(supervision.fill.drain_after_close, exit.drain_after_close);
+    }
+
+    /// The other half of the literal: the fields hoprd pins on purpose stay pinned.
+    ///
+    /// Without this, "wire everything up" would be a passing answer to the test above, and the
+    /// reasoning recorded in that block — that `max_recovery_idle` and
+    /// `tombstone_retention_window` pair with a reconstructor hoprd does not surface, that the
+    /// fill rate law is sized against that same reconstructor — would be enforced by nothing.
+    #[test]
+    fn unhoisted_pix_policy_stays_at_upstream_defaults() {
+        let defaults = SupervisorConfig::default();
+        let lib = HoprLibConfig::from(UserHoprLibConfig::default());
+        let supervision = &lib.protocol.incoming_session_pix_config.supervision;
+
+        assert_eq!(supervision.max_failed_cycles, defaults.max_failed_cycles);
+        assert_eq!(supervision.max_recovery_idle, defaults.max_recovery_idle);
+        assert_eq!(
+            supervision.max_off_front_share_fraction,
+            defaults.max_off_front_share_fraction
+        );
+        assert_eq!(
+            supervision.min_share_order_sample,
+            defaults.min_share_order_sample
+        );
+        assert_eq!(
+            supervision.max_predeposit_packets,
+            defaults.max_predeposit_packets
+        );
+        assert_eq!(
+            supervision.tombstone_retention_window,
+            defaults.tombstone_retention_window
+        );
+        assert_eq!(
+            supervision.commitment_recommit_interval,
+            defaults.commitment_recommit_interval
+        );
+
+        assert_eq!(supervision.fill.heartbeat, defaults.fill.heartbeat);
+        assert_eq!(supervision.fill.loss_margin, defaults.fill.loss_margin);
+        assert_eq!(
+            supervision.fill.min_surb_reserve,
+            defaults.fill.min_surb_reserve
+        );
+
+        assert_eq!(lib.protocol.pix.reconstructor, Default::default());
+    }
+
+    #[test]
+    fn custom_ticket_parameters_should_parse_from_yaml_and_reach_the_library_config()
+    -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str(
+            r#"
+outgoing_ticket_winning_prob: 0.5
+outgoing_ticket_price: "0.03 wxHOPR"
+min_incoming_ticket_price: "0.06 wxHOPR"
+"#,
+        )?;
+
+        assert_eq!(network.outgoing_ticket_winning_prob, Some(0.5));
+        assert_eq!(
+            network.outgoing_ticket_price,
+            Some(HoprBalance::from_str("0.03 wxHOPR")?)
+        );
+        assert_eq!(
+            network.min_incoming_ticket_price,
+            Some(HoprBalance::from_str("0.06 wxHOPR")?)
+        );
+
+        let lib = HoprLibConfig::from(UserHoprLibConfig {
+            network: network.clone(),
+            ..Default::default()
+        });
+        let codec = &lib.protocol.packet.codec;
+
+        assert_eq!(
+            codec.outgoing_win_prob.map(|p| p.as_f64()),
+            network.outgoing_ticket_winning_prob
+        );
+        assert_eq!(codec.outgoing_ticket_price, network.outgoing_ticket_price);
+        assert_eq!(
+            codec.min_incoming_ticket_price,
+            network.min_incoming_ticket_price
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_parameters_should_default_when_omitted() -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str("{}")?;
+
+        assert_eq!(
+            network.outgoing_ticket_winning_prob,
+            default_outgoing_ticket_winning_prob()
+        );
+        assert_eq!(network.outgoing_ticket_price, None);
+        assert_eq!(network.min_incoming_ticket_price, None);
+        assert_eq!(network, UserHoprNetworkConfig::default());
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_prices_should_round_trip_through_yaml() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.outgoing_ticket_winning_prob = Some(0.25);
+        cfg.hopr.network.outgoing_ticket_price = Some(HoprBalance::from_str("0.03 wxHOPR")?);
+        cfg.hopr.network.min_incoming_ticket_price = Some(HoprBalance::from_str("0.06 wxHOPR")?);
+
+        let yaml = serde_saphyr::to_string(&cfg)?;
+        let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
+
+        assert_eq!(cfg, from_yaml);
+        Ok(())
+    }
+
+    #[test]
+    fn custom_ticket_prices_should_reject_malformed_balances() {
+        for bad in [
+            "outgoing_ticket_price: \"not a balance\"",
+            "outgoing_ticket_price: 0.03",
+            "min_incoming_ticket_price: \"0.06 xDAI\"",
+        ] {
+            assert!(
+                serde_saphyr::from_str::<UserHoprNetworkConfig>(bad).is_err(),
+                "`{bad}` must not parse"
+            );
+        }
+    }
+
+    /// The ticket parameters ship commented out in the sample configs, so the plain parse tests
+    /// above never see them. Uncomment them here so the documented values stay valid.
+    #[test]
+    fn sample_config_ticket_examples_should_parse_when_uncommented() -> anyhow::Result<()> {
+        for (name, sample) in [
+            (
+                "compose",
+                include_str!("../../deploy/compose/hoprd/conf/hoprd.cfg.yaml"),
+            ),
+            (
+                "nfpm",
+                include_str!("../../deploy/nfpm/hoprd-sample.cfg.yaml"),
+            ),
+        ] {
+            let uncommented = sample
+                .lines()
+                .map(|l| {
+                    [
+                        "outgoing_ticket_winning_prob:",
+                        "outgoing_ticket_price:",
+                        "min_incoming_ticket_price:",
+                    ]
+                    .iter()
+                    .find_map(|key| {
+                        l.trim_start()
+                            .strip_prefix(&format!("# {key}"))
+                            .map(|v| (key, v))
+                    })
+                    .map_or_else(|| l.to_owned(), |(key, v)| format!("    {key}{v}"))
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let cfg = serde_saphyr::from_str::<HoprdConfig>(&uncommented)
+                .with_context(|| format!("{name} sample with ticket examples must deserialize"))?;
+            let network = &cfg.hopr.network;
+            assert!(network.outgoing_ticket_winning_prob.is_some(), "{name}");
+            assert!(network.outgoing_ticket_price.is_some(), "{name}");
+            assert!(network.min_incoming_ticket_price.is_some(), "{name}");
+        }
+        Ok(())
     }
 
     #[test]
@@ -1008,6 +1364,25 @@ mod tests {
             Duration::from_millis(15)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn the_surb_resolution_wait_should_be_tightened_for_hoprd() -> anyhow::Result<()> {
+        use std::time::Duration;
+
+        // hoprd knows something the library cannot: its sessions time frames out at 3 s, past which
+        // a held return packet is discarded by the receiver anyway. The library default errs long
+        // for want of that knowledge, so leaving it unset would stall every other packet this node
+        // originates behind one that can no longer be delivered.
+        let cfg = example_cfg()?;
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+
+        assert_eq!(
+            lib_cfg.protocol.packet.pipeline.surb_resolution_wait,
+            Some(Duration::from_secs(1)),
+            "hoprd must override the library default rather than inherit it"
+        );
         Ok(())
     }
 

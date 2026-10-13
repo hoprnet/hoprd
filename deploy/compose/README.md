@@ -38,6 +38,8 @@ Adjust the following environment variables as needed:
 - `HOPRD_API_PORT`: Adjust REST API port, default is `3001`.
 - `HOPRD_P2P_PORT`: Adjust the p2p communication port, default is `9091`.
 - `HOPRD_IMAGE`: Change the image tag from `stable` to `latest`. Example: `europe-west3-docker.pkg.dev/hoprassociation/docker-images/hoprd:latest`.
+  The default `hoprd` image is built with `strategy-pix-curvy` for the Curvy deposit pool and includes the Curvy proving artifacts.
+  The binary carries their location, so no artifact path needs to be configured.
 
 Configure the Metrics url:
 

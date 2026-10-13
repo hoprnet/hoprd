@@ -82,19 +82,49 @@ impl ClusterEnv {
     }
 }
 
-/// A temporary localcluster working directory. Owned by [`Cluster`].
+/// Environment variable naming a directory under which the cluster's working directory is
+/// created and **kept** instead of a temporary one that is deleted on drop.
+///
+/// The node identities live there (`node_id_<i>.id`, encrypted with
+/// [`identity::DEFAULT_IDENTITY_PASSWORD`]). On Anvil they are worthless once the chain
+/// container is gone; on a real chain they own Safes holding real wxHOPR, and deleting them
+/// strands every token the run put on chain.
+pub const KEEP_CLUSTER_DIR_ENV: &str = "HOPRD_KEEP_CLUSTER_DIR";
+
+/// A localcluster working directory. Owned by [`Cluster`]. Temporary unless
+/// [`KEEP_CLUSTER_DIR_ENV`] says otherwise.
 struct TempCluster {
-    /// Kept alive for the lifetime of the cluster; dropped last to clean up
-    /// the on-disk directory tree.
-    _temp_dir: tempfile::TempDir,
+    /// Kept alive for the lifetime of the cluster; dropped last to clean up the on-disk
+    /// directory tree. `None` when the directory is kept.
+    _temp_dir: Option<tempfile::TempDir>,
     data_dir: PathBuf,
     log_dir: PathBuf,
 }
 
 impl TempCluster {
     fn new() -> Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let data_dir = temp_dir.path().to_path_buf();
+        let (temp_dir, data_dir) = match std::env::var(KEEP_CLUSTER_DIR_ENV) {
+            Ok(base) if !base.trim().is_empty() => {
+                let base = PathBuf::from(base.trim());
+                std::fs::create_dir_all(&base).with_context(|| {
+                    format!("creating {KEEP_CLUSTER_DIR_ENV}={}", base.display())
+                })?;
+                let kept = tempfile::Builder::new()
+                    .prefix("cluster-")
+                    .tempdir_in(&base)?
+                    .keep();
+                eprintln!(
+                    "{KEEP_CLUSTER_DIR_ENV} is set: keeping the cluster directory (identities included) at {}",
+                    kept.display()
+                );
+                (None, kept)
+            }
+            _ => {
+                let temp_dir = tempfile::tempdir()?;
+                let data_dir = temp_dir.path().to_path_buf();
+                (Some(temp_dir), data_dir)
+            }
+        };
         let log_dir = data_dir.join("logs");
         std::fs::create_dir_all(&log_dir)?;
         Ok(Self {
@@ -365,6 +395,8 @@ pub struct ClusterSpec {
     /// Where to copy the node logs when the cluster drops. `None` discards them along with
     /// the temp directory.
     pub logs_to: Option<&'static str>,
+    /// Extra environment for the node processes; see [`client_helper::NodeStartConfig::env`].
+    pub node_env: Vec<(String, String)>,
 }
 
 impl ClusterSpec {
@@ -380,6 +412,7 @@ impl ClusterSpec {
             pix: None,
             start_timeout: Duration::from_secs(120),
             logs_to: None,
+            node_env: Vec::new(),
         }
     }
 }
@@ -402,6 +435,7 @@ pub struct Cluster {
     /// The generated identities, for a test that checks a node against its own.
     pub identities: hoprd_localcluster::identity::GenerationOutput,
     log_dir: PathBuf,
+    blokli_url: String,
 }
 
 impl Cluster {
@@ -431,7 +465,7 @@ impl Cluster {
         tracing::info!("chain ready after {:?}", t0.elapsed());
 
         let identities = identity::generate(&identity::GenerationConfig {
-            blokli_url,
+            blokli_url: blokli_url.clone(),
             num_nodes: spec.num_nodes,
             config_home: temp.data_dir.clone(),
             random_identities: spec.random_identities,
@@ -446,7 +480,7 @@ impl Cluster {
         .context("generating identities")?;
         tracing::info!("identities generated after {:?}", t0.elapsed());
 
-        // The ten fields are spelled out rather than defaulted, and that is deliberate:
+        // The eleven fields are spelled out rather than defaulted, and that is deliberate:
         // `NodeStartConfig` holds `&Path`s, which have no `Default`, and a hand-written one
         // would turn "you forgot `api_port_base`" from a compile error into a silent
         // collision with another suite's port block. This is the only construction site in
@@ -462,6 +496,7 @@ impl Cluster {
             p2p_port_base: spec.ports.p2p,
             identity_password: identity::DEFAULT_IDENTITY_PASSWORD,
             api_token: None,
+            env: &spec.node_env,
         })
         .await
         .context("starting nodes")?;
@@ -486,6 +521,7 @@ impl Cluster {
             _temp: temp,
             identities,
             log_dir,
+            blokli_url,
         })
     }
 
@@ -500,6 +536,11 @@ impl Cluster {
     /// The live log directory, inside the temp tree. Valid until the cluster drops.
     pub fn log_dir(&self) -> &std::path::Path {
         &self.log_dir
+    }
+
+    /// Blokli's base URL, for a test that reads something of the chain the harness does not model.
+    pub fn blokli_url(&self) -> &str {
+        &self.blokli_url
     }
 
     /// Lines of node `id`'s hoprd log that contain *every* needle.

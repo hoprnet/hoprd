@@ -23,7 +23,7 @@ echo "==> Starting hoprd container with jemalloc profiling..."
 docker run -d --name "$CONTAINER_NAME" \
   -e "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix:${PROFILE_DIR}/jeprof,lg_prof_sample:19,lg_prof_interval:20" \
   -e "HOPRD_PASSWORD=test-profiling-password" \
-  hoprd:latest \
+  hoprd-profile:latest \
   bash -c "mkdir -p /tmp/hoprd ${PROFILE_DIR} && exec hoprd --data /tmp/hoprd --identity /tmp/hoprd/identity --apiHost 0.0.0.0 --blokli-url https://blokli.rotsee.hoprnet.link" >/dev/null
 
 echo "==> Container started (PID check)..."
@@ -52,7 +52,7 @@ docker cp "$CONTAINER_NAME:${PROFILE_DIR}" "$OUTPUT_DIR/profiles" 2>/dev/null ||
 
 echo ""
 echo "==> Testing jeprof command inside a new container..."
-docker run --rm hoprd:latest jeprof --help >/dev/null 2>&1 && {
+docker run --rm hoprd-profile:latest jeprof --help >/dev/null 2>&1 && {
   echo "✓ jeprof is executable and working"
 } || {
   echo "✗ jeprof failed to execute"
@@ -88,7 +88,7 @@ for HEAP_FILE in "${heap_files[@]}"; do
     -v "$OUTPUT_DIR/profiles:/profiles:ro" \
     -v "$SCRIPT_DIR/analyze_memory.sh:/analyze_memory.sh:ro" \
     -v "$ANALYSIS_OUTPUT:/output" \
-    hoprd:latest \
+    hoprd-profile:latest \
     bash -c "mkdir -p /tmp && bash /analyze_memory.sh '$BINARY_PATH' '/profiles/$(basename "$HEAP_FILE")' '/output/$BASENAME'"
 done
 

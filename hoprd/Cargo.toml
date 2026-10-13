@@ -1,6 +1,6 @@
 [package]
 name = "hoprd"
-version = "5.0.0-rc.1"
+version = "5.0.1"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,7 @@ license.workspace = true
 build = "build.rs"
 
 [features]
-
+# No `strategy-pix-*` pairing here, deliberately.
 default = [
   "runtime-tokio",
   "telemetry",
@@ -35,19 +35,23 @@ runtime-tokio = [
 ]
 # === PIX deposit pool: pick exactly one ===
 #
-# Curvy pool: production deposit pool
+# The Curvy privacy pool: a deposit is an allocation inside the Curvy shielded vault and a sweep is
+# a zk withdrawal from it, so nothing on chain ties the Entry to the Exit. Needs the Curvy proving
+# artifacts on disk (`CURVY_ZK_KEYS_DIR`, or the location the Nix build compiles in — the
+# `hoprd-pix-curvy` image needs nothing set) and an operator key at runtime — see
+# `hopr_strategy::pix::pools::curvy`.
 strategy-pix-curvy = ["pix", "hopr-strategy/strategy-pix-curvy"]
-
-# Plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
-# transfers. What the localcluster tests and the PIX demo run against, and currently the only pool
-# that is implemented.
+# The plain pool — Ethereum deposit addresses settled with ordinary, fully visible on-chain
+# transfers. What the localcluster tests and the PIX demo run against by default.
+#
+# **For testing and development only.**
 strategy-pix-test = [
   "pix",
   "hopr-strategy/strategy-pix-test",
   "hopr-lib/pix-secp256k1",
 ]
-
-# Picked automatically once one of the above pools is selected.
+# Not meant to be enabled directly — on its own it selects no pool and `hopr_strategy::pix`
+# will not resolve.
 pix = ["runtime-tokio"]
 telemetry = [
   "dep:opentelemetry",
@@ -106,6 +110,7 @@ proc-macro-regex = { workspace = true }
 serde = { workspace = true }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 signal-hook = { workspace = true }
 smart-default = { workspace = true }
 strum = { workspace = true }

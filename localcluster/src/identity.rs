@@ -43,6 +43,17 @@ pub const DEFAULT_BLOKLI_URL: &str = "http://localhost:8080";
 pub const DEFAULT_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
+/// Overrides the deployer/faucet key (default: Anvil account 0). A live chain has no Anvil
+/// account 0; whoever runs the cluster there funds the nodes from a key of their own.
+pub const DEPLOYER_KEY_ENV: &str = "HOPRD_DEPLOYER_PRIVATE_KEY";
+/// Per-node wxHOPR the deployer tops each node up to before it deploys its Safe (default:
+/// 1000 wxHOPR). Sized for Anvil, where tokens are free; a live chain wants far less.
+pub const NODE_TOKEN_TARGET_ENV: &str = "HOPRD_NODE_TOKEN_TARGET";
+/// Per-node xDai the deployer tops each node up to (default: 1 xDai).
+pub const NODE_NATIVE_TARGET_ENV: &str = "HOPRD_NODE_NATIVE_TARGET";
+/// Comma-separated node ids whose Safes receive the PIX float (`safe_deposit_float`); unset,
+/// every node's does. The soak's Entry is node 0 and is the only one that deposits.
+pub const PIX_FLOAT_NODE_IDS_ENV: &str = "HOPRD_PIX_FLOAT_NODE_IDS";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
 pub const MAX_NUM_NODES: usize = 5;
@@ -178,6 +189,46 @@ pub struct PixSettings {
     /// sizing a buffer for throughput has to size this against it. See `session_pix_soak.rs`, which
     /// derives both from the same rate.
     pub max_served_without_progress: u64,
+    /// Absolute per-cycle recovery deadline (`incoming_session_pix.max_recovery_time`).
+    ///
+    /// A resource backstop on the Session slot and the reconstructor state a cycle holds, and — now
+    /// that the Exit fills an idle cycle rather than letting it strand — also the idle tariff: a
+    /// Session with no application traffic completes its cycle at
+    /// [`Self::fill_finish_fraction`] `× this` and pays for the next one.
+    ///
+    /// It has to leave a whole cycle at the widest quota the node accepts time to complete. With fill
+    /// on that is judged at [`Self::fill_max_rate`] (counted up to upstream's
+    /// `MAX_ASSUMED_SESSION_PACKET_RATE`, 5000 packets/s); with fill off, at those 5000 packets/s, so
+    /// the floor is `quota_range_max / PIX_QUOTA_BYTES_PER_SHARE / 5000`. A configuration below it
+    /// is refused at load.
+    ///
+    /// A `PixSettings` field rather than a pinned default because a test geometry is orders of
+    /// magnitude smaller than the production window upstream's four hours was chosen for, and a
+    /// three-hour idle tariff is not something a test can wait out.
+    pub max_recovery_time: std::time::Duration,
+    /// Whether the Exit sends its own keep-alives to finish a funded cycle the application is not
+    /// finishing (`incoming_session_pix.fill_enabled`).
+    ///
+    /// On by default upstream. Turning it off is how a run measures what fill contributes: without
+    /// it, a Session whose return traffic averages below `E / max_recovery_time` strands its
+    /// deposit, which is the failure the mechanism exists to prevent.
+    pub fill_enabled: bool,
+    /// Ceiling on the Exit's self-generated fill traffic, in packets per second
+    /// (`incoming_session_pix.fill_max_rate`).
+    ///
+    /// Validated against the widest accepted quota: it must clear
+    /// `quota_range_max / PIX_QUOTA_BYTES_PER_SHARE × 1.05 / (fill_finish_fraction × max_recovery_time)`, or the
+    /// configuration is refused at load. Sizing this is therefore paired with
+    /// [`Self::max_recovery_time`], [`Self::fill_finish_fraction`] and [`Self::quota_range_max`]
+    /// rather than chosen alone.
+    pub fill_max_rate: u32,
+    /// Fraction of [`Self::max_recovery_time`] by which fill aims to have a cycle finished
+    /// (`incoming_session_pix.fill_finish_fraction`), in `(0, 1]`.
+    ///
+    /// Upstream's 0.75 by default. A test geometry lowers it to finish idle cycles in a wait it can
+    /// afford while keeping `max_recovery_time` above its load-time floor; the price is a
+    /// proportionally higher fill rate, which [`Self::fill_max_rate`] is validated against.
+    pub fill_finish_fraction: f64,
     /// wxHOPR added to each node's *Safe*, on top of its channel stake, to pay for SSA deposits.
     ///
     /// The Safe and not the node's own account: `hopr-types` 4.0.0 routes
@@ -239,8 +290,128 @@ impl PixSettings {
     pub fn quota_per_ssa(&self) -> u64 {
         self.num_ssa_parts as u64
             * (self.ssa_part_size + self.additional_shares) as u64
-            * hopr_lib::exports::transport::PACKET_PAYLOAD_SIZE as u64
+            * hopr_lib::exports::transport::session::PIX_QUOTA_BYTES_PER_SHARE
     }
+
+    /// Load overrides from YAML, leaving anything unnamed at [`Default`].
+    ///
+    /// This is what `--pix-config` reads, and it exists because the CLI's `--enable-pix` is a bare
+    /// flag: it selects the demo geometry and nothing else, so any caller wanting a geometry sized
+    /// against a workload — a soak, a traffic-shape scenario, an operator reproducing a deployment
+    /// — had to link this crate as a library to reach [`PixSettings`] at all.
+    ///
+    /// Every field is optional and merges onto the default, so a file naming only the dimensions is
+    /// valid and the settlement values stay consistent with them. Balances are the same
+    /// `"<amount> <CURRENCY>"` strings the generated node config uses, and durations the same
+    /// humantime forms (`"30s"`, `"12min"`), so a value can be moved between the two files without
+    /// translation.
+    pub fn from_yaml(s: &str) -> Result<Self, String> {
+        let raw: RawPixSettings =
+            serde_saphyr::from_str(s).map_err(|e| format!("invalid PIX config: {e}"))?;
+        let d = Self::default();
+
+        let balance = |field: &str, given: Option<String>, fallback: HoprBalance| {
+            given
+                .map(|v| {
+                    v.parse::<HoprBalance>()
+                        .map_err(|e| format!("invalid PIX config: {field} ({v}): {e}"))
+                })
+                .transpose()
+                .map(|parsed| parsed.unwrap_or(fallback))
+        };
+
+        Ok(Self {
+            num_ssa_parts: raw.num_ssa_parts.unwrap_or(d.num_ssa_parts),
+            ssa_part_size: raw.ssa_part_size.unwrap_or(d.ssa_part_size),
+            additional_shares: raw.additional_shares.unwrap_or(d.additional_shares),
+            quota_range_min: raw.quota_range_min.unwrap_or(d.quota_range_min),
+            quota_range_max: raw.quota_range_max.unwrap_or(d.quota_range_max),
+            max_ssa_delivery_time: raw.max_ssa_delivery_time.unwrap_or(d.max_ssa_delivery_time),
+            max_deposit_wait: raw.max_deposit_wait.unwrap_or(d.max_deposit_wait),
+            enforce_on_nodes: raw.enforce_on_nodes.unwrap_or(d.enforce_on_nodes),
+            ssas_per_request: raw.ssas_per_request.unwrap_or(d.ssas_per_request),
+            max_ssas_per_request: raw.max_ssas_per_request.unwrap_or(d.max_ssas_per_request),
+            allow_dynamic_ssa_batches: raw
+                .allow_dynamic_ssa_batches
+                .unwrap_or(d.allow_dynamic_ssa_batches),
+            max_served_without_progress: raw
+                .max_served_without_progress
+                .unwrap_or(d.max_served_without_progress),
+            max_recovery_time: raw.max_recovery_time.unwrap_or(d.max_recovery_time),
+            fill_enabled: raw.fill_enabled.unwrap_or(d.fill_enabled),
+            fill_max_rate: raw.fill_max_rate.unwrap_or(d.fill_max_rate),
+            fill_finish_fraction: raw.fill_finish_fraction.unwrap_or(d.fill_finish_fraction),
+            safe_deposit_float: balance(
+                "safe_deposit_float",
+                raw.safe_deposit_float,
+                d.safe_deposit_float,
+            )?,
+            price_per_byte: balance("price_per_byte", raw.price_per_byte, d.price_per_byte)?,
+            max_ssa_allocation: balance(
+                "max_ssa_allocation",
+                raw.max_ssa_allocation,
+                d.max_ssa_allocation,
+            )?,
+            max_spend_per_window: balance(
+                "max_spend_per_window",
+                raw.max_spend_per_window,
+                d.max_spend_per_window,
+            )?,
+            spend_window: raw.spend_window.unwrap_or(d.spend_window),
+            max_deposit_tracking_time: raw
+                .max_deposit_tracking_time
+                .unwrap_or(d.max_deposit_tracking_time),
+            gas_xdai_per_sweep: raw
+                .gas_xdai_per_sweep
+                .map(|v| {
+                    v.parse::<XDaiBalance>()
+                        .map_err(|e| format!("invalid PIX config: gas_xdai_per_sweep ({v}): {e}"))
+                })
+                .transpose()?
+                .unwrap_or(d.gas_xdai_per_sweep),
+        })
+    }
+}
+
+/// Wire form of [`PixSettings`], as `--pix-config` accepts it.
+///
+/// Separate from the domain type rather than a `Deserialize` derive on it, for the reason
+/// [`crate::latency::LatencyConfig`] keeps `RawLatencyConfig`: the fields an operator writes are
+/// strings and humantime durations, while the domain type holds parsed balances and
+/// `std::time::Duration`. `deny_unknown_fields` so a typo is an error rather than a silently
+/// ignored override — which on a geometry field would mean a run measuring something other than
+/// what it says it does.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawPixSettings {
+    num_ssa_parts: Option<usize>,
+    ssa_part_size: Option<usize>,
+    additional_shares: Option<usize>,
+    quota_range_min: Option<u64>,
+    quota_range_max: Option<u64>,
+    #[serde(with = "humantime_serde::option")]
+    max_ssa_delivery_time: Option<std::time::Duration>,
+    #[serde(with = "humantime_serde::option")]
+    max_deposit_wait: Option<std::time::Duration>,
+    enforce_on_nodes: Option<Vec<usize>>,
+    ssas_per_request: Option<usize>,
+    max_ssas_per_request: Option<usize>,
+    allow_dynamic_ssa_batches: Option<bool>,
+    max_served_without_progress: Option<u64>,
+    #[serde(with = "humantime_serde::option")]
+    max_recovery_time: Option<std::time::Duration>,
+    fill_enabled: Option<bool>,
+    fill_max_rate: Option<u32>,
+    fill_finish_fraction: Option<f64>,
+    safe_deposit_float: Option<String>,
+    price_per_byte: Option<String>,
+    max_ssa_allocation: Option<String>,
+    max_spend_per_window: Option<String>,
+    #[serde(with = "humantime_serde::option")]
+    spend_window: Option<std::time::Duration>,
+    #[serde(with = "humantime_serde::option")]
+    max_deposit_tracking_time: Option<std::time::Duration>,
+    gas_xdai_per_sweep: Option<String>,
 }
 
 /// Demo-scale dimensions for `hoprd-localcluster --enable-pix`, where no caller sizes the
@@ -249,7 +420,7 @@ impl PixSettings {
 /// The dimensions match `session_pix.rs` — the smaller of the two test configurations — so a
 /// cluster started this way completes a cycle in a handful of seconds rather than the minutes
 /// the soak's geometry takes. `quota_range_*` is widened to match: the resulting quota is
-/// `8 × (2 + 2) × 1038` ≈ 33.2 kB against a production window of ~130 MiB–519 MiB, so the
+/// `8 × (2 + 2) × 1452` ≈ 46.5 kB against a production window of ~227 MiB–908 MiB, so the
 /// production window would reject every Session.
 ///
 /// Two deliberate departures from the tests:
@@ -263,7 +434,7 @@ impl PixSettings {
 ///   price below that is roughly 300 cycles per node.
 ///
 /// The settlement values are sized against those dimensions, not left at hoprd's own defaults:
-/// at the upstream `1 wxHOPR`/byte a ~33.2 kB quota prices one deposit at ~33 200 wxHOPR, well
+/// at the upstream `1 wxHOPR`/byte a ~46.5 kB quota prices one deposit at ~46 500 wxHOPR, well
 /// past any sane ceiling, so every deposit would be refused. `max_deposit_tracking_time` is
 /// likewise sized against the 80 s kill-switch fuse the two deadlines above imply, since its
 /// poll cadence is a tenth of it.
@@ -289,9 +460,19 @@ impl Default for PixSettings {
             // Upstream's default, which the interactive cluster's small response buffer leaves
             // ample room under — see the field.
             max_served_without_progress: 2048,
+            // Upstream's own three. The demo quota is ~46.5 kB, so the four-hour deadline is far
+            // above any load-time floor and nothing here needs it shorter:
+            // an interactive cluster is not waiting on an idle tariff. Fill stays on so the
+            // interactive cluster behaves like a deployed Exit.
+            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
+            fill_enabled: UserIncomingSessionPixConfig::default().fill_enabled,
+            fill_max_rate: UserIncomingSessionPixConfig::default().fill_max_rate,
+            fill_finish_fraction: UserIncomingSessionPixConfig::default().fill_finish_fraction,
             safe_deposit_float: "1000 wxHOPR".parse().expect("valid static amount"),
-            // ~3.32 wxHOPR per SSA deposit against the dimensions above.
-            price_per_byte: "0.0001 wxHOPR".parse().expect("valid static amount"),
+            // ~3.32 wxHOPR per SSA deposit against the dimensions above. Rescaled whenever the bytes
+            // a share is priced at change (1038 B, then the 3246 B HOPR payload, now the 1452 B
+            // Session MTU), so the price per packet, and with it every deposit, stays put.
+            price_per_byte: "0.0000715 wxHOPR".parse().expect("valid static amount"),
             max_ssa_allocation: "10 wxHOPR".parse().expect("valid static amount"),
             // Matches `safe_deposit_float` above: an interactive cluster should stop when the
             // float it was given is gone, not before. The two are stated separately because they
@@ -345,13 +526,20 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             ssas_per_request: pix.ssas_per_request,
             allow_dynamic_ssa_batches: pix.allow_dynamic_ssa_batches,
             max_served_without_progress: pix.max_served_without_progress,
-            // Not [`PixSettings`] fields, because nothing here has a reason to move them: both are
+            max_recovery_time: pix.max_recovery_time,
+            fill_enabled: pix.fill_enabled,
+            fill_max_rate: pix.fill_max_rate,
+            fill_finish_fraction: pix.fill_finish_fraction,
+            // Not a [`PixSettings`] field, because nothing here has a reason to move it: it is
             // sized against `quota_range_max`, and every configuration in this crate sits orders of
-            // magnitude below the production window those defaults were chosen for. They are named
+            // magnitude below the production window that default was chosen for. It is named
             // rather than defaulted for the same reason the rest are — a `..Default::default()`
             // here would take an upstream addition silently.
             max_live_cycle_bytes: UserIncomingSessionPixConfig::default().max_live_cycle_bytes,
-            max_recovery_time: UserIncomingSessionPixConfig::default().max_recovery_time,
+            // Left at upstream's default (on) rather than made a [`PixSettings`] field: a drain only
+            // engages on a Session that closes mid-cycle holding SURBs enough to finish it, which no
+            // scenario here sets up on purpose. Named for the same reason as everything above it.
+            drain_after_close: UserIncomingSessionPixConfig::default().drain_after_close,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -365,6 +553,9 @@ pub struct GenerationConfig {
     pub config_home: PathBuf,
     pub identity_password: String,
     pub random_identities: bool,
+    /// Reuse saved node keystores when reconnecting to an existing chain.
+    /// An unreadable keystore is an error; it must never be silently replaced.
+    pub reuse_identities: bool,
     /// Number of extra identities to provision (0–`MAX_EXTRA_IDENTITIES`).
     pub num_extras: usize,
     /// P2P bind/announce host. Used to pre-announce nodes so blokli indexes
@@ -387,11 +578,13 @@ impl Default for GenerationConfig {
     fn default() -> Self {
         Self {
             blokli_url: DEFAULT_BLOKLI_URL.to_string(),
-            private_key: DEFAULT_PRIVATE_KEY.to_string(),
+            private_key: std::env::var(DEPLOYER_KEY_ENV)
+                .unwrap_or_else(|_| DEFAULT_PRIVATE_KEY.to_string()),
             num_nodes: DEFAULT_NUM_NODES,
             config_home: PathBuf::from(DEFAULT_CONFIG_HOME),
             identity_password: DEFAULT_IDENTITY_PASSWORD.to_string(),
             random_identities: false,
+            reuse_identities: false,
             num_extras: DEFAULT_NUM_EXTRA_IDENTITIES,
             p2p_host: "127.0.0.1".to_string(),
             p2p_port_base: 9000,
@@ -508,6 +701,25 @@ fn build_announce_multiaddr(host: &str, port: u16) -> anyhow::Result<Multiaddr> 
     s.parse().context("invalid pre-announce multiaddr")
 }
 
+/// Load an external chain's saved identity, or persist a new one before funding it.
+fn node_keys(id: usize, config: &GenerationConfig, id_file: &str) -> anyhow::Result<HoprKeys> {
+    if config.reuse_identities && std::path::Path::new(id_file).try_exists()? {
+        return HoprKeys::read_eth_keystore(id_file, &config.identity_password)
+            .map(|(keys, _)| keys)
+            .with_context(|| format!("reading existing node {id} identity {id_file}"));
+    }
+    let keys = if config.random_identities {
+        HoprKeys::random()
+    } else {
+        let (packet_key, chain_key) = NODE_SECRETS[id];
+        frozen_hopr_keys(packet_key, chain_key)
+            .with_context(|| format!("frozen keys of node {id}"))?
+    };
+    // Persist before funding the account or its Safe.
+    keys.write_eth_keystore(id_file, &config.identity_password)?;
+    Ok(keys)
+}
+
 /// Build the hoprd configuration for cluster node `id`.
 ///
 /// This is the chain-free half of node provisioning: everything here is derived from
@@ -543,19 +755,21 @@ fn node_config(
             ..Default::default()
         },
         identity: Identity {
-            file: id_file.to_owned(),
+            file: std::path::absolute(id_file)?
+                .to_str()
+                .context("Invalid identity path")?
+                .to_owned(),
             password: config.identity_password.clone(),
             private_key: None,
         },
         db: Db {
-            data: config
-                .config_home
+            data: std::path::absolute(&config.config_home)?
                 .join(format!("db_{id}"))
                 .to_str()
                 .ok_or(anyhow::anyhow!("Invalid path"))?
                 .to_owned(),
             initialize: true,
-            force_initialize: true,
+            force_initialize: false,
         },
         api: Api {
             enable: true,
@@ -587,7 +801,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         "generating identities",
     );
     std::fs::create_dir_all(&config.config_home)?;
-    let home_path = &config.config_home;
+    let home_path = std::fs::canonicalize(&config.config_home)?;
     let private_key = hex::decode(&config.private_key).context("invalid private key")?;
 
     let blokli_client =
@@ -612,8 +826,14 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     anvil_connector.connect().await?;
     info!(deployer = %anvil_connector.me(), "connected to blokli as deployer account");
 
-    let initial_token_balance: HoprBalance = "1000 wxHOPR".parse()?;
-    let initial_native_balance: XDaiBalance = "1 xDai".parse()?;
+    let initial_token_balance: HoprBalance = std::env::var(NODE_TOKEN_TARGET_ENV)
+        .unwrap_or_else(|_| "1000 wxHOPR".to_string())
+        .parse()
+        .with_context(|| format!("{NODE_TOKEN_TARGET_ENV} must be a wxHOPR amount"))?;
+    let initial_native_balance: XDaiBalance = std::env::var(NODE_NATIVE_TARGET_ENV)
+        .unwrap_or_else(|_| "1 xDai".to_string())
+        .parse()
+        .with_context(|| format!("{NODE_NATIVE_TARGET_ENV} must be an xDai amount"))?;
     // What the Safe must hold for PIX, *on top of* the channel stake `deploy_safe` sweeps into
     // it. The Safe and not the node account: `hopr-types` 4.0.0 routes
     // `SafePayloadGenerator::transfer` through the Safe module, so the pool's `withdraw` debits
@@ -623,12 +843,36 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
     // Summed rather than compared: the stake is already there, so a target of just the float
     // would be met by the stake alone and transfer nothing — the float would silently be a slice
     // of the stake, and whichever of channels or deposits spent first would starve the other.
-    let pix_safe_target: HoprBalance = initial_token_balance
-        + config
-            .pix
-            .as_ref()
-            .map(|pix| pix.safe_deposit_float)
-            .unwrap_or_default();
+    let pix_float: HoprBalance = config
+        .pix
+        .as_ref()
+        .map(|pix| pix.safe_deposit_float)
+        .unwrap_or_default();
+    // Which nodes' Safes carry the float. Only a node that deposits (the soak's Entry) spends it;
+    // on Anvil handing it to every Safe costs nothing, on a real chain it is wxHOPR parked in
+    // three Safes that never deposit. Unset: every node, as before.
+    let float_node_ids: Option<Vec<usize>> = match std::env::var(PIX_FLOAT_NODE_IDS_ENV) {
+        Ok(raw) => Some(
+            raw.split(',')
+                .filter(|part| !part.trim().is_empty())
+                .map(|part| {
+                    part.trim().parse::<usize>().with_context(|| {
+                        format!("{PIX_FLOAT_NODE_IDS_ENV} must list node ids, got {raw:?}")
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?,
+        ),
+        Err(_) => None,
+    };
+    let pix_safe_target_for = |id: usize| -> HoprBalance {
+        // Summed rather than compared: the stake is already there, so a target of just the
+        // float would be met by the stake alone and transfer nothing.
+        if float_node_ids.as_ref().is_none_or(|ids| ids.contains(&id)) {
+            initial_token_balance + pix_float
+        } else {
+            initial_token_balance
+        }
+    };
     let p2p_host = &config.p2p_host;
     debug!(
         token_balance = %initial_token_balance,
@@ -737,14 +981,20 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         home_dir = %home_path.display(),
         "generating node identities",
     );
-    for (id, (packet_key, chain_key)) in NODE_SECRETS.iter().take(effective_num_nodes).enumerate() {
-        let kp = if config.random_identities {
-            HoprKeys::random()
-        } else {
-            frozen_hopr_keys(*packet_key, *chain_key)
-                .with_context(|| format!("frozen keys of node {id}"))?
-        };
+    for id in 0..effective_num_nodes {
+        let id_file = home_path.join(format!("node_id_{id}.id"));
+        let id_file_str = id_file
+            .to_str()
+            .ok_or(anyhow::anyhow!("Invalid path"))?
+            .to_owned();
+        let kp = node_keys(id, config, &id_file_str)?;
         let node_address = kp.chain_key.public().to_address();
+        if config.reuse_identities {
+            crate::state::adopt_legacy_curvy_state(
+                &home_path.join(format!("db_{id}")),
+                &std::env::current_dir()?.join(format!("curvy-pix-{node_address}.redb")),
+            )?;
+        }
         info!(node_id = %id, address = %node_address, "node identity");
         eprintln!("Node {id}: Address {node_address}");
 
@@ -849,6 +1099,22 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             poll_handle.await??
         };
 
+        // A direct Curvy shield is the Safe calling the aggregator through its module, and the
+        // module forwards only to scoped targets. The Anvil image scopes it at deployment; a
+        // real chain does not, so a fresh Safe there needs the grant once — see `curvy_grant`.
+        if let Some(aggregator) = crate::curvy_grant::aggregator_from_env()? {
+            eprint!("\x1b[2K\rNode {id}: Scoping the Curvy aggregator into the Safe module...");
+            crate::curvy_grant::scope_aggregator(
+                &blokli_client,
+                &kp.chain_key,
+                safe.address,
+                safe.module,
+                aggregator,
+            )
+            .await
+            .with_context(|| format!("Node {id}: granting the Safe the Curvy aggregator target"))?;
+        }
+
         // Only PIX needs this top-up, and it is an extra transaction per node — skip it when the
         // strategy is off so other clusters bootstrap as fast as before.
         //
@@ -860,6 +1126,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
         // no xDai; this cluster now looks the same.
         if config.pix.is_some() {
             let safe_token_balance: HoprBalance = node_connector.balance(safe.address).await?;
+            let pix_safe_target = pix_safe_target_for(id);
             if safe_token_balance < pix_safe_target {
                 let top_up = pix_safe_target - safe_token_balance;
                 if anvil_connector.balance(*anvil_connector.me()).await? < top_up {
@@ -942,12 +1209,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             Err(e) => return Err(anyhow::anyhow!("pre-announce failed: {e}")),
         }
 
-        let id_file = home_path.join(format!("node_id_{id}.id"));
-        let id_file_str = id_file
-            .to_str()
-            .ok_or(anyhow::anyhow!("Invalid path"))?
-            .to_owned();
-
         let node_cfg = node_config(
             id,
             config,
@@ -966,7 +1227,6 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
             .ok_or(anyhow::anyhow!("Invalid path"))?
             .to_owned();
         std::fs::write(&cfg_file, serde_saphyr::to_string(&node_cfg)?)?;
-        kp.write_eth_keystore(&id_file_str, &config.identity_password)?;
 
         eprintln!("\x1b[2K\rNode {id}: Node config written to {cfg_file}");
 
@@ -1101,6 +1361,24 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 poll_handle.await??
             };
 
+            // Same grant as for a cluster node: an extra identity is how an external Entry — a
+            // client embedding its own node — joins the cluster, and under the Curvy pool it is the
+            // Entry's Safe that shields, so its module needs the aggregator scoped just the same.
+            if let Some(aggregator) = crate::curvy_grant::aggregator_from_env()? {
+                info!(extra_id = %id, "scoping the Curvy aggregator into the Safe module");
+                crate::curvy_grant::scope_aggregator(
+                    &blokli_client,
+                    &kp.chain_key,
+                    safe.address,
+                    safe.module,
+                    aggregator,
+                )
+                .await
+                .with_context(|| {
+                    format!("Extra {id}: granting the Safe the Curvy aggregator target")
+                })?;
+            }
+
             let id_file = home_path.join(format!("extra_id_{id}.id"));
             let id_file_str = id_file
                 .to_str()
@@ -1132,6 +1410,156 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file naming only the geometry leaves every settlement value consistent with the default.
+    ///
+    /// This is the property that makes `--pix-config` usable at all: a caller sizing a cycle
+    /// against a workload should not also have to restate the price, the float and the four
+    /// deadlines to avoid silently taking a zero for each.
+    #[test]
+    fn a_partial_pix_config_merges_onto_the_defaults() -> anyhow::Result<()> {
+        let parsed = PixSettings::from_yaml(
+            r#"
+num_ssa_parts: 1024
+ssa_part_size: 64
+additional_shares: 16
+"#,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+        assert_eq!(1024, parsed.num_ssa_parts);
+        assert_eq!(64, parsed.ssa_part_size);
+        assert_eq!(16, parsed.additional_shares);
+        assert_eq!(
+            1024 * 80 * hopr_lib::exports::transport::session::PIX_QUOTA_BYTES_PER_SHARE,
+            parsed.quota_per_ssa()
+        );
+
+        let d = PixSettings::default();
+        assert_eq!(d.price_per_byte, parsed.price_per_byte);
+        assert_eq!(d.max_deposit_wait, parsed.max_deposit_wait);
+        assert_eq!(d.max_recovery_time, parsed.max_recovery_time);
+        assert_eq!(d.fill_enabled, parsed.fill_enabled);
+        assert_eq!(d.fill_finish_fraction, parsed.fill_finish_fraction);
+        Ok(())
+    }
+
+    /// Balances and durations parse from the same forms the generated node config uses.
+    #[test]
+    fn pix_config_reads_balances_and_humantime_durations() -> anyhow::Result<()> {
+        let parsed = PixSettings::from_yaml(
+            r#"
+max_recovery_time: 12min
+max_deposit_wait: 30s
+price_per_byte: "0.0000000533 wxHOPR"
+max_spend_per_window: "500 wxHOPR"
+gas_xdai_per_sweep: "0.02 xDai"
+fill_enabled: false
+fill_max_rate: 300
+fill_finish_fraction: 0.6
+enforce_on_nodes: [2]
+"#,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+        assert_eq!(
+            std::time::Duration::from_secs(720),
+            parsed.max_recovery_time
+        );
+        assert_eq!(std::time::Duration::from_secs(30), parsed.max_deposit_wait);
+        assert_eq!(
+            "0.0000000533 wxHOPR".parse::<HoprBalance>()?,
+            parsed.price_per_byte
+        );
+        assert_eq!(
+            "500 wxHOPR".parse::<HoprBalance>()?,
+            parsed.max_spend_per_window
+        );
+        assert_eq!(
+            "0.02 xDai".parse::<XDaiBalance>()?,
+            parsed.gas_xdai_per_sweep
+        );
+        assert!(!parsed.fill_enabled);
+        assert_eq!(300, parsed.fill_max_rate);
+        assert_eq!(0.6, parsed.fill_finish_fraction);
+        assert_eq!(vec![2], parsed.enforce_on_nodes);
+        Ok(())
+    }
+
+    /// A misspelled key is an error, not a silently ignored override.
+    ///
+    /// On a geometry field that distinction is the whole point: a run that quietly kept the demo
+    /// dimensions would report success against a cycle 2 500 times smaller than the one it claims
+    /// to be measuring.
+    #[test]
+    fn an_unknown_pix_config_key_is_rejected() {
+        let err = PixSettings::from_yaml("num_ssa_part: 1024\n")
+            .expect_err("a typo in a geometry field must not be ignored");
+        assert!(err.contains("invalid PIX config"), "{err}");
+    }
+
+    /// An unparseable balance names the field it came from.
+    #[test]
+    fn a_bad_pix_config_balance_names_its_field() {
+        let err = PixSettings::from_yaml("price_per_byte: \"not a balance\"\n")
+            .expect_err("an unparseable balance must be rejected");
+        assert!(err.contains("price_per_byte"), "{err}");
+    }
+
+    #[test]
+    fn external_chain_reuses_keys_and_never_replaces_an_unreadable_keystore() -> anyhow::Result<()>
+    {
+        let dir = tempfile::tempdir()?;
+        let identity_file = dir.path().join("node_id_0.id");
+        let identity_file = identity_file.to_str().unwrap();
+        let mut config = GenerationConfig {
+            reuse_identities: true,
+            ..Default::default()
+        };
+        let original = node_keys(0, &config, identity_file)?;
+        let saved = std::fs::read(identity_file)?;
+        config.random_identities = true;
+        let restored = node_keys(0, &config, identity_file)?;
+        assert_eq!(original.chain_key.public(), restored.chain_key.public());
+        assert_eq!(std::fs::read(identity_file)?, saved);
+
+        config.identity_password = "wrong password".into();
+        assert!(node_keys(0, &config, identity_file).is_err());
+        assert_eq!(std::fs::read(identity_file)?, saved);
+        std::fs::write(identity_file, "broken keystore")?;
+        assert!(node_keys(0, &config, identity_file).is_err());
+        assert_eq!(std::fs::read_to_string(identity_file)?, "broken keystore");
+        Ok(())
+    }
+
+    #[test]
+    fn generated_paths_are_independent_of_the_node_working_directory() -> anyhow::Result<()> {
+        let config = GenerationConfig {
+            config_home: "relative-cluster".into(),
+            ..Default::default()
+        };
+        let built = node_config(
+            0,
+            &config,
+            SafeModule {
+                safe_address: "0x1111111111111111111111111111111111111111".parse()?,
+                module_address: "0x2222222222222222222222222222222222222222".parse()?,
+            },
+            &MultiStrategyConfig::default(),
+            "relative-cluster/node_id_0.id",
+            &None,
+        )?;
+        assert_eq!(
+            PathBuf::from(built.db.data),
+            std::path::absolute("relative-cluster/db_0")?
+        );
+        assert_eq!(
+            PathBuf::from(built.identity.file),
+            std::path::absolute("relative-cluster/node_id_0.id")?
+        );
+        assert!(!built.db.force_initialize);
+        Ok(())
+    }
 
     /// The frozen secrets are static, so a `HoprKeys` construction failure would break every
     /// non-random cluster run. Guard all of them here instead of at startup.
