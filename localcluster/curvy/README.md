@@ -91,7 +91,8 @@ relayer has no paymaster, so the adapter does not need metadata's `/networks`
 endpoint for gas-fee pricing.
 
 The launcher refuses to replace an existing `hopr-chain`. Ports 8080 and 3000
-must be available on loopback, along with the node ports. Each run owns its
+must be available on loopback, along with the node ports; `CURVY_CHAIN_PORT`
+moves Blokli off 8080 when something else holds it. Each run owns its
 containers and database volume and removes them on exit. Logs remain in the
 printed `/tmp/hopr-curvy.XXXXXX` directory, `/tmp/pix-demo/test.log`, and
 `/tmp/pix-soak-logs`. Use `--no-dashboard` to stream test output.
