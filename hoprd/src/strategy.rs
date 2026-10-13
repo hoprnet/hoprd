@@ -150,13 +150,17 @@ fn validate_execution_interval(interval: &Duration) -> std::result::Result<(), V
 ///         strategy:
 ///           price_per_byte: "0.0001 wxHOPR"
 ///           max_ssa_allocation: "10 wxHOPR"
+///           funding:
+///             min_available: "50 wxHOPR"
+///             top_up: "200 wxHOPR"
 ///         pool:
 ///           max_deposit_tracking_time: 30s
 ///           gas_xdai_per_sweep: "0.01 xDai"
 /// ```
 ///
 /// Both sections may be omitted; each falls back to the upstream defaults documented on the
-/// respective type. Note that the accepted keys under `pool` follow the build: the two pools
+/// respective type. `funding` is the strategy's policy for keeping a Curvy pool topped up from
+/// the Safe; the plain pool pays from the Safe directly and refuses it. Note that the accepted keys under `pool` follow the build: the two pools
 /// share only `blokli_url` and `max_deposit_tracking_time`, and each has keys the other has no
 /// use for — the plain pool's `gas_xdai_per_sweep`, the Curvy pool's `shielding`, `submission`
 /// and the rest of its deployment wiring. Because `CurvyDepositPoolConfig` does not set
@@ -329,6 +333,9 @@ pub fn hopr_default_strategies() -> MultiStrategyConfig {
     MultiStrategyConfig::default()
 }
 
+/// The PIX deposit pool's funding, for the API to drive; `None` on a node without a Curvy pool.
+pub type PixFundingHandle = Option<Arc<dyn hoprd_api::PixFunding>>;
+
 /// Builds a [`MultiStrategy`] from a [`MultiStrategyConfig`] and a node reference.
 ///
 /// Maps each [`StrategyKind`] variant to its concrete builder, wires in the node,
@@ -355,7 +362,7 @@ pub fn build_strategies<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
     chain_key: &ChainKeypair,
-) -> anyhow::Result<Box<dyn Strategy + Send>>
+) -> anyhow::Result<(Box<dyn Strategy + Send>, PixFundingHandle)>
 where
     N: ActionableEventSource
         + HasChainApi<
@@ -388,24 +395,104 @@ where
     build_strategies_inner(cfg, node, chain_key)
 }
 
-// `chain_key` is unread unless the plain PIX pool is compiled in; see `build_strategies`. The
-// Curvy pool no longer takes it — its direct shield is submitted by the node's chain API — so
-// without the plain pool `chain_key` reaches nothing but the recursive call below, which is what
-// both of these lints are pointing at. Gated on the feature rather than blanket-allowed, so the
-// day something else here needs the key, an unused one is still caught in the build that has it.
+/// [`hoprd_api::PixFunding`] over the pool the PIX strategy was built with, so the API and the
+/// strategy share one pool. The pool never funds itself; this is the operator's lever.
+#[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
+struct PixFundingBridge<D>(D);
+
+#[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
+impl<D> hoprd_api::PixFunding for PixFundingBridge<D>
+where
+    D: hopr_lib::api::chain::DepositPool<hopr_strategy::pix::pools::curvy::PoolKeypair>
+        + Send
+        + Sync
+        + 'static,
+{
+    fn fund(
+        &self,
+        amount: hopr_lib::api::types::primitive::prelude::HoprBalance,
+    ) -> futures::future::BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move { self.0.fund(amount).await.map_err(|error| error.to_string()) })
+    }
+
+    fn available_balance(
+        &self,
+    ) -> futures::future::BoxFuture<
+        '_,
+        Result<hopr_lib::api::types::primitive::prelude::HoprBalance, String>,
+    > {
+        Box::pin(async move {
+            self.0
+                .available_balance()
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
+}
+
+/// The PIX strategy over the plain pool, which signs its deposit transfers and gas top-ups with
+/// the node's own key. Its funding is the Safe, which the account endpoints already serve, so
+/// there is no funding handle.
+#[cfg(feature = "strategy-pix-test")]
+fn build_pix<N>(
+    sub_cfg: &PixConfig,
+    node: Arc<N>,
+    chain_key: &ChainKeypair,
+) -> anyhow::Result<(Box<dyn Strategy + Send>, PixFundingHandle)>
+where
+    N: ActionableEventSource + HasChainApi + Send + Sync + 'static,
+{
+    // `SpecDepositAddress` is the witness that the pool can settle what this build's spec
+    // produces; the generic `build_with_pool` exists for supplying a pool from outside this crate.
+    let built = PixStrategy::new(sub_cfg.strategy.clone())
+        .build_non_anonymous::<_, SpecDepositAddress>(
+            node,
+            chain_key.clone(),
+            sub_cfg.pool.clone(),
+        )?;
+    Ok((built, None))
+}
+
+/// The PIX strategy over the Curvy pool, whose direct shield the node's chain API submits from
+/// the Safe, so the node key is not needed. The pool is built here rather than inside
+/// `build_curvy` so that the API can fund it and read its balance: the strategy and the API
+/// share this one `Arc`, and the pool is deliberately not `Clone`.
+#[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
+fn build_pix<N>(
+    sub_cfg: &PixConfig,
+    node: Arc<N>,
+    _chain_key: &ChainKeypair,
+) -> anyhow::Result<(Box<dyn Strategy + Send>, PixFundingHandle)>
+where
+    N: ActionableEventSource + HasChainApi + Send + Sync + 'static,
+{
+    let pool = Arc::new(hopr_strategy::pix::pools::curvy::CurvyDepositPool::new(
+        Arc::clone(&node),
+        sub_cfg.pool.clone(),
+    )?);
+    let funding: Arc<dyn hoprd_api::PixFunding> = Arc::new(PixFundingBridge(Arc::clone(&pool)));
+    let built = PixStrategy::new(sub_cfg.strategy.clone())
+        .build_curvy_with_pool::<_, _, SpecDepositAddress>(pool, node)?;
+    Ok((built, Some(funding)))
+}
+
+// `chain_key` is unread unless a PIX pool is compiled in; see `build_strategies`. Without one it
+// reaches nothing but the recursive call below, which is what both of these lints are pointing
+// at. Gated on the feature rather than blanket-allowed, so the day something else here needs the
+// key, an unused one is still caught in the builds that have it.
 #[cfg_attr(
-    not(feature = "strategy-pix-test"),
+    not(feature = "pix"),
     allow(
         unused_variables,
         clippy::only_used_in_recursion,
-        reason = "only a PIX deposit pool signs with the node key"
+        reason = "only a PIX deposit pool reads the node key"
     )
 )]
 fn build_strategies_inner<N>(
     cfg: &MultiStrategyConfig,
     node: Arc<N>,
     chain_key: &ChainKeypair,
-) -> anyhow::Result<Box<dyn Strategy + Send>>
+) -> anyhow::Result<(Box<dyn Strategy + Send>, PixFundingHandle)>
 where
     N: ActionableEventSource
         + HasChainApi<
@@ -427,6 +514,8 @@ where
         + Sync
         + 'static,
 {
+    // The first PIX pool built, at any nesting; a node has at most one PIX stanza.
+    let mut pix_funding: PixFundingHandle = None;
     let mut strategies = Vec::<Box<dyn Strategy + Send>>::new();
 
     // `build` is fallible in hopr-strategy 1.0: it validates the strategy's own config and returns
@@ -478,19 +567,9 @@ where
                     "enabling the PIX strategy"
                 );
                 // One builder per pool rather than one call that dispatches: the pool is named
-                // here, and `SpecDepositAddress` is the witness that it can settle what this
-                // build's spec produces. The generic `build_with_pool` exists for supplying a
-                // pool from outside this crate.
-                #[cfg(feature = "strategy-pix-test")]
-                let built = PixStrategy::new(sub_cfg.strategy.clone())
-                    .build_non_anonymous::<_, SpecDepositAddress>(
-                        Arc::clone(&node),
-                        chain_key.clone(),
-                        sub_cfg.pool.clone(),
-                    )?;
-                #[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
-                let built = PixStrategy::new(sub_cfg.strategy.clone())
-                    .build_curvy::<_, SpecDepositAddress>(Arc::clone(&node), sub_cfg.pool.clone())?;
+                // in `build_pix`, of which this binary has the one its feature selected.
+                let (built, funding) = build_pix(sub_cfg, Arc::clone(&node), chain_key)?;
+                pix_funding = pix_funding.or(funding);
                 strategies.push(built);
             }
             // Unreachable: `StrategyKind::validate` rejects this stanza before a node with it in
@@ -512,7 +591,10 @@ where
                 if cfg.allow_recursive {
                     let mut sub = sub_cfg.clone();
                     sub.allow_recursive = false;
-                    strategies.push(build_strategies_inner(&sub, Arc::clone(&node), chain_key)?);
+                    let (built, funding) =
+                        build_strategies_inner(&sub, Arc::clone(&node), chain_key)?;
+                    strategies.push(built);
+                    pix_funding = pix_funding.or(funding);
                 } else {
                     tracing::error!("recursive multi-strategy not allowed and skipped");
                     continue; // skip the telemetry update: nothing was actually built
@@ -527,7 +609,7 @@ where
         }
     }
 
-    Ok(Box::new(MultiStrategy::new(strategies)))
+    Ok((Box::new(MultiStrategy::new(strategies)), pix_funding))
 }
 
 #[cfg(all(test, feature = "runtime-tokio"))]

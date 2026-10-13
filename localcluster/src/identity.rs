@@ -27,7 +27,10 @@ use hopr_strategy::{
     },
     // The pool matching this crate's `strategy-pix-test` on `hoprd`; `hoprd::strategy`
     // selects the same one, so this is the type its `PixConfig::pool` field expects.
-    pix::{pools::plain::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
+    pix::{
+        pools::plain::PoolConfig as PixPoolConfig,
+        strategy::{PixFundingPolicy, PixStrategyConfig},
+    },
 };
 use hoprd::{
     config::{
@@ -273,6 +276,11 @@ pub struct PixSettings {
     /// xDai moved from the Safe to a recovered stealth address so it can pay gas for
     /// its own sweep. Zero disables the sweep's gas funding entirely.
     pub gas_xdai_per_sweep: XDaiBalance,
+    /// The strategy's funding policy: fund `top_up` from the Safe whenever the pool can pay less
+    /// than `min_available`. Given as the `funding_min_available` and `funding_top_up` keys, both
+    /// or neither. The plain pool takes none, the Safe being its funding; a Curvy pool needs it,
+    /// or an operator funding it over the API.
+    pub funding: Option<PixFundingPolicy>,
 }
 
 impl PixSettings {
@@ -369,8 +377,33 @@ impl PixSettings {
                 })
                 .transpose()?
                 .unwrap_or(d.gas_xdai_per_sweep),
+            funding: match (
+                optional_balance("funding_min_available", raw.funding_min_available)?,
+                optional_balance("funding_top_up", raw.funding_top_up)?,
+            ) {
+                (Some(min_available), Some(top_up)) => Some(PixFundingPolicy {
+                    min_available,
+                    top_up,
+                }),
+                (None, None) => d.funding,
+                _ => {
+                    return Err(
+                        "invalid PIX config: funding_min_available and funding_top_up go together"
+                            .into(),
+                    );
+                }
+            },
         })
     }
+}
+
+/// A wxHOPR PIX setting that may be absent.
+fn optional_balance(name: &str, raw: Option<String>) -> Result<Option<HoprBalance>, String> {
+    raw.map(|v| {
+        v.parse::<HoprBalance>()
+            .map_err(|e| format!("invalid PIX config: {name} ({v}): {e}"))
+    })
+    .transpose()
 }
 
 /// Wire form of [`PixSettings`], as `--pix-config` accepts it.
@@ -412,6 +445,8 @@ struct RawPixSettings {
     #[serde(with = "humantime_serde::option")]
     max_deposit_tracking_time: Option<std::time::Duration>,
     gas_xdai_per_sweep: Option<String>,
+    funding_min_available: Option<String>,
+    funding_top_up: Option<String>,
 }
 
 /// Demo-scale dimensions for `hoprd-localcluster --enable-pix`, where no caller sizes the
@@ -483,6 +518,7 @@ impl Default for PixSettings {
             spend_window: std::time::Duration::from_secs(24 * 3600),
             max_deposit_tracking_time: std::time::Duration::from_secs(30),
             gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
+            funding: None,
         }
     }
 }
@@ -936,6 +972,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 max_ssa_allocation: pix.max_ssa_allocation,
                 max_spend_per_window: pix.max_spend_per_window,
                 spend_window: pix.spend_window,
+                funding: pix.funding.clone(),
                 ..Default::default()
             },
             pool: PixPoolConfig {
@@ -1441,6 +1478,41 @@ additional_shares: 16
         assert_eq!(d.max_recovery_time, parsed.max_recovery_time);
         assert_eq!(d.fill_enabled, parsed.fill_enabled);
         assert_eq!(d.fill_finish_fraction, parsed.fill_finish_fraction);
+        Ok(())
+    }
+
+    /// The funding policy is a pair of balances, both or neither, parsed like every other balance.
+    #[test]
+    fn pix_config_reads_the_funding_policy_as_a_pair() -> anyhow::Result<()> {
+        let parsed = PixSettings::from_yaml(
+            r#"
+funding_min_available: "21.5277 wxHOPR"
+funding_top_up: "218 wxHOPR"
+"#,
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
+        assert_eq!(
+            parsed.funding,
+            Some(PixFundingPolicy {
+                min_available: "21.5277 wxHOPR".parse()?,
+                top_up: "218 wxHOPR".parse()?,
+            })
+        );
+
+        let unset =
+            PixSettings::from_yaml("num_ssa_parts: 1024\n").map_err(|e| anyhow::anyhow!(e))?;
+        assert_eq!(unset.funding, None);
+
+        let half = PixSettings::from_yaml("funding_top_up: \"218 wxHOPR\"\n").unwrap_err();
+        assert!(half.contains("go together"), "{half}");
+
+        let bad =
+            PixSettings::from_yaml("funding_min_available: ten\nfunding_top_up: \"1 wxHOPR\"\n")
+                .unwrap_err();
+        assert!(
+            bad.starts_with("invalid PIX config: funding_min_available"),
+            "{bad}"
+        );
         Ok(())
     }
 

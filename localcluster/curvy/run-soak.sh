@@ -8,7 +8,7 @@ test -x "$HOPRD_PIX_SOAK_BIN"
 test -d "$CURVY_ZK_KEYS_DIR"
 # A caller's shell must not select another chain/funding mode.
 unset HOPRD_CURVY_OPERATOR_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEYS
-unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_INITIAL_FUNDING
+unset HOPRD_DEPLOYER_PRIVATE_KEY
 unset HOPRD_PIX_SOAK_POOL_PREFUNDED HOPRD_PIX_FLOAT_NODE_IDS
 test_name=localcluster_pix_session_runs_until_the_entry_cannot_deposit
 # libtest returns success for zero selected tests. Refuse a stale/wrong executable.

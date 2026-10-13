@@ -463,6 +463,22 @@ the absent case as `0.0` would be indistinguishable from a peer measured at zero
     pub struct PingResponse {
         pub latency: i64,
     }
+    ///Request body for funding the PIX deposit pool.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct PixFundBodyRequest {
+        pub amount: ::std::string::String,
+    }
+    ///What a funding moved.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct PixFundResponse {
+        ///The amount moved from the Safe, gross of the pool's own fees.
+        pub funded: ::std::string::String,
+    }
+    ///What the PIX deposit pool can pay deposits from right now.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct PixFundingResponse {
+        pub available: ::std::string::String,
+    }
     ///Request body for ticket redemption with optional fields.
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
     pub struct RedeemTicketsRequest {
@@ -1712,6 +1728,84 @@ Arguments:
             .build()?;
         let info = OperationInfo {
             operation_id: "ping_peer",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => ResponseValue::from_response(response).await,
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /**Move wxHOPR from the node's Safe into the PIX deposit pool's funding. The pool never funds itself; this is the operator's lever, beside the strategy's optional funding policy.
+
+Sends a `POST` request to `/api/v4/pix/fund`
+
+Arguments:
+- `body`: How much to move, gross of the pool's own fees
+*/
+    pub async fn fund_pool<'a>(
+        &'a self,
+        body: &'a types::PixFundBodyRequest,
+    ) -> Result<ResponseValue<types::PixFundResponse>, Error<()>> {
+        let url = format!("{}/api/v4/pix/fund", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map
+            .append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+            );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "fund_pool",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => ResponseValue::from_response(response).await,
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /**Get what the PIX deposit pool can pay deposits from right now
+
+Sends a `GET` request to `/api/v4/pix/funding`
+
+*/
+    pub async fn pool_funding<'a>(
+        &'a self,
+    ) -> Result<ResponseValue<types::PixFundingResponse>, Error<()>> {
+        let url = format!("{}/api/v4/pix/funding", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map
+            .append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+            );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "pool_funding",
         };
         self.pre(&mut request, &info).await?;
         let result = self.exec(request, &info).await;

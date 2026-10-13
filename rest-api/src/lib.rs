@@ -1,5 +1,6 @@
 //! REST API for the HOPRd node.
 pub mod config;
+pub use pix::PixFunding;
 
 mod account;
 mod channels;
@@ -8,6 +9,7 @@ mod middleware;
 mod network;
 mod node;
 mod peers;
+mod pix;
 mod root;
 mod session;
 #[cfg(test)]
@@ -112,6 +114,8 @@ pub(crate) struct InternalState<H> {
     pub default_listen_host: std::net::SocketAddr,
     /// Flow-control profile applied to sessions this node initiates as a client.
     pub session_flow_control: crate::config::SessionFlowControl,
+    /// The PIX deposit pool's funding, when this node runs a pool.
+    pub pix_funding: Option<Arc<dyn PixFunding>>,
 }
 
 impl<H> Clone for InternalState<H> {
@@ -123,6 +127,7 @@ impl<H> Clone for InternalState<H> {
             hopr: self.hopr.clone(),
             open_listeners: self.open_listeners.clone(),
             default_listen_host: self.default_listen_host,
+            pix_funding: self.pix_funding.clone(),
             session_flow_control: self.session_flow_control,
         }
     }
@@ -154,6 +159,8 @@ impl<H> Clone for InternalState<H> {
         node::version,
         peers::ping_peer,
         peers::show_peer_info,
+        pix::pool_funding,
+        pix::fund_pool,
         root::metrics,
         session::create_client,
         session::list_clients,
@@ -177,6 +184,7 @@ impl<H> Clone for InternalState<H> {
             network::AnnouncementOriginResponse,
             node::NodeInfoResponse, node::NodeVersionResponse, node::NodeStatusResponse, node::ComponentStatusesResponse, node::ComponentStatusInfo,
             peers::MultiaddressSource, peers::NodePeerInfoResponse, peers::PeerChannelInfo, peers::PeerQosInfo, peers::PingResponse,
+            pix::PixFundingResponse, pix::PixFundBodyRequest, pix::PixFundResponse,
             session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
             tickets::NodeTicketStatisticsResponse, tickets::ChannelTicket, tickets::RedeemTicketsRequest,
         )
@@ -190,6 +198,7 @@ impl<H> Clone for InternalState<H> {
         (name = "Network", description = "HOPR node network endpoints"),
         (name = "Node", description = "HOPR node information endpoints"),
         (name = "Peers", description = "HOPR node peer manipulation endpoints"),
+        (name = "PIX", description = "HOPR node PIX deposit pool endpoints"),
         (name = "Session", description = "HOPR node session management endpoints"),
         (name = "Tickets", description = "HOPR node ticket management endpoints"),
         (name = "Metrics", description = "HOPR node metrics endpoints"),
@@ -295,6 +304,8 @@ pub struct RestApiParameters<H> {
     pub hopr: Arc<H>,
     pub session_listener_sockets: Arc<ListenerJoinHandles>,
     pub default_session_listen_host: std::net::SocketAddr,
+    /// The PIX deposit pool's funding, when this node runs a pool.
+    pub pix_funding: Option<Arc<dyn PixFunding>>,
 }
 
 /// Starts the Rest API listener and router.
@@ -313,6 +324,7 @@ where
         hopr,
         session_listener_sockets,
         default_session_listen_host,
+        pix_funding,
     } = params;
 
     let router = build_api(
@@ -322,6 +334,7 @@ where
         hopr,
         session_listener_sockets,
         default_session_listen_host,
+        pix_funding,
     )
     .await;
     axum::serve(listener, router).await
@@ -335,6 +348,7 @@ async fn build_api<H: HoprNode + RestApiSessionFactory>(
     hopr: Arc<H>,
     open_listeners: Arc<ListenerJoinHandles>,
     default_listen_host: std::net::SocketAddr,
+    pix_funding: Option<Arc<dyn PixFunding>>,
 ) -> Router
 where
     <<H as hopr_lib::api::node::HasTransportApi>::Transport as hopr_lib::api::node::TransportOperations>::Error:
@@ -351,6 +365,7 @@ where
         open_listeners,
         default_listen_host,
         session_flow_control: cfg.session_flow_control,
+        pix_funding,
     };
 
     Router::new()
@@ -427,6 +442,8 @@ where
                 .route("/network/connected", get(network::connected::<H>))
                 .route("/network/announced", get(network::announced::<H>))
                 .route("/network/graph", get(network::graph::<H>))
+                .route("/pix/funding", get(pix::pool_funding::<H>))
+                .route("/pix/fund", post(pix::fund_pool::<H>))
                 .route("/node/version", get(node::version::<H>))
                 .route("/node/configuration", get(node::configuration::<H>))
                 .route("/node/info", get(node::info::<H>))
@@ -531,6 +548,8 @@ enum ApiErrorStatus {
     ListenHostAlreadyUsed,
     SessionNotFound,
     InvalidSessionId,
+    /// The node runs no PIX deposit pool, so there is no funding to read or move.
+    PixPoolNotConfigured,
     #[strum(serialize = "UNKNOWN_FAILURE")]
     UnknownFailure(String),
 }
@@ -568,7 +587,8 @@ impl IntoResponse for ApiErrorStatus {
             Self::PeerNotFound
             | Self::ChannelNotFound
             | Self::TicketsNotFound
-            | Self::SessionNotFound => StatusCode::NOT_FOUND,
+            | Self::SessionNotFound
+            | Self::PixPoolNotConfigured => StatusCode::NOT_FOUND,
             Self::Timeout => StatusCode::REQUEST_TIMEOUT,
             Self::ListenHostAlreadyUsed => StatusCode::CONFLICT,
             Self::NotReady => StatusCode::PRECONDITION_FAILED,
@@ -651,6 +671,7 @@ mod tests {
     #[case(ApiErrorStatus::ChannelNotFound, StatusCode::NOT_FOUND)]
     #[case(ApiErrorStatus::TicketsNotFound, StatusCode::NOT_FOUND)]
     #[case(ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND)]
+    #[case(ApiErrorStatus::PixPoolNotConfigured, StatusCode::NOT_FOUND)]
     #[case(ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT)]
     #[case(ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT)]
     #[case(ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED)]
