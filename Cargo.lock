@@ -5827,7 +5827,7 @@ dependencies = [
 [[package]]
 name = "hopr-api"
 version = "4.4.1"
-source = "git+https://github.com/0xCurvy/hopr-api.git?branch=lazar%2Fshield-router#9b321e35ead97ccc241ebfef7ba0848620d5327c"
+source = "git+https://github.com/0xCurvy/hopr-api.git?branch=lazar%2Fpool-funding#3a755ebd4cfbf7ad4c218c08a13ee758ba18cfdc"
 dependencies = [
  "async-trait",
  "atomic_enum",
@@ -6127,7 +6127,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "5.5.1"
-source = "git+https://github.com/0xCurvy/hopr-strategy.git?branch=lazar%2Fsend-through-connector#6bc9719afabe0a99ace5eca59cacb9acd99c66e7"
+source = "git+https://github.com/0xCurvy/hopr-strategy.git?branch=lazar%2Fpool-funding#c97365d05903aaf68cdfcadd9526a3b2ae4758c2"
 dependencies = [
  "anyhow",
  "async-trait",

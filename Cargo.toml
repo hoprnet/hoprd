@@ -186,11 +186,12 @@ codegen-units = 16
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
 
-# Local verification of the ERC-777 `send` chain: hoprnet/hopr-types#128, hoprnet/hopr-api#145,
-# hoprnet/hopr-utilities#43, hoprnet/hopr-impls#52 and hoprnet/hopr-strategy#101. Not for merge.
+# Local verification of the ERC-777 `send` chain and the pool funding on top of it:
+# hoprnet/hopr-types#128, hoprnet/hopr-api#145 and #146, hoprnet/hopr-utilities#43,
+# hoprnet/hopr-impls#52 and hoprnet/hopr-strategy#101 and #102. Not for merge.
 [patch.crates-io]
 hopr-types = { git = "https://github.com/0xCurvy/hopr-types.git", branch = "lazar/shield-router" }
-hopr-api = { git = "https://github.com/0xCurvy/hopr-api.git", branch = "lazar/shield-router" }
+hopr-api = { git = "https://github.com/0xCurvy/hopr-api.git", branch = "lazar/pool-funding" }
 hopr-chain-connector = { git = "https://github.com/0xCurvy/hopr-impls.git", branch = "lazar/shield-router" }
 hopr-utilities = { git = "https://github.com/0xCurvy/hopr-utilities.git", branch = "lazar/shield-router" }
-hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy.git", branch = "lazar/send-through-connector" }
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy.git", branch = "lazar/pool-funding" }
