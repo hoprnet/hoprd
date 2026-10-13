@@ -73,10 +73,10 @@ parking_lot = "0.12.5"
 rstest = "0.27.0"
 oas3 = "0.22.0"
 openapiv3 = "2.2.0"
-opentelemetry = { version = "0.33.1" }
-opentelemetry-otlp = { version = "0.33.1", default-features = false }
-opentelemetry-prometheus-text-exporter = { version = "0.4.0" }
-opentelemetry_sdk = { version = "0.33.1" }
+opentelemetry = { version = "0.32.0" }
+opentelemetry-otlp = { version = "0.32.0", default-features = false }
+opentelemetry-prometheus-text-exporter = { version = "0.3.0" }
+opentelemetry_sdk = { version = "0.32.1" }
 percent-encoding = "2.3.2"
 prettyplease = "0.3.0"
 proc-macro-regex = "~1.1.0"
@@ -116,7 +116,7 @@ tower-http = { version = "0.7.1", features = [
   "sensitive-headers",
 ] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
-tracing-opentelemetry = { version = "0.34.0" }
+tracing-opentelemetry = { version = "0.33.0" }
 tracing-subscriber = { version = "0.3.23", features = [
   "env-filter",
   "fmt",
@@ -124,7 +124,7 @@ tracing-subscriber = { version = "0.3.23", features = [
   "std",
 ] }
 utoipa = { version = "5.5.0" }
-utoipa-scalar = { version = "0.4.0", features = ["axum"] }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 utoipa-swagger-ui = { version = "9.0.2", features = [
   "axum",
   "vendored",

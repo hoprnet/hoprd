@@ -3531,7 +3531,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -6398,9 +6398,9 @@ dependencies = [
  "libp2p-identity",
  "multiaddr",
  "num_enum",
- "opentelemetry 0.32.0",
- "opentelemetry-prometheus-text-exporter 0.3.0",
- "opentelemetry_sdk 0.32.1",
+ "opentelemetry",
+ "opentelemetry-prometheus-text-exporter",
+ "opentelemetry_sdk",
  "poly1305 0.9.1",
  "primitive-types 0.14.0",
  "rand 0.10.3",
@@ -6495,7 +6495,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "5.0.0"
+version = "5.0.1"
 dependencies = [
  "anyhow",
  "async-signal",
@@ -6519,10 +6519,10 @@ dependencies = [
  "if-addrs",
  "lazy_static",
  "mimalloc",
- "opentelemetry 0.33.1",
+ "opentelemetry",
  "opentelemetry-otlp",
- "opentelemetry-prometheus-text-exporter 0.4.0",
- "opentelemetry_sdk 0.33.1",
+ "opentelemetry-prometheus-text-exporter",
+ "opentelemetry_sdk",
  "proc-macro-regex",
  "serde",
  "serde-saphyr",
@@ -6574,7 +6574,7 @@ dependencies = [
  "tower",
  "tower-http 0.7.1",
  "tracing",
- "utoipa 5.5.0",
+ "utoipa",
  "utoipa-scalar",
  "utoipa-swagger-ui",
  "validator",
@@ -6600,7 +6600,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "syn 3.0.9",
- "utoipa 5.5.0",
+ "utoipa",
  "uuid",
 ]
 
@@ -8436,44 +8436,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry"
-version = "0.33.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c1f1a6ac9c875a4941e4c7c085b61e8f4daa326de03b4701768c3491a6ad9ee"
-dependencies = [
- "futures-core",
- "futures-sink",
- "js-sys",
- "pin-project-lite",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
 name = "opentelemetry-http"
-version = "0.33.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "302249bd8ee804789faaa7b5b2cbf79bc61cb864714079c644e3828af5b7e811"
+checksum = "5683015d09e2df236ef005b17f6f196f0d5f6313c4fa43a7b6a53b52776e4331"
 dependencies = [
  "async-trait",
  "bytes",
  "http",
- "opentelemetry 0.33.1",
+ "opentelemetry",
  "reqwest",
 ]
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.33.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0756af24841e367128ef31c831999937b8b5c5197d47914590d8f4e2e88c2e1a"
+checksum = "9966929966d17620d7c316c643ba62631826e10021409357772d5eea84f62c35"
 dependencies = [
  "http",
- "httpdate",
- "opentelemetry 0.33.1",
+ "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk 0.33.1",
+ "opentelemetry_sdk",
  "prost",
  "reqwest",
  "serde_json",
@@ -8489,32 +8474,21 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4fe57ea90b12f643a366aa7c4fa5cfb54bd1cf252f55368337e40534b278a68"
 dependencies = [
- "opentelemetry 0.32.0",
- "opentelemetry_sdk 0.32.1",
- "smartstring",
-]
-
-[[package]]
-name = "opentelemetry-prometheus-text-exporter"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "884d95dfaf00ec1e068b5786ced2ab28f2d264cb3ff2cfd98a7408eed0207e85"
-dependencies = [
- "opentelemetry 0.33.1",
- "opentelemetry_sdk 0.33.1",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "smartstring",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.33.1"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d576f5dddc3299341bcd85a04be17b2564844c0c9563214f02d85f2524d1afae"
+checksum = "56d658ba1faf63f7b9c492cfbe6e0ec365440a16132d3270c1065f7b33f1b638"
 dependencies = [
  "base64 0.22.1",
  "const-hex",
- "opentelemetry 0.33.1",
- "opentelemetry_sdk 0.33.1",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "prost",
  "serde",
  "tonic",
@@ -8530,23 +8504,7 @@ dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
- "opentelemetry 0.32.0",
- "percent-encoding",
- "portable-atomic",
- "rand 0.9.5",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "opentelemetry_sdk"
-version = "0.33.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "372a912db2974d1990207006fd0e3aa0ef3fd4ad3be43c65cfaadf2206866061"
-dependencies = [
- "futures-channel",
- "futures-executor",
- "futures-util",
- "opentelemetry 0.33.1",
+ "opentelemetry",
  "percent-encoding",
  "portable-atomic",
  "rand 0.9.5",
@@ -11411,12 +11369,12 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.34.0"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a904802a1b902f43638b677ff2a650847e3b4404101b6c586d648e8c1e3e8fe"
+checksum = "adbc64cba7137545b8044cb1fe9814f7aacf3c6b5f9b45be8bb5db538befdb26"
 dependencies = [
  "js-sys",
- "opentelemetry 0.33.1",
+ "opentelemetry",
  "smallvec",
  "tracing",
  "tracing-core",
@@ -11680,19 +11638,7 @@ dependencies = [
  "indexmap 2.14.2",
  "serde",
  "serde_json",
- "utoipa-gen 5.5.0",
-]
-
-[[package]]
-name = "utoipa"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8765fe27aeff71012a3f90fa474cf1df863a7d0dd81ed25de4e63fff2544994f"
-dependencies = [
- "indexmap 2.14.2",
- "serde",
- "serde_json",
- "utoipa-gen 6.0.1",
+ "utoipa-gen",
 ]
 
 [[package]]
@@ -11707,26 +11653,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "utoipa-gen"
-version = "6.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d935f1c83fdf8b88f09bbe050d0cea78ea4afee6d7b0317403228c1200b2c8ab"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "utoipa-scalar"
-version = "0.4.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eb5bc76936ceb2bb790a62bec7fb99e22b8ecffca739e3d5a5afec0081ea7f3"
+checksum = "59559e1509172f6b26c1cdbc7247c4ddd1ac6560fe94b584f81ee489b141f719"
 dependencies = [
  "axum",
  "serde",
  "serde_json",
- "utoipa 6.0.0",
+ "utoipa",
 ]
 
 [[package]]
@@ -11743,7 +11678,7 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "utoipa 5.5.0",
+ "utoipa",
  "utoipa-swagger-ui-vendored",
  "zip",
 ]

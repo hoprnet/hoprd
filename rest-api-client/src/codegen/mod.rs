@@ -5,128 +5,12 @@ use progenitor_client::{encode_path, ClientHooks, OperationInfo, RequestBuilderE
 /// Types used as operation parameters and responses.
 #[allow(clippy::all)]
 pub mod types {
-    /// Error types.
-    pub mod error {
-        /// Error from a `TryFrom` or `FromStr` implementation.
-        pub struct ConversionError(::std::borrow::Cow<'static, str>);
-        impl ::std::error::Error for ConversionError {}
-        impl ::std::fmt::Display for ConversionError {
-            fn fmt(
-                &self,
-                f: &mut ::std::fmt::Formatter<'_>,
-            ) -> Result<(), ::std::fmt::Error> {
-                ::std::fmt::Display::fmt(&self.0, f)
-            }
-        }
-        impl ::std::fmt::Debug for ConversionError {
-            fn fmt(
-                &self,
-                f: &mut ::std::fmt::Formatter<'_>,
-            ) -> Result<(), ::std::fmt::Error> {
-                ::std::fmt::Debug::fmt(&self.0, f)
-            }
-        }
-        impl From<&'static str> for ConversionError {
-            fn from(value: &'static str) -> Self {
-                Self(value.into())
-            }
-        }
-        impl From<String> for ConversionError {
-            fn from(value: String) -> Self {
-                Self(value.into())
-            }
-        }
-    }
     ///Contains the node's native addresses.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Contains the node's native addresses.",
-    ///  "examples": [
-    ///    {
-    ///      "native": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "native"
-    ///  ],
-    ///  "properties": {
-    ///    "native": {
-    ///      "examples": [
-    ///        "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct AccountAddressesResponse {
         pub native: ::std::string::String,
     }
     ///Contains all node's and safe's related balances.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Contains all node's and safe's related balances.",
-    ///  "examples": [
-    ///    {
-    ///      "hopr": "1000 wxHOPR",
-    ///      "native": "0.1 xDai",
-    ///      "safeHopr": "1000 wxHOPR",
-    ///      "safeHoprAllowance": "10000 wxHOPR",
-    ///      "safeNative": "0.1 xDai"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "hopr",
-    ///    "native",
-    ///    "safeHopr",
-    ///    "safeHoprAllowance",
-    ///    "safeNative"
-    ///  ],
-    ///  "properties": {
-    ///    "hopr": {
-    ///      "examples": [
-    ///        "2000 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "native": {
-    ///      "examples": [
-    ///        "0.1 xDai"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "safeHopr": {
-    ///      "examples": [
-    ///        "2000 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "safeHoprAllowance": {
-    ///      "examples": [
-    ///        "10000 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "safeNative": {
-    ///      "examples": [
-    ///        "0.1 xDai"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct AccountBalancesResponse {
         pub hopr: ::std::string::String,
@@ -139,52 +23,6 @@ pub mod types {
         pub safe_native: ::std::string::String,
     }
     ///A peer that has been announced.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "A peer that has been announced.",
-    ///  "examples": [
-    ///    {
-    ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "multiaddrs": [
-    ///        "/ip4/178.12.1.9/tcp/19092"
-    ///      ],
-    ///      "origin": "chain"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "address",
-    ///    "multiaddrs",
-    ///    "origin"
-    ///  ],
-    ///  "properties": {
-    ///    "address": {
-    ///      "examples": [
-    ///        "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "multiaddrs": {
-    ///      "examples": [
-    ///        [
-    ///          "/ip4/178.12.1.9/tcp/19092"
-    ///        ]
-    ///      ],
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "origin": {
-    ///      "$ref": "#/components/schemas/AnnouncementOriginResponse"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct AnnouncedPeerResponse {
         pub address: ::std::string::String,
@@ -192,23 +30,6 @@ pub mod types {
         pub origin: AnnouncementOriginResponse,
     }
     ///How a peer announcement was discovered.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "How a peer announcement was discovered.",
-    ///  "examples": [
-    ///    "chain"
-    ///  ],
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "chain",
-    ///    "dht"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(
         ::serde::Deserialize,
         ::serde::Serialize,
@@ -255,14 +76,6 @@ pub mod types {
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String> for AnnouncementOriginResponse {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
     impl ::std::convert::TryFrom<::std::string::String> for AnnouncementOriginResponse {
         type Error = self::error::ConversionError;
         fn try_from(
@@ -272,63 +85,13 @@ pub mod types {
         }
     }
     ///Standardized error response for the API
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Standardized error response for the API",
-    ///  "examples": [
-    ///    {
-    ///      "error": "Invalid value passed in parameter 'XYZ'",
-    ///      "status": "INVALID_INPUT"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "status"
-    ///  ],
-    ///  "properties": {
-    ///    "error": {
-    ///      "examples": [
-    ///        "Invalid value passed in parameter 'XYZ'"
-    ///      ],
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "status": {
-    ///      "examples": [
-    ///        "INVALID_INPUT"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ApiError {
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
         pub status: ::std::string::String,
     }
     ///Direction of a channel relative to this node.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Direction of a channel relative to this node.",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "outgoing",
-    ///    "incoming"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(
         ::serde::Deserialize,
         ::serde::Serialize,
@@ -375,14 +138,6 @@ pub mod types {
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String> for ChannelDirection {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
     impl ::std::convert::TryFrom<::std::string::String> for ChannelDirection {
         type Error = self::error::ConversionError;
         fn try_from(
@@ -392,26 +147,6 @@ pub mod types {
         }
     }
     ///Query parameters selecting which channel (incoming or outgoing) to address.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Query parameters selecting which channel (incoming or outgoing) to address.",
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "direction": {
-    ///      "default": "outgoing",
-    ///      "oneOf": [
-    ///        {
-    ///          "$ref": "#/components/schemas/ChannelDirection"
-    ///        }
-    ///      ]
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ChannelDirectionQuery {
         #[serde(default = "defaults::channel_direction_query_direction")]
@@ -425,94 +160,6 @@ pub mod types {
         }
     }
     ///General information about a channel state.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "General information about a channel state.",
-    ///  "examples": [
-    ///    {
-    ///      "balance": "10 wxHOPR",
-    ///      "channelEpoch": 1,
-    ///      "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "closureTime": 0,
-    ///      "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///      "source": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6",
-    ///      "status": "Open",
-    ///      "ticketIndex": 0
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "balance",
-    ///    "channelEpoch",
-    ///    "channelId",
-    ///    "closureTime",
-    ///    "destination",
-    ///    "source",
-    ///    "status",
-    ///    "ticketIndex"
-    ///  ],
-    ///  "properties": {
-    ///    "balance": {
-    ///      "examples": [
-    ///        "10 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "channelEpoch": {
-    ///      "examples": [
-    ///        1
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int32",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "channelId": {
-    ///      "examples": [
-    ///        "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "closureTime": {
-    ///      "examples": [
-    ///        0
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "destination": {
-    ///      "examples": [
-    ///        "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "source": {
-    ///      "examples": [
-    ///        "0x07eaf07d6624f741e04f4092a755a9027aaab7f6"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "status": {
-    ///      "examples": [
-    ///        "Open"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "ticketIndex": {
-    ///      "examples": [
-    ///        0
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ChannelInfoResponse {
         pub balance: ::std::string::String,
@@ -529,77 +176,6 @@ pub mod types {
         pub ticket_index: i64,
     }
     ///Represents a ticket in a channel.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Represents a ticket in a channel.",
-    ///  "examples": [
-    ///    {
-    ///      "amount": "100",
-    ///      "channelEpoch": 1,
-    ///      "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "index": 0,
-    ///      "indexOffset": 1,
-    ///      "signature": "0xe445fcf4e90d25fe3c9199ccfaff85e23ecce8773304d85e7120f1f38787f2329822470487a37f1b5408c8c0b73e874ee9f7594a632713b6096e616857999891",
-    ///      "winProb": "1"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "amount",
-    ///    "channelEpoch",
-    ///    "channelId",
-    ///    "index",
-    ///    "signature",
-    ///    "winProb"
-    ///  ],
-    ///  "properties": {
-    ///    "amount": {
-    ///      "examples": [
-    ///        "1.0 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "channelEpoch": {
-    ///      "examples": [
-    ///        1
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int32",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "channelId": {
-    ///      "examples": [
-    ///        "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "index": {
-    ///      "examples": [
-    ///        0
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "signature": {
-    ///      "examples": [
-    ///        "0xe445fcf4e90d25fe3c9199ccfaff85e23ecce8773304d85e7120f1f38787f2329822470487a37f1b5408c8c0b73e874ee9f7594a632713b6096e616857999891"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "winProb": {
-    ///      "examples": [
-    ///        "1"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ChannelTicket {
         pub amount: ::std::string::String,
@@ -613,35 +189,7 @@ pub mod types {
         pub win_prob: ::std::string::String,
     }
     ///Parameters for enumerating channels.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Parameters for enumerating channels.",
-    ///  "examples": [
-    ///    {
-    ///      "fullTopology": false,
-    ///      "includingClosed": true
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "fullTopology": {
-    ///      "description": "Should all channels (not only the ones concerning this node) be enumerated?",
-    ///      "default": false,
-    ///      "type": "boolean"
-    ///    },
-    ///    "includingClosed": {
-    ///      "description": "Should be the closed channels included?",
-    ///      "default": false,
-    ///      "type": "boolean"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
     pub struct ChannelsQueryRequest {
         ///Should all channels (not only the ones concerning this node) be enumerated?
         #[serde(rename = "fullTopology", default)]
@@ -650,106 +198,20 @@ pub mod types {
         #[serde(rename = "includingClosed", default)]
         pub including_closed: bool,
     }
-    impl ::std::default::Default for ChannelsQueryRequest {
-        fn default() -> Self {
-            Self {
-                full_topology: Default::default(),
-                including_closed: Default::default(),
-            }
-        }
-    }
     ///Status of the channel after a close operation.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Status of the channel after a close operation.",
-    ///  "examples": [
-    ///    {
-    ///      "receipt": "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "receipt"
-    ///  ],
-    ///  "properties": {
-    ///    "receipt": {
-    ///      "description": "Receipt for the channel close transaction.",
-    ///      "examples": [
-    ///        "0xd77da7c1821249e663dead1464d185c03223d9663a06bc1d46ed0ad449a07118"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct CloseChannelResponse {
         ///Receipt for the channel close transaction.
         pub receipt: ::std::string::String,
     }
     ///`ComponentStatusInfo`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "status"
-    ///  ],
-    ///  "properties": {
-    ///    "detail": {
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "status": {
-    ///      "examples": [
-    ///        "Ready"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ComponentStatusInfo {
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub detail: ::std::option::Option<::std::string::String>,
         pub status: ::std::string::String,
     }
     ///`ComponentStatusesResponse`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "type": "object",
-    ///  "required": [
-    ///    "chain",
-    ///    "network",
-    ///    "transport"
-    ///  ],
-    ///  "properties": {
-    ///    "chain": {
-    ///      "$ref": "#/components/schemas/ComponentStatusInfo"
-    ///    },
-    ///    "network": {
-    ///      "$ref": "#/components/schemas/ComponentStatusInfo"
-    ///    },
-    ///    "transport": {
-    ///      "$ref": "#/components/schemas/ComponentStatusInfo"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ComponentStatusesResponse {
         pub chain: ComponentStatusInfo,
@@ -757,85 +219,12 @@ pub mod types {
         pub transport: ComponentStatusInfo,
     }
     ///Immediate observation data for a connected peer.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Immediate observation data for a connected peer.",
-    ///  "examples": [
-    ///    {
-    ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
-    ///      "probeRate": 0.476,
-    ///      "score": 0.7
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "address",
-    ///    "lastUpdate"
-    ///  ],
-    ///  "properties": {
-    ///    "address": {
-    ///      "examples": [
-    ///        "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "averageLatency": {
-    ///      "description": "Average latency in milliseconds, if available.",
-    ///      "examples": [
-    ///        100
-    ///      ],
-    ///      "type": [
-    ///        "integer",
-    ///        "null"
-    ///      ],
-    ///      "minimum": 0.0
-    ///    },
-    ///    "lastUpdate": {
-    ///      "description": "Epoch milliseconds of the last observation update.",
-    ///      "examples": [
-    ///        1690000000000
-    ///      ],
-    ///      "type": "integer",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "probeRate": {
-    ///      "description": "Average probe rate, if any probe has been measured.\n\nNullable for the same reason as `average_latency` below, which this field now matches:\nhopr-api 2.0 reports an unmeasured observation as absent rather than as zero. Serialising\nthe absent case as `0.0` would be indistinguishable from a peer measured at zero — a peer\nnothing has been learned about yet would read as one known to be failing.",
-    ///      "examples": [
-    ///        0.476
-    ///      ],
-    ///      "type": [
-    ///        "number",
-    ///        "null"
-    ///      ],
-    ///      "format": "double"
-    ///    },
-    ///    "score": {
-    ///      "description": "Edge score, if one has been computed. Nullable as `probe_rate` above.",
-    ///      "examples": [
-    ///        0.7
-    ///      ],
-    ///      "type": [
-    ///        "number",
-    ///        "null"
-    ///      ],
-    ///      "format": "double"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct ConnectedPeerResponse {
         pub address: ::std::string::String,
         ///Average latency in milliseconds, if available.
         #[serde(
             rename = "averageLatency",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub average_latency: ::std::option::Option<u64>,
@@ -850,93 +239,25 @@ the absent case as `0.0` would be indistinguishable from a peer measured at zero
 nothing has been learned about yet would read as one known to be failing.*/
         #[serde(
             rename = "probeRate",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub probe_rate: ::std::option::Option<f64>,
         ///Edge score, if one has been computed. Nullable as `probe_rate` above.
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub score: ::std::option::Option<f64>,
     }
     ///Specifies the amount of HOPR tokens to fund a channel with.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Specifies the amount of HOPR tokens to fund a channel with.",
-    ///  "examples": [
-    ///    {
-    ///      "amount": "10 wxHOPR"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "amount"
-    ///  ],
-    ///  "properties": {
-    ///    "amount": {
-    ///      "description": "Amount of HOPR tokens to fund the channel with.",
-    ///      "examples": [
-    ///        "10 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct FundBodyRequest {
         ///Amount of HOPR tokens to fund the channel with.
         pub amount: ::std::string::String,
     }
     ///Response body for funding a channel.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Response body for funding a channel.",
-    ///  "examples": [
-    ///    {
-    ///      "hash": "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "hash"
-    ///  ],
-    ///  "properties": {
-    ///    "hash": {
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct FundChannelResponse {
         pub hash: ::std::string::String,
     }
     ///IP transport protocol
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "IP transport protocol",
-    ///  "examples": [
-    ///    "tcp"
-    ///  ],
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "tcp",
-    ///    "udp"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(
         ::serde::Deserialize,
         ::serde::Serialize,
@@ -983,14 +304,6 @@ nothing has been learned about yet would read as one known to be failing.*/
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String> for IpProtocol {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
     impl ::std::convert::TryFrom<::std::string::String> for IpProtocol {
         type Error = self::error::ConversionError;
         fn try_from(
@@ -1000,93 +313,12 @@ nothing has been learned about yet would read as one known to be failing.*/
         }
     }
     ///A multiaddress paired with its discovery origin.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "A multiaddress paired with its discovery origin.",
-    ///  "examples": [
-    ///    {
-    ///      "multiaddress": "/ip4/10.0.2.100/tcp/19093",
-    ///      "origin": "chain"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "multiaddress",
-    ///    "origin"
-    ///  ],
-    ///  "properties": {
-    ///    "multiaddress": {
-    ///      "examples": [
-    ///        "/ip4/10.0.2.100/tcp/19093"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "origin": {
-    ///      "$ref": "#/components/schemas/AnnouncementOriginResponse"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct MultiaddressSource {
         pub multiaddress: ::std::string::String,
         pub origin: AnnouncementOriginResponse,
     }
     ///Channel information as seen by the node.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Channel information as seen by the node.",
-    ///  "examples": [
-    ///    {
-    ///      "balance": "10 wxHOPR",
-    ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///      "status": "Open"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "balance",
-    ///    "id",
-    ///    "peerAddress",
-    ///    "status"
-    ///  ],
-    ///  "properties": {
-    ///    "balance": {
-    ///      "examples": [
-    ///        "10 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "id": {
-    ///      "examples": [
-    ///        "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "peerAddress": {
-    ///      "examples": [
-    ///        "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "status": {
-    ///      "examples": [
-    ///        "Open"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeChannel {
         pub balance: ::std::string::String,
@@ -1096,69 +328,6 @@ nothing has been learned about yet would read as one known to be failing.*/
         pub status: ::std::string::String,
     }
     ///Listing of channels.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Listing of channels.",
-    ///  "examples": [
-    ///    {
-    ///      "all": [
-    ///        {
-    ///          "balance": "10 wxHOPR",
-    ///          "channelEpoch": 1,
-    ///          "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///          "closureTime": 0,
-    ///          "destination": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///          "source": "0x07eaf07d6624f741e04f4092a755a9027aaab7f6",
-    ///          "status": "Open",
-    ///          "ticketIndex": 0
-    ///        }
-    ///      ],
-    ///      "incoming": [],
-    ///      "outgoing": [
-    ///        {
-    ///          "balance": "10 wxHOPR",
-    ///          "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///          "peerAddress": "0x188c4462b75e46f0c7262d7f48d182447b93a93c",
-    ///          "status": "Open"
-    ///        }
-    ///      ]
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "all",
-    ///    "incoming",
-    ///    "outgoing"
-    ///  ],
-    ///  "properties": {
-    ///    "all": {
-    ///      "description": "Complete channel topology as seen by this node.",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/ChannelInfoResponse"
-    ///      }
-    ///    },
-    ///    "incoming": {
-    ///      "description": "Channels incoming to this node.",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/NodeChannel"
-    ///      }
-    ///    },
-    ///    "outgoing": {
-    ///      "description": "Channels outgoing from this node.",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/NodeChannel"
-    ///      }
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeChannelsResponse {
         ///Complete channel topology as seen by this node.
@@ -1170,106 +339,6 @@ nothing has been learned about yet would read as one known to be failing.*/
     }
     /**Information about the current node. Covers network, addresses, eligibility, connectivity status, contracts addresses
 and indexer state.*/
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Information about the current node. Covers network, addresses, eligibility, connectivity status, contracts addresses\nand indexer state.",
-    ///  "examples": [
-    ///    {
-    ///      "announcedAddress": [
-    ///        "/ip4/10.0.2.100/tcp/19092"
-    ///      ],
-    ///      "chainStatus": "Ready",
-    ///      "channelClosurePeriod": 15,
-    ///      "connectivityStatus": "Green",
-    ///      "hoprNetworkName": "rotsee",
-    ///      "hoprNodeSafe": "0x42bc901b1d040f984ed626eff550718498a6798a",
-    ///      "listeningAddress": [
-    ///        "/ip4/10.0.2.100/tcp/19092"
-    ///      ],
-    ///      "providerUrl": "https://staging.blokli.hoprnet.link"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "announcedAddress",
-    ///    "chainStatus",
-    ///    "channelClosurePeriod",
-    ///    "connectivityStatus",
-    ///    "hoprNetworkName",
-    ///    "hoprNodeSafe",
-    ///    "listeningAddress",
-    ///    "providerUrl"
-    ///  ],
-    ///  "properties": {
-    ///    "announcedAddress": {
-    ///      "examples": [
-    ///        [
-    ///          "/ip4/10.0.2.100/tcp/19092"
-    ///        ]
-    ///      ],
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "chainStatus": {
-    ///      "description": "Chain/blokli connector status.",
-    ///      "examples": [
-    ///        "Ready"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "channelClosurePeriod": {
-    ///      "description": "Channel closure period in seconds",
-    ///      "examples": [
-    ///        15
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "connectivityStatus": {
-    ///      "examples": [
-    ///        "Green"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "hoprNetworkName": {
-    ///      "examples": [
-    ///        "rotsee"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "hoprNodeSafe": {
-    ///      "examples": [
-    ///        "0x42bc901b1d040f984ed626eff550718498a6798a"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "listeningAddress": {
-    ///      "examples": [
-    ///        [
-    ///          "/ip4/10.0.2.100/tcp/19092"
-    ///        ]
-    ///      ],
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "providerUrl": {
-    ///      "examples": [
-    ///        "https://staging.blokli.hoprnet.link"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeInfoResponse {
         #[serde(rename = "announcedAddress")]
@@ -1292,73 +361,6 @@ and indexer state.*/
         pub provider_url: ::std::string::String,
     }
     ///Comprehensive information about a peer: multiaddresses, QoS observations, and channel state.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Comprehensive information about a peer: multiaddresses, QoS observations, and channel state.",
-    ///  "examples": [
-    ///    {
-    ///      "announcedSources": [
-    ///        {
-    ///          "multiaddress": "/ip4/10.0.2.100/tcp/19093",
-    ///          "origin": "chain"
-    ///        }
-    ///      ],
-    ///      "observed": [
-    ///        "/ip4/10.0.2.100/tcp/19093"
-    ///      ],
-    ///      "outgoingChannel": {
-    ///        "balance": "10 wxHOPR",
-    ///        "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///        "status": "Open"
-    ///      },
-    ///      "qos": {
-    ///        "averageLatency": 100,
-    ///        "lastUpdate": 1690000000000,
-    ///        "probeRate": 0.476,
-    ///        "score": 0.7
-    ///      }
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "announcedSources",
-    ///    "observed"
-    ///  ],
-    ///  "properties": {
-    ///    "announcedSources": {
-    ///      "description": "Announced multiaddresses grouped by discovery origin.",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/MultiaddressSource"
-    ///      }
-    ///    },
-    ///    "incomingChannel": {
-    ///      "$ref": "#/components/schemas/PeerChannelInfo"
-    ///    },
-    ///    "observed": {
-    ///      "examples": [
-    ///        [
-    ///          "/ip4/10.0.2.100/tcp/19093"
-    ///        ]
-    ///      ],
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "outgoingChannel": {
-    ///      "$ref": "#/components/schemas/PeerChannelInfo"
-    ///    },
-    ///    "qos": {
-    ///      "$ref": "#/components/schemas/PeerQosInfo"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodePeerInfoResponse {
         ///Announced multiaddresses grouped by discovery origin.
@@ -1366,71 +368,19 @@ and indexer state.*/
         pub announced_sources: ::std::vec::Vec<MultiaddressSource>,
         #[serde(
             rename = "incomingChannel",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub incoming_channel: ::std::option::Option<PeerChannelInfo>,
         pub observed: ::std::vec::Vec<::std::string::String>,
         #[serde(
             rename = "outgoingChannel",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub outgoing_channel: ::std::option::Option<PeerChannelInfo>,
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub qos: ::std::option::Option<PeerQosInfo>,
     }
     ///`NodeStatusResponse`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "examples": [
-    ///    {
-    ///      "components": {
-    ///        "chain": {
-    ///          "status": "Ready"
-    ///        },
-    ///        "network": {
-    ///          "status": "Ready"
-    ///        },
-    ///        "transport": {
-    ///          "status": "Ready"
-    ///        }
-    ///      },
-    ///      "nodeState": "Node is running",
-    ///      "overall": "Ready"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "components",
-    ///    "nodeState",
-    ///    "overall"
-    ///  ],
-    ///  "properties": {
-    ///    "components": {
-    ///      "$ref": "#/components/schemas/ComponentStatusesResponse"
-    ///    },
-    ///    "nodeState": {
-    ///      "description": "Current node lifecycle state.",
-    ///      "examples": [
-    ///        "Node is running"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "overall": {
-    ///      "description": "Aggregated status across all components.",
-    ///      "examples": [
-    ///        "Ready"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeStatusResponse {
         pub components: ComponentStatusesResponse,
@@ -1441,59 +391,6 @@ and indexer state.*/
         pub overall: ::std::string::String,
     }
     ///Received tickets statistics.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Received tickets statistics.",
-    ///  "examples": [
-    ///    {
-    ///      "neglectedValue": "0 wxHOPR",
-    ///      "redeemedValue": "1000 wxHOPR",
-    ///      "rejectedValue": "0 wxHOPR",
-    ///      "unredeemedValue": "2000 wxHOPR",
-    ///      "winningCount": 0
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "neglectedValue",
-    ///    "rejectedValue",
-    ///    "unredeemedValue",
-    ///    "winningCount"
-    ///  ],
-    ///  "properties": {
-    ///    "neglectedValue": {
-    ///      "examples": [
-    ///        "0 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "rejectedValue": {
-    ///      "examples": [
-    ///        "0 wHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "unredeemedValue": {
-    ///      "examples": [
-    ///        "20 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "winningCount": {
-    ///      "examples": [
-    ///        0
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeTicketStatisticsResponse {
         #[serde(rename = "neglectedValue")]
@@ -1506,73 +403,11 @@ and indexer state.*/
         pub winning_count: i64,
     }
     ///Running node version.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Running node version.",
-    ///  "examples": [
-    ///    {
-    ///      "version": "2.1.0"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "version"
-    ///  ],
-    ///  "properties": {
-    ///    "version": {
-    ///      "examples": [
-    ///        "2.1.0"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct NodeVersionResponse {
         pub version: ::std::string::String,
     }
     ///Request body for opening a channel.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Request body for opening a channel.",
-    ///  "examples": [
-    ///    {
-    ///      "amount": "10 wxHOPR",
-    ///      "destination": "0xa8194d36e322592d4c707b70dbe96121f5c74c64"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "amount",
-    ///    "destination"
-    ///  ],
-    ///  "properties": {
-    ///    "amount": {
-    ///      "description": "Initial amount of stake in HOPR tokens.",
-    ///      "examples": [
-    ///        "10 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "destination": {
-    ///      "description": "On-chain address of the counterparty.",
-    ///      "examples": [
-    ///        "0xa8194d36e322592d4c707b70dbe96121f5c74c64"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct OpenChannelBodyRequest {
         ///Initial amount of stake in HOPR tokens.
@@ -1581,42 +416,6 @@ and indexer state.*/
         pub destination: ::std::string::String,
     }
     ///Response body for opening a channel.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Response body for opening a channel.",
-    ///  "examples": [
-    ///    {
-    ///      "channelId": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "transactionReceipt": "0x5181ac24759b8e01b3c932e4636c3852f386d17517a8dfc640a5ba6f2258f29c"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "channelId",
-    ///    "transactionReceipt"
-    ///  ],
-    ///  "properties": {
-    ///    "channelId": {
-    ///      "description": "ID of the new channel.",
-    ///      "examples": [
-    ///        "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "transactionReceipt": {
-    ///      "description": "Receipt of the channel open transaction.",
-    ///      "examples": [
-    ///        "0x5181ac24759b8e01b3c932e4636c3852f386d17517a8dfc640a5ba6f2258f29c"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct OpenChannelResponse {
         ///ID of the new channel.
@@ -1627,48 +426,6 @@ and indexer state.*/
         pub transaction_receipt: ::std::string::String,
     }
     ///Channel information for a specific peer.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Channel information for a specific peer.",
-    ///  "examples": [
-    ///    {
-    ///      "balance": "10 wxHOPR",
-    ///      "id": "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f",
-    ///      "status": "Open"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "balance",
-    ///    "id",
-    ///    "status"
-    ///  ],
-    ///  "properties": {
-    ///    "balance": {
-    ///      "examples": [
-    ///        "10 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "id": {
-    ///      "examples": [
-    ///        "0x04efc1481d3f106b88527b3844ba40042b823218a9cd29d1aa11c2c2ef8f538f"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "status": {
-    ///      "examples": [
-    ///        "Open"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct PeerChannelInfo {
         pub balance: ::std::string::String,
@@ -1676,76 +433,11 @@ and indexer state.*/
         pub status: ::std::string::String,
     }
     ///QoS observation data for a peer.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "QoS observation data for a peer.",
-    ///  "examples": [
-    ///    {
-    ///      "averageLatency": 100,
-    ///      "lastUpdate": 1690000000000,
-    ///      "probeRate": 0.476,
-    ///      "score": 0.7
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "lastUpdate"
-    ///  ],
-    ///  "properties": {
-    ///    "averageLatency": {
-    ///      "description": "Average latency in milliseconds, if available.",
-    ///      "examples": [
-    ///        100
-    ///      ],
-    ///      "type": [
-    ///        "integer",
-    ///        "null"
-    ///      ],
-    ///      "minimum": 0.0
-    ///    },
-    ///    "lastUpdate": {
-    ///      "description": "Epoch milliseconds of the last observation update.",
-    ///      "examples": [
-    ///        1690000000000
-    ///      ],
-    ///      "type": "integer",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "probeRate": {
-    ///      "description": "Average probe rate, if any probe has been measured.\n\nNullable for the same reason as `average_latency` below, which this field now matches:\nhopr-api 2.0 reports an unmeasured observation as absent rather than as zero, and reporting\nthe absent case as `0.0` would be indistinguishable from a peer measured at zero.",
-    ///      "examples": [
-    ///        0.476
-    ///      ],
-    ///      "type": [
-    ///        "number",
-    ///        "null"
-    ///      ],
-    ///      "format": "double"
-    ///    },
-    ///    "score": {
-    ///      "description": "Edge score, if one has been computed. Nullable as `probe_rate` above.",
-    ///      "examples": [
-    ///        0.7
-    ///      ],
-    ///      "type": [
-    ///        "number",
-    ///        "null"
-    ///      ],
-    ///      "format": "double"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct PeerQosInfo {
         ///Average latency in milliseconds, if available.
         #[serde(
             rename = "averageLatency",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub average_latency: ::std::option::Option<u64>,
@@ -1759,131 +451,27 @@ hopr-api 2.0 reports an unmeasured observation as absent rather than as zero, an
 the absent case as `0.0` would be indistinguishable from a peer measured at zero.*/
         #[serde(
             rename = "probeRate",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub probe_rate: ::std::option::Option<f64>,
         ///Edge score, if one has been computed. Nullable as `probe_rate` above.
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub score: ::std::option::Option<f64>,
     }
     ///Contains the latency and the reported version of a peer that has been pinged.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Contains the latency and the reported version of a peer that has been pinged.",
-    ///  "examples": [
-    ///    {
-    ///      "latency": 200
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "latency"
-    ///  ],
-    ///  "properties": {
-    ///    "latency": {
-    ///      "examples": [
-    ///        200
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int64",
-    ///      "minimum": 0.0
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct PingResponse {
         pub latency: i64,
     }
     ///Request body for ticket redemption with optional fields.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Request body for ticket redemption with optional fields.",
-    ///  "examples": [
-    ///    {
-    ///      "address": "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "address": {
-    ///      "description": "On-chain address of the counterparty whose incoming channel tickets to redeem.\nIf omitted, tickets in all channels are redeemed.",
-    ///      "examples": [
-    ///        "0x188c4462b75e46f0c7262d7f48d182447b93a93c"
-    ///      ],
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
     pub struct RedeemTicketsRequest {
         /**On-chain address of the counterparty whose incoming channel tickets to redeem.
 If omitted, tickets in all channels are redeemed.*/
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub address: ::std::option::Option<::std::string::String>,
     }
-    impl ::std::default::Default for RedeemTicketsRequest {
-        fn default() -> Self {
-            Self {
-                address: Default::default(),
-            }
-        }
-    }
     ///`RoutingOptions`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "examples": [
-    ///    {
-    ///      "Hops": 1
-    ///    }
-    ///  ],
-    ///  "oneOf": [
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "Hops"
-    ///      ],
-    ///      "properties": {
-    ///        "Hops": {
-    ///          "type": "integer",
-    ///          "minimum": 0.0
-    ///        }
-    ///      }
-    ///    },
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "IntermediatePath"
-    ///      ],
-    ///      "properties": {
-    ///        "IntermediatePath": {
-    ///          "type": "array",
-    ///          "items": {
-    ///            "type": "string"
-    ///          }
-    ///        }
-    ///      }
-    ///    }
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub enum RoutingOptions {
         Hops(u64),
@@ -1901,27 +489,6 @@ If omitted, tickets in all channels are redeemed.*/
         }
     }
     ///Session capabilities that can be negotiated with the target peer.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Session capabilities that can be negotiated with the target peer.",
-    ///  "examples": [
-    ///    "Segmentation"
-    ///  ],
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "Segmentation",
-    ///    "Retransmission",
-    ///    "RetransmissionAckOnly",
-    ///    "NoDelay",
-    ///    "NoRateControl",
-    ///    "UsePIX"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(
         ::serde::Deserialize,
         ::serde::Serialize,
@@ -1979,14 +546,6 @@ If omitted, tickets in all channels are redeemed.*/
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String> for SessionCapability {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
     impl ::std::convert::TryFrom<::std::string::String> for SessionCapability {
         type Error = self::error::ConversionError;
         fn try_from(
@@ -1996,122 +555,17 @@ If omitted, tickets in all channels are redeemed.*/
         }
     }
     ///Request body for creating a new client session.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Request body for creating a new client session.",
-    ///  "examples": [
-    ///    {
-    ///      "capabilities": [
-    ///        "Retransmission",
-    ///        "Segmentation"
-    ///      ],
-    ///      "destination": "0x1B482420Afa04aeC1Ef0e4a00C18451E84466c75",
-    ///      "forwardPath": {
-    ///        "Hops": 1
-    ///      },
-    ///      "listenHost": "127.0.0.1:10000",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "responseBuffer": "2 MB",
-    ///      "returnPath": {
-    ///        "Hops": 1
-    ///      },
-    ///      "sessionPool": 0,
-    ///      "target": {
-    ///        "Plain": "localhost:8080"
-    ///      }
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "destination",
-    ///    "forwardPath",
-    ///    "returnPath",
-    ///    "target"
-    ///  ],
-    ///  "properties": {
-    ///    "capabilities": {
-    ///      "description": "Capabilities for the Session protocol.\n\nDefaults to `Segmentation` and `Retransmission` for TCP and nothing for UDP.",
-    ///      "type": [
-    ///        "array",
-    ///        "null"
-    ///      ],
-    ///      "items": {
-    ///        "$ref": "#/components/schemas/SessionCapability"
-    ///      }
-    ///    },
-    ///    "destination": {
-    ///      "description": "Address of the Exit node.",
-    ///      "type": "string"
-    ///    },
-    ///    "flowControl": {
-    ///      "$ref": "#/components/schemas/SessionFlowControl"
-    ///    },
-    ///    "forwardPath": {
-    ///      "$ref": "#/components/schemas/RoutingOptions"
-    ///    },
-    ///    "listenHost": {
-    ///      "description": "Listen host (`ip:port`) for the Session socket at the Entry node.\n\nSupports also partial specification (only `ip` or only `:port`) with the\nrespective part replaced by the node's configured default.",
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "maxClientSessions": {
-    ///      "description": "The maximum number of client sessions that the listener can spawn.\n\nThis currently applies only to the TCP sessions, as UDP sessions cannot\nhandle multiple clients (and spawn therefore always only a single session).\n\nIf this value is smaller than the value specified in `session_pool`, it will\nbe set to that value.\n\nThe default value is 5.",
-    ///      "type": [
-    ///        "integer",
-    ///        "null"
-    ///      ],
-    ///      "minimum": 0.0
-    ///    },
-    ///    "maxSurbUpstream": {
-    ///      "description": "The maximum throughput at which artificial SURBs might be generated and sent\nto the recipient of the Session.\n\nOn Sessions that rarely send data but receive a lot (= Exit node has high SURB consumption),\nthis should roughly match the maximum retrieval throughput.\n\nAll syntaxes like \"2 MBps\", \"1.2Mbps\", \"300 kb/s\", \"1.23 Mb/s\" are supported.",
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "responseBuffer": {
-    ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "returnPath": {
-    ///      "$ref": "#/components/schemas/RoutingOptions"
-    ///    },
-    ///    "sessionPool": {
-    ///      "description": "How many Sessions to pool for clients.\n\nIf no sessions are pooled, they will be opened ad-hoc when a client connects.\nIt has no effect on UDP sessions in the current implementation.\n\nCurrently, the maximum value is 5.",
-    ///      "type": [
-    ///        "integer",
-    ///        "null"
-    ///      ],
-    ///      "minimum": 0.0
-    ///    },
-    ///    "target": {
-    ///      "$ref": "#/components/schemas/SessionTargetSpec"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct SessionClientRequest {
         /**Capabilities for the Session protocol.
 
 Defaults to `Segmentation` and `Retransmission` for TCP and nothing for UDP.*/
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub capabilities: ::std::option::Option<::std::vec::Vec<SessionCapability>>,
         ///Address of the Exit node.
         pub destination: ::std::string::String,
         #[serde(
             rename = "flowControl",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub flow_control: ::std::option::Option<SessionFlowControl>,
@@ -2123,7 +577,6 @@ Supports also partial specification (only `ip` or only `:port`) with the
 respective part replaced by the node's configured default.*/
         #[serde(
             rename = "listenHost",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub listen_host: ::std::option::Option<::std::string::String>,
@@ -2138,7 +591,6 @@ be set to that value.
 The default value is 5.*/
         #[serde(
             rename = "maxClientSessions",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_client_sessions: ::std::option::Option<u64>,
@@ -2151,7 +603,6 @@ this should roughly match the maximum retrieval throughput.
 All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
         #[serde(
             rename = "maxSurbUpstream",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
@@ -2166,7 +617,6 @@ All syntaxes like "2 MB", "128 kiB", "3MiB" are supported. The value must be
 at least the size of 2 Session packet payloads.*/
         #[serde(
             rename = "responseBuffer",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub response_buffer: ::std::option::Option<::std::string::String>,
@@ -2180,140 +630,12 @@ It has no effect on UDP sessions in the current implementation.
 Currently, the maximum value is 5.*/
         #[serde(
             rename = "sessionPool",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub session_pool: ::std::option::Option<u64>,
         pub target: SessionTargetSpec,
     }
     ///Response body for creating a new client session.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Response body for creating a new client session.",
-    ///  "examples": [
-    ///    {
-    ///      "activeClients": [],
-    ///      "destination": "0x5112D584a1C72Fc250176B57aEba5fFbbB287D8F",
-    ///      "forwardPath": {
-    ///        "Hops": 1
-    ///      },
-    ///      "hoprMtu": 1002,
-    ///      "ip": "127.0.0.1",
-    ///      "maxClientSessions": 2,
-    ///      "maxSurbUpstream": "2000 kb/s",
-    ///      "port": 5542,
-    ///      "protocol": "tcp",
-    ///      "responseBuffer": "2 MB",
-    ///      "returnPath": {
-    ///        "Hops": 1
-    ///      },
-    ///      "sessionPool": 0,
-    ///      "surbLen": 398,
-    ///      "target": "example.com:80"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "activeClients",
-    ///    "destination",
-    ///    "forwardPath",
-    ///    "hoprMtu",
-    ///    "ip",
-    ///    "maxClientSessions",
-    ///    "port",
-    ///    "protocol",
-    ///    "returnPath",
-    ///    "surbLen",
-    ///    "target"
-    ///  ],
-    ///  "properties": {
-    ///    "activeClients": {
-    ///      "description": "Lists Session IDs of all active clients.\n\nCan contain multiple entries on TCP sessions, but currently\nalways only a single entry on UDP sessions.",
-    ///      "type": "array",
-    ///      "items": {
-    ///        "type": "string"
-    ///      }
-    ///    },
-    ///    "destination": {
-    ///      "description": "Destination node (exit node) of the Session.",
-    ///      "type": "string"
-    ///    },
-    ///    "forwardPath": {
-    ///      "$ref": "#/components/schemas/RoutingOptions"
-    ///    },
-    ///    "hoprMtu": {
-    ///      "description": "MTU used by the underlying HOPR transport.",
-    ///      "type": "integer",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "ip": {
-    ///      "description": "Listening IP address of the Session's socket.",
-    ///      "examples": [
-    ///        "127.0.0.1"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "maxClientSessions": {
-    ///      "description": "The maximum number of client sessions that the listener can spawn.\n\nThis currently applies only to the TCP sessions, as UDP sessions cannot\nhave multiple clients (defaults to 1 for UDP).",
-    ///      "type": "integer",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "maxSurbUpstream": {
-    ///      "description": "The maximum throughput at which artificial SURBs might be generated and sent\nto the recipient of the Session.",
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "port": {
-    ///      "description": "Listening port of the Session's socket.",
-    ///      "examples": [
-    ///        5542
-    ///      ],
-    ///      "type": "integer",
-    ///      "format": "int32",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "protocol": {
-    ///      "$ref": "#/components/schemas/IpProtocol"
-    ///    },
-    ///    "responseBuffer": {
-    ///      "description": "The amount of response data the Session counterparty can deliver back to us, without us\nsending any SURBs to them.",
-    ///      "type": [
-    ///        "string",
-    ///        "null"
-    ///      ]
-    ///    },
-    ///    "returnPath": {
-    ///      "$ref": "#/components/schemas/RoutingOptions"
-    ///    },
-    ///    "sessionPool": {
-    ///      "description": "How many Sessions to pool for clients.",
-    ///      "type": [
-    ///        "integer",
-    ///        "null"
-    ///      ],
-    ///      "minimum": 0.0
-    ///    },
-    ///    "surbLen": {
-    ///      "description": "Size of a Single Use Reply Block used by the protocol.\n\nThis is useful for SURB balancing calculations.",
-    ///      "type": "integer",
-    ///      "minimum": 0.0
-    ///    },
-    ///    "target": {
-    ///      "description": "Target of the Session.",
-    ///      "examples": [
-    ///        "example.com:80"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct SessionClientResponse {
         /**Lists Session IDs of all active clients.
@@ -2341,7 +663,6 @@ have multiple clients (defaults to 1 for UDP).*/
 to the recipient of the Session.*/
         #[serde(
             rename = "maxSurbUpstream",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
@@ -2352,7 +673,6 @@ to the recipient of the Session.*/
 sending any SURBs to them.*/
         #[serde(
             rename = "responseBuffer",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub response_buffer: ::std::option::Option<::std::string::String>,
@@ -2361,7 +681,6 @@ sending any SURBs to them.*/
         ///How many Sessions to pool for clients.
         #[serde(
             rename = "sessionPool",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub session_pool: ::std::option::Option<u64>,
@@ -2374,32 +693,7 @@ This is useful for SURB balancing calculations.*/
         pub target: ::std::string::String,
     }
     ///`SessionConfig`
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "examples": [
-    ///    {
-    ///      "maxSurbUpstream": "2 Mbps",
-    ///      "responseBuffer": "2 MB"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "properties": {
-    ///    "maxSurbUpstream": {
-    ///      "description": "The maximum throughput at which artificial SURBs might be generated and sent\nto the recipient of the Session.\n\nOn Sessions that rarely send data but receive a lot (= Exit node has high SURB consumption),\nthis should roughly match the maximum retrieval throughput.\n\nAll syntaxes like \"2 MBps\", \"1.2Mbps\", \"300 kb/s\", \"1.23 Mb/s\" are supported.",
-    ///      "type": "string"
-    ///    },
-    ///    "responseBuffer": {
-    ///      "description": "The amount of response data the Session counterparty can deliver back to us,\nwithout us sending any SURBs to them.\n\nIn other words, this size is recalculated to a number of SURBs delivered\nto the counterparty upfront and then maintained.\nThe maintenance is dynamic, based on the number of responses we receive.\n\nAll syntaxes like \"2 MB\", \"128 kiB\", \"3MiB\" are supported. The value must be\nat least the size of 2 Session packet payloads.",
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
     pub struct SessionConfig {
         /**The maximum throughput at which artificial SURBs might be generated and sent
 to the recipient of the Session.
@@ -2410,7 +704,6 @@ this should roughly match the maximum retrieval throughput.
 All syntaxes like "2 MBps", "1.2Mbps", "300 kb/s", "1.23 Mb/s" are supported.*/
         #[serde(
             rename = "maxSurbUpstream",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub max_surb_upstream: ::std::option::Option<::std::string::String>,
@@ -2425,35 +718,11 @@ All syntaxes like "2 MB", "128 kiB", "3MiB" are supported. The value must be
 at least the size of 2 Session packet payloads.*/
         #[serde(
             rename = "responseBuffer",
-            default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub response_buffer: ::std::option::Option<::std::string::String>,
     }
-    impl ::std::default::Default for SessionConfig {
-        fn default() -> Self {
-            Self {
-                max_surb_upstream: Default::default(),
-                response_buffer: Default::default(),
-            }
-        }
-    }
     ///Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.",
-    ///  "type": "string",
-    ///  "enum": [
-    ///    "off",
-    ///    "clean",
-    ///    "robust"
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(
         ::serde::Deserialize,
         ::serde::Serialize,
@@ -2504,14 +773,6 @@ at least the size of 2 Session packet payloads.*/
             value.parse()
         }
     }
-    impl ::std::convert::TryFrom<&::std::string::String> for SessionFlowControl {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
     impl ::std::convert::TryFrom<::std::string::String> for SessionFlowControl {
         type Error = self::error::ConversionError;
         fn try_from(
@@ -2521,62 +782,6 @@ at least the size of 2 Session packet payloads.*/
         }
     }
     ///Session target specification.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Session target specification.",
-    ///  "examples": [
-    ///    {
-    ///      "Service": 0
-    ///    }
-    ///  ],
-    ///  "oneOf": [
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "Plain"
-    ///      ],
-    ///      "properties": {
-    ///        "Plain": {
-    ///          "type": "string"
-    ///        }
-    ///      }
-    ///    },
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "Sealed"
-    ///      ],
-    ///      "properties": {
-    ///        "Sealed": {
-    ///          "type": "array",
-    ///          "items": {
-    ///            "type": "integer",
-    ///            "format": "int32",
-    ///            "minimum": 0.0
-    ///          }
-    ///        }
-    ///      }
-    ///    },
-    ///    {
-    ///      "type": "object",
-    ///      "required": [
-    ///        "Service"
-    ///      ],
-    ///      "properties": {
-    ///        "Service": {
-    ///          "type": "integer",
-    ///          "format": "int32",
-    ///          "minimum": 0.0
-    ///        }
-    ///      }
-    ///    }
-    ///  ]
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub enum SessionTargetSpec {
         Plain(::std::string::String),
@@ -2594,139 +799,24 @@ at least the size of 2 Session packet payloads.*/
         }
     }
     ///Contains the ticket price in HOPR tokens.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Contains the ticket price in HOPR tokens.",
-    ///  "examples": [
-    ///    {
-    ///      "price": "0.03 wxHOPR"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "price"
-    ///  ],
-    ///  "properties": {
-    ///    "price": {
-    ///      "description": "Price of the ticket in HOPR tokens.",
-    ///      "examples": [
-    ///        "0.03 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct TicketPriceResponse {
         ///Price of the ticket in HOPR tokens.
         pub price: ::std::string::String,
     }
     ///Contains the winning probability of a ticket.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Contains the winning probability of a ticket.",
-    ///  "examples": [
-    ///    {
-    ///      "probability": 0.5
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "probability"
-    ///  ],
-    ///  "properties": {
-    ///    "probability": {
-    ///      "description": "Winning probability of a ticket.",
-    ///      "examples": [
-    ///        0.5
-    ///      ],
-    ///      "type": "number",
-    ///      "format": "double"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct TicketProbabilityResponse {
         ///Winning probability of a ticket.
         pub probability: f64,
     }
     ///Request body for the withdrawal endpoint.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Request body for the withdrawal endpoint.",
-    ///  "examples": [
-    ///    {
-    ///      "address": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe",
-    ///      "amount": "20000 wxHOPR"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "address",
-    ///    "amount"
-    ///  ],
-    ///  "properties": {
-    ///    "address": {
-    ///      "examples": [
-    ///        "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe"
-    ///      ],
-    ///      "type": "string"
-    ///    },
-    ///    "amount": {
-    ///      "examples": [
-    ///        "20000 wxHOPR"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct WithdrawBodyRequest {
         pub address: ::std::string::String,
         pub amount: ::std::string::String,
     }
     ///Response body for the withdrawal endpoint.
-    ///
-    /// <details><summary>JSON schema</summary>
-    ///
-    /// ```json
-    ///{
-    ///  "description": "Response body for the withdrawal endpoint.",
-    ///  "examples": [
-    ///    {
-    ///      "receipt": "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe"
-    ///    }
-    ///  ],
-    ///  "type": "object",
-    ///  "required": [
-    ///    "receipt"
-    ///  ],
-    ///  "properties": {
-    ///    "receipt": {
-    ///      "examples": [
-    ///        "0xb4ce7e6e36ac8b01a974725d5ba730af2b156fbe"
-    ///      ],
-    ///      "type": "string"
-    ///    }
-    ///  }
-    ///}
-    /// ```
-    /// </details>
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct WithdrawResponse {
         pub receipt: ::std::string::String,
@@ -2735,6 +825,38 @@ at least the size of 2 Session packet payloads.*/
     pub mod defaults {
         pub(super) fn channel_direction_query_direction() -> super::ChannelDirection {
             super::ChannelDirection::Outgoing
+        }
+    }
+    /// Error types.
+    pub mod error {
+        /// Error from a `TryFrom` or `FromStr` implementation.
+        pub struct ConversionError(::std::borrow::Cow<'static, str>);
+        impl ::std::error::Error for ConversionError {}
+        impl ::std::fmt::Display for ConversionError {
+            fn fmt(
+                &self,
+                f: &mut ::std::fmt::Formatter<'_>,
+            ) -> Result<(), ::std::fmt::Error> {
+                ::std::fmt::Display::fmt(&self.0, f)
+            }
+        }
+        impl ::std::fmt::Debug for ConversionError {
+            fn fmt(
+                &self,
+                f: &mut ::std::fmt::Formatter<'_>,
+            ) -> Result<(), ::std::fmt::Error> {
+                ::std::fmt::Debug::fmt(&self.0, f)
+            }
+        }
+        impl From<&'static str> for ConversionError {
+            fn from(value: &'static str) -> Self {
+                Self(value.into())
+            }
+        }
+        impl From<String> for ConversionError {
+            fn from(value: String) -> Self {
+                Self(value.into())
+            }
         }
     }
 }
