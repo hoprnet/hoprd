@@ -260,6 +260,7 @@ mod tests {
             hopr: Arc::new(node),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            pix_funding: None,
             session_flow_control: Default::default(),
         });
 
@@ -333,6 +334,7 @@ mod tests {
             hopr: Arc::new(node),
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            pix_funding: None,
             session_flow_control: Default::default(),
         });
 

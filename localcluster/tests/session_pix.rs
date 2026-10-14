@@ -372,6 +372,7 @@ fn pix_settings(
         spend_window: SPEND_WINDOW,
         max_deposit_tracking_time: MAX_DEPOSIT_TRACKING_TIME,
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
+        funding: None,
     })
 }
 

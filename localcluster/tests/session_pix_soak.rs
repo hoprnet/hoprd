@@ -166,18 +166,19 @@
 //!
 //! Against a `strategy-pix-curvy` binary the money moves differently, and the assertions follow:
 //!
-//! * The Entry's Safe pays **once**: the pool shields [`curvy_shield`] into the Curvy vault on
-//!   the first deposit and allocates every SSA deposit out of that note, so the Safe delta is the
-//!   shield and not a count of deposits — those are taken from the strategy's own metric. The
-//!   shield is sized by this test and handed to the pool through `HOPRD_CURVY_INITIAL_FUNDING`,
-//!   gross of the vault's deposit fee.
+//! * The Entry's Safe pays **once**: the strategy's funding policy shields [`curvy_shield`] into
+//!   the Curvy vault when the node starts, and the pool allocates every SSA deposit out of that
+//!   note, so the Safe delta is the shield and not a count of deposits — those are taken from the
+//!   strategy's own metric. The shield is sized by this test and handed to the strategy as the
+//!   policy's `top_up`, gross of the vault's deposit fee, with the floor at one deposit: the net
+//!   shield covers every deposit the budget allows, so the pool never drops below the floor
+//!   before the budget stops the deposits.
 //! * The Exit is credited by the vault **less its withdrawal fee** (20 bps on the pinned chain
 //!   image), so a sweep lands `per_cycle` minus the fee. Both fees are read from Blokli once the
 //!   chain is up rather than assumed.
-//! * The first cycle carries the shield — a Safe transfer, the shield transaction, a commitment
-//!   proof and an aggregation proof, each waiting for a block — and was measured at 17–20 s where
-//!   the plain pool settles in 2–10 s. The kill switch is armed with the wider
-//!   [`CURVY_MAX_DEPOSIT_WAIT`] fuse.
+//! * The first cycle waits for the shield's commitment and its own aggregation proof, each
+//!   waiting for a block, and was measured at 17–20 s where the plain pool settles in 2–10 s. The
+//!   kill switch is armed with the wider [`CURVY_MAX_DEPOSIT_WAIT`] fuse.
 //!
 //! What such a run shows is the point of the pool: the Entry's Safe pays the vault and the vault
 //! pays the Exit, and nothing on chain ties the two. `localcluster/scripts/curvy-demo.sh` renders
@@ -211,6 +212,7 @@ use common::{
     ports,
 };
 use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
+use hopr_strategy::pix::strategy::PixFundingPolicy;
 use hoprd_localcluster::{client_helper, identity};
 use pix_soak_monitor::SessionMonitor;
 use tokio::net::UdpSocket;
@@ -516,7 +518,6 @@ const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
 /// The pool's own knobs, read from the node's environment. `hopr_strategy::pix::pools::curvy`
 /// names them; they are restated here because the harness is built with the plain pool and that
 /// module is not in its graph.
-const CURVY_INITIAL_FUNDING_ENV: &str = "HOPRD_CURVY_INITIAL_FUNDING";
 const CURVY_OPERATOR_KEY_ENV: &str = "HOPRD_CURVY_OPERATOR_PRIVATE_KEY";
 /// Read by the Curvy SDK, which proves in-process and needs the zkeys on disk.
 const CURVY_ZK_KEYS_ENV: &str = "CURVY_ZK_KEYS_DIR";
@@ -688,7 +689,7 @@ fn curvy_shield(net: HoprBalance) -> HoprBalance {
 
 /// Validate Curvy configuration before bootstrap and size the direct shield.
 /// Relayed nodes need no operator key; manual operator runs retain the deployer default.
-fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> {
+fn curvy_node_env() -> anyhow::Result<Vec<(String, String)>> {
     let zk_keys = std::env::var(CURVY_ZK_KEYS_ENV).with_context(|| {
         format!(
             "{CURVY_ZK_KEYS_ENV} must point at the Curvy proving keys for a Curvy binary: the \
@@ -699,12 +700,7 @@ fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> 
         Path::new(&zk_keys).is_dir(),
         "{CURVY_ZK_KEYS_ENV}={zk_keys} is not a directory"
     );
-    anyhow::ensure!(
-        std::env::var_os(CURVY_INITIAL_FUNDING_ENV).is_none(),
-        "{CURVY_INITIAL_FUNDING_ENV} is set, but this test sizes the shield itself ({shield}) and \
-         asserts that the Safe paid exactly that; unset it"
-    );
-    let mut env = vec![(CURVY_INITIAL_FUNDING_ENV.to_string(), shield.to_string())];
+    let mut env = Vec::new();
     match std::env::var("HOPRD_CURVY_SUBMISSION").as_deref() {
         Ok("operator") => {
             let key = std::env::var(CURVY_OPERATOR_KEY_ENV)
@@ -794,6 +790,7 @@ fn pix_settings(
     safe_deposit_float: HoprBalance,
     budget: HoprBalance,
     pool: Pool,
+    funding: Option<PixFundingPolicy>,
 ) -> anyhow::Result<identity::PixSettings> {
     Ok(identity::PixSettings {
         num_ssa_parts: PIX_POLYS as usize,
@@ -866,6 +863,7 @@ fn pix_settings(
             .parse()
             .context("parsing max SSA allocation")?,
         max_spend_per_window: budget,
+        funding,
         // Far past `DEFAULT_RUN_BUDGET` and past any plausible `HOPRD_PIX_SOAK_FLOAT` override.
         // A window that rolled mid-run would refill the budget and the run would never end.
         spend_window: Duration::from_secs(24 * 3600),
@@ -1103,10 +1101,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
     // shield with Curvy.
     let (safe_outlay, node_env) = match pool {
         Pool::Test => (float, Vec::new()),
-        Pool::Curvy => {
-            let shield = curvy_shield(float);
-            (shield, curvy_node_env(shield)?)
-        }
+        Pool::Curvy => (curvy_shield(float), curvy_node_env()?),
     };
     // Refuse a rate whose buffer would not fit, rather than running it and reporting the damage
     // hundreds of lines later as an unexplained stranded deposit. Evicted SURBs lose their shares
@@ -1157,7 +1152,22 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         // float — the same figure with the plain pool, the shield with Curvy. The budget is what
         // binds — the Safe additionally holds whatever the channel stakes left behind, so its
         // balance alone would run the Entry several cycles past `funded_cycles`.
-        pix: Some(pix_settings(safe_outlay, float, pool)?),
+        // The Entry's Safe pays once: with Curvy the strategy's funding policy shields the
+        // whole outlay before the first deposit (the pool holds nothing, which is below one
+        // deposit's worth) and never again, since the budget stops deposits before the
+        // funding drops below that floor. The plain pool's funding is the Safe itself.
+        pix: Some(pix_settings(
+            safe_outlay,
+            float,
+            pool,
+            match pool {
+                Pool::Curvy => Some(PixFundingPolicy {
+                    min_available: per_cycle,
+                    top_up: safe_outlay,
+                }),
+                Pool::Test => None,
+            },
+        )?),
         logs_to: Some("/tmp/pix-soak-logs"),
         node_env,
         ..ClusterSpec::new(ports::SESSION_PIX_SOAK)
