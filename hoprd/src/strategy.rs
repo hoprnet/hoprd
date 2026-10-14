@@ -388,15 +388,13 @@ where
     build_strategies_inner(cfg, node, chain_key)
 }
 
-// `chain_key` is unread unless a PIX pool is compiled in; see `build_strategies`. Both pools
-// take it now — the plain one signs its deposit transfers with it, and the Curvy one drives the
-// node's Safe through its permission module, whose `execTransactionFromModule` accepts no other
-// signer — so with neither, `chain_key` reaches nothing but the recursive call below, which is
-// what both of these lints are pointing at. Gated on the features rather than blanket-allowed,
-// so the day something else here needs the key, an unused one is still caught in the builds
-// that have it.
+// `chain_key` is unread unless the plain PIX pool is compiled in; see `build_strategies`. The
+// Curvy pool no longer takes it — its direct shield is submitted by the node's chain API — so
+// without the plain pool `chain_key` reaches nothing but the recursive call below, which is what
+// both of these lints are pointing at. Gated on the feature rather than blanket-allowed, so the
+// day something else here needs the key, an unused one is still caught in the build that has it.
 #[cfg_attr(
-    not(any(feature = "strategy-pix-test", feature = "strategy-pix-curvy")),
+    not(feature = "strategy-pix-test"),
     allow(
         unused_variables,
         clippy::only_used_in_recursion,
@@ -492,11 +490,7 @@ where
                     )?;
                 #[cfg(all(feature = "strategy-pix-curvy", not(feature = "strategy-pix-test")))]
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
-                    .build_curvy::<_, SpecDepositAddress>(
-                        Arc::clone(&node),
-                        chain_key.clone(),
-                        sub_cfg.pool.clone(),
-                    )?;
+                    .build_curvy::<_, SpecDepositAddress>(Arc::clone(&node), sub_cfg.pool.clone())?;
                 strategies.push(built);
             }
             // Unreachable: `StrategyKind::validate` rejects this stanza before a node with it in
