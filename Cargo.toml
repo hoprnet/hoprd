@@ -17,6 +17,10 @@ hoprd-api-client = { path = "rest-api-client" }
 
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
+# Same rev as `hopr-lib`: the relay benchmark drives its packet codec directly.
+hopr-crypto-packet = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
+hopr-protocol-hopr = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
+hopr-protocol-pix = { git = "https://github.com/hoprnet/hoprnet", rev = "6c66dddd6130cd99c1824b34894438e254b288c4", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=4.3.2" }
@@ -65,6 +69,7 @@ humantime-serde = "1.1.1"
 if-addrs = "0.15.0"
 lazy_static = "1.5.1"
 mockall = "0.15.0"
+moka = { version = "0.12.16", features = ["sync"] }
 mimalloc = { version = "0.1.52", default-features = false, features = [
   "secure",
 ] }

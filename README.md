@@ -82,6 +82,18 @@ Key config options:
 
 OpenAPI spec is generated at build time. Served at `http://localhost:3001/scalar` (Scalar UI) and `http://localhost:3001/swagger-ui` when the node is running.
 
+### Relay throughput benchmark
+
+Measures how many packets per second this node's CPU can relay. The node prepares synthetic traffic routed through itself, then relays it at full speed: SPHINX processing, ticket validation and re-issue, and acknowledgements in both directions. It never touches the node's keys, channels, tickets or packet metrics, and network I/O is not measured. It shares the CPU pool with live traffic, so relaying slows down while it runs.
+
+```bash
+curl -X POST -H "X-Auth-Token: $TOKEN" http://localhost:3001/api/v4/node/benchmark/relay \
+  -H 'Content-Type: application/json' -d '{"packets": 20000}'
+curl -H "X-Auth-Token: $TOKEN" http://localhost:3001/api/v4/node/benchmark/relay
+```
+
+The body is optional (`packets` defaults to 20000, at most 100000; `concurrency` defaults to the packet pipeline's own). Poll the `GET` until `state` is `completed` or `failed`; `result.packetsPerSecond` and `result.megabitsPerSecond` give the throughput.
+
 ## Development
 
 ```bash
