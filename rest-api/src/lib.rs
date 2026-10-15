@@ -2,6 +2,7 @@
 pub mod config;
 
 mod account;
+mod benchmark;
 mod channels;
 mod checks;
 mod middleware;
@@ -112,6 +113,7 @@ pub(crate) struct InternalState<H> {
     pub default_listen_host: std::net::SocketAddr,
     /// Flow-control profile applied to sessions this node initiates as a client.
     pub session_flow_control: crate::config::SessionFlowControl,
+    pub relay_benchmark: Arc<benchmark::RelayBenchmark>,
 }
 
 impl<H> Clone for InternalState<H> {
@@ -124,6 +126,7 @@ impl<H> Clone for InternalState<H> {
             open_listeners: self.open_listeners.clone(),
             default_listen_host: self.default_listen_host,
             session_flow_control: self.session_flow_control,
+            relay_benchmark: self.relay_benchmark.clone(),
         }
     }
 }
@@ -134,6 +137,8 @@ impl<H> Clone for InternalState<H> {
         account::addresses,
         account::balances,
         account::withdraw,
+        benchmark::relay_benchmark,
+        benchmark::start_relay_benchmark,
         channels::close_channel,
         channels::fund_channel,
         channels::list_channels,
@@ -167,6 +172,7 @@ impl<H> Clone for InternalState<H> {
         schemas(
             ApiError,
             account::AccountAddressesResponse, account::AccountBalancesResponse, account::WithdrawBodyRequest, account::WithdrawResponse,
+            benchmark::RelayBenchmarkRequest, benchmark::RelayBenchmarkResponse, benchmark::RelayBenchmarkResult, benchmark::RelayBenchmarkState,
             channels::ChannelsQueryRequest,channels::CloseChannelResponse, channels::OpenChannelBodyRequest, channels::OpenChannelResponse, channels::FundChannelResponse,
             channels::NodeChannel, channels::NodeChannelsResponse, channels::ChannelInfoResponse, channels::FundBodyRequest,
             channels::ChannelDirection, channels::ChannelDirectionQuery,
@@ -351,6 +357,7 @@ where
         open_listeners,
         default_listen_host,
         session_flow_control: cfg.session_flow_control,
+        relay_benchmark: Default::default(),
     };
 
     Router::new()
@@ -431,6 +438,11 @@ where
                 .route("/node/configuration", get(node::configuration::<H>))
                 .route("/node/info", get(node::info::<H>))
                 .route("/node/status", get(node::status::<H>))
+                .route(
+                    "/node/benchmark/relay",
+                    get(benchmark::relay_benchmark::<H>)
+                        .post(benchmark::start_relay_benchmark::<H>),
+                )
                 .route("/peers/{address}/ping", post(peers::ping_peer::<H>))
                 .route("/session/config/{id}", get(session::session_config::<H>))
                 .route("/session/config/{id}", post(session::adjust_session::<H>))
@@ -531,6 +543,7 @@ enum ApiErrorStatus {
     ListenHostAlreadyUsed,
     SessionNotFound,
     InvalidSessionId,
+    BenchmarkInProgress,
     #[strum(serialize = "UNKNOWN_FAILURE")]
     UnknownFailure(String),
 }
@@ -570,7 +583,7 @@ impl IntoResponse for ApiErrorStatus {
             | Self::TicketsNotFound
             | Self::SessionNotFound => StatusCode::NOT_FOUND,
             Self::Timeout => StatusCode::REQUEST_TIMEOUT,
-            Self::ListenHostAlreadyUsed => StatusCode::CONFLICT,
+            Self::ListenHostAlreadyUsed | Self::BenchmarkInProgress => StatusCode::CONFLICT,
             Self::NotReady => StatusCode::PRECONDITION_FAILED,
             Self::InvalidQuality | Self::PingError(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::UnknownFailure(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -653,6 +666,7 @@ mod tests {
     #[case(ApiErrorStatus::SessionNotFound, StatusCode::NOT_FOUND)]
     #[case(ApiErrorStatus::Timeout, StatusCode::REQUEST_TIMEOUT)]
     #[case(ApiErrorStatus::ListenHostAlreadyUsed, StatusCode::CONFLICT)]
+    #[case(ApiErrorStatus::BenchmarkInProgress, StatusCode::CONFLICT)]
     #[case(ApiErrorStatus::NotReady, StatusCode::PRECONDITION_FAILED)]
     #[case(ApiErrorStatus::InvalidQuality, StatusCode::UNPROCESSABLE_ENTITY)]
     #[case(ApiErrorStatus::PingError("fail".into()), StatusCode::UNPROCESSABLE_ENTITY)]

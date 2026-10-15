@@ -471,6 +471,157 @@ If omitted, tickets in all channels are redeemed.*/
         #[serde(skip_serializing_if = "::std::option::Option::is_none")]
         pub address: ::std::option::Option<::std::string::String>,
     }
+    ///Parameters of a relay benchmark run.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
+    #[serde(deny_unknown_fields)]
+    pub struct RelayBenchmarkRequest {
+        ///Number of packets decoded concurrently. Defaults to the packet pipeline's own setting.
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub concurrency: ::std::option::Option<::std::num::NonZeroU32>,
+        /**Number of packets to relay. Defaults to 20000, at most 100000. Prepared traffic is held in
+memory, about 3.7 kB per packet.*/
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub packets: ::std::option::Option<::std::num::NonZeroU32>,
+    }
+    ///Latest relay benchmark run.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct RelayBenchmarkResponse {
+        ///Number of packets the run decodes concurrently.
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub concurrency: ::std::option::Option<i32>,
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        ///Unix timestamp in seconds.
+        #[serde(
+            rename = "finishedAt",
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub finished_at: ::std::option::Option<i64>,
+        ///Number of packets the run relays.
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub packets: ::std::option::Option<i32>,
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub result: ::std::option::Option<RelayBenchmarkResult>,
+        ///Unix timestamp in seconds.
+        #[serde(
+            rename = "startedAt",
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub started_at: ::std::option::Option<i64>,
+        pub state: RelayBenchmarkState,
+    }
+    ///Measured relay throughput.
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    pub struct RelayBenchmarkResult {
+        ///Packets carrying those acknowledgements.
+        #[serde(rename = "acknowledgementPacketsSent")]
+        pub acknowledgement_packets_sent: i64,
+        ///Acknowledgements signed and sent back to the previous hop.
+        #[serde(rename = "acknowledgementsSent")]
+        pub acknowledgements_sent: i64,
+        ///Relayed bytes per second, in each direction.
+        #[serde(rename = "bytesPerSecond")]
+        pub bytes_per_second: f64,
+        ///Threads of the CPU pool packet processing runs on.
+        #[serde(rename = "cpuThreads")]
+        pub cpu_threads: i64,
+        ///Time spent relaying.
+        #[serde(rename = "durationMs")]
+        pub duration_ms: i64,
+        ///First failure seen while relaying, if any.
+        #[serde(
+            rename = "firstError",
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub first_error: ::std::option::Option<::std::string::String>,
+        ///Relayed megabits per second, in each direction.
+        #[serde(rename = "megabitsPerSecond")]
+        pub megabits_per_second: f64,
+        ///Size of a HOPR packet on the wire.
+        #[serde(rename = "packetSize")]
+        pub packet_size: i64,
+        #[serde(rename = "packetsPerSecond")]
+        pub packets_per_second: f64,
+        ///Time spent generating the traffic; not part of the measurement.
+        #[serde(rename = "preparationMs")]
+        pub preparation_ms: i64,
+        ///Packets the relay refused to forward.
+        #[serde(rename = "rejectedPackets")]
+        pub rejected_packets: i64,
+        ///Packets forwarded to the next hop.
+        #[serde(rename = "relayedPackets")]
+        pub relayed_packets: i64,
+        ///Tickets the next hop's acknowledgements turned into winning tickets.
+        #[serde(rename = "ticketsAcknowledged")]
+        pub tickets_acknowledged: i64,
+    }
+    ///Stage of a relay benchmark run.
+    #[derive(
+        ::serde::Deserialize,
+        ::serde::Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd
+    )]
+    pub enum RelayBenchmarkState {
+        #[serde(rename = "idle")]
+        Idle,
+        #[serde(rename = "preparing")]
+        Preparing,
+        #[serde(rename = "relaying")]
+        Relaying,
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "failed")]
+        Failed,
+    }
+    impl ::std::fmt::Display for RelayBenchmarkState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Idle => f.write_str("idle"),
+                Self::Preparing => f.write_str("preparing"),
+                Self::Relaying => f.write_str("relaying"),
+                Self::Completed => f.write_str("completed"),
+                Self::Failed => f.write_str("failed"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for RelayBenchmarkState {
+        type Err = self::error::ConversionError;
+        fn from_str(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "idle" => Ok(Self::Idle),
+                "preparing" => Ok(Self::Preparing),
+                "relaying" => Ok(Self::Relaying),
+                "completed" => Ok(Self::Completed),
+                "failed" => Ok(Self::Failed),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for RelayBenchmarkState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &str,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for RelayBenchmarkState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     ///`RoutingOptions`
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub enum RoutingOptions {
@@ -1471,6 +1622,88 @@ Sends a `GET` request to `/api/v4/network/probability`
         let response = result?;
         match response.status().as_u16() {
             200u16 => ResponseValue::from_response(response).await,
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /**Get the state and result of the latest relay throughput benchmark
+
+Get the state and result of the latest relay throughput benchmark
+
+Sends a `GET` request to `/api/v4/node/benchmark/relay`
+
+*/
+    pub async fn relay_benchmark<'a>(
+        &'a self,
+    ) -> Result<ResponseValue<types::RelayBenchmarkResponse>, Error<()>> {
+        let url = format!("{}/api/v4/node/benchmark/relay", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map
+            .append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+            );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .get(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "relay_benchmark",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => ResponseValue::from_response(response).await,
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /**Start a relay throughput benchmark
+
+Start a relay throughput benchmark. Synthetic traffic routed through this node is prepared first, then relayed as fast as the node's CPU allows: SPHINX processing, ticket validation and re-issue, and acknowledgements in both directions. Network I/O is not measured. The benchmark shares the CPU pool with live traffic and slows it down while running. Poll the GET endpoint for the result.
+
+Sends a `POST` request to `/api/v4/node/benchmark/relay`
+
+Arguments:
+- `body`: Benchmark parameters, all optional. The body may be omitted.
+*/
+    pub async fn start_relay_benchmark<'a>(
+        &'a self,
+        body: &'a types::RelayBenchmarkRequest,
+    ) -> Result<ResponseValue<types::RelayBenchmarkResponse>, Error<()>> {
+        let url = format!("{}/api/v4/node/benchmark/relay", self.baseurl,);
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map
+            .append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+            );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .post(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "start_relay_benchmark",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            202u16 => ResponseValue::from_response(response).await,
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
