@@ -155,16 +155,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1785412696,
-        "narHash": "sha256-xXOyWF8zHVcgGzwdiWDuDX1ki24qbHqZjNLrQkk39yM=",
+        "lastModified": 1791286840,
+        "narHash": "sha256-GPzVQKKAyoHEXDTokne8SPcHN/7LsvV3VwLaL9/hWOQ=",
         "owner": "hoprnet",
         "repo": "nix-lib",
-        "rev": "e4d33e7c4ebc9ce3797a61b1e81fb06bab3dbac4",
+        "rev": "edb981cf08d90bedfd5f823d0b7f0240be3f86b0",
         "type": "github"
       },
       "original": {
         "owner": "hoprnet",
-        "ref": "v1.3.0",
+        "ref": "tb/202610-musl-arm-builder",
         "repo": "nix-lib",
         "type": "github"
       }
