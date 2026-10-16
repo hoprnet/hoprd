@@ -25,10 +25,10 @@
 
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     future,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use anyhow::Context;
@@ -87,6 +87,52 @@ pub struct RelayConfig {
     pub p2p_port_base: u16,
     /// Latency model resolved per directed link.
     pub latency: Arc<LatencyConfig>,
+    /// Directed links `(src, dst)` whose datagrams are dropped, to partition two nodes at runtime.
+    pub blocked: BlockedLinks,
+    /// Directed links that periodically hold every datagram back, to emulate a relay that trickles.
+    pub stalled: StalledLinks,
+}
+
+/// A link stalls for `stall` out of every `period`, holding each datagram an extra `delay`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stall {
+    pub period: std::time::Duration,
+    pub stall: std::time::Duration,
+    pub delay: std::time::Duration,
+}
+
+/// Directed node links currently stalling, shared by every relay.
+pub type StalledLinks = Arc<RwLock<HashMap<(usize, usize), Stall>>>;
+
+/// Extra hold for a datagram entering link `src -> dst` now: `delay` inside a stall window, else 0.
+fn stall_delay(stalled: &StalledLinks, src: usize, dst: usize) -> std::time::Duration {
+    let Some(stall) = stalled
+        .read()
+        .ok()
+        .and_then(|links| links.get(&(src, dst)).copied())
+    else {
+        return std::time::Duration::ZERO;
+    };
+    let period_ms = stall.period.as_millis().max(1);
+    let phase_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        % period_ms;
+    if phase_ms < stall.stall.as_millis() {
+        stall.delay
+    } else {
+        std::time::Duration::ZERO
+    }
+}
+
+/// Directed node links currently cut, shared by every relay.
+pub type BlockedLinks = Arc<RwLock<HashSet<(usize, usize)>>>;
+
+fn is_blocked(blocked: &BlockedLinks, src: usize, dst: usize) -> bool {
+    blocked
+        .read()
+        .is_ok_and(|links| links.contains(&(src, dst)))
 }
 
 /// Handle to a running relay; aborts the relay task on [`RelayHandle::abort`].
@@ -164,12 +210,19 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
             }
         }
 
+        if is_blocked(&cfg.blocked, peer_index(&cfg, peer), cfg.node_id) {
+            continue;
+        }
         let datagram = buf[..len].to_vec();
         let session = sessions.get_mut(&peer).expect("inserted above");
         session.last_seen = Instant::now();
         // Forward leg: peer Y -> node X, shaped by resolve(Y, X). Drop on a full queue
         // (link saturated), tear the session down only when the worker is gone.
-        match session.forward_tx.try_send((Instant::now(), datagram)) {
+        let held = stall_delay(&cfg.stalled, peer_index(&cfg, peer), cfg.node_id);
+        match session
+            .forward_tx
+            .try_send((Instant::now() + held, datagram))
+        {
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(_)) => {
                 warn!(%peer, "relay forward queue full; dropping datagram");
@@ -216,11 +269,16 @@ async fn new_upstream(
     tasks.spawn(return_worker);
 
     let reader = upstream.clone();
+    let (blocked, stalled, node_id) = (cfg.blocked.clone(), cfg.stalled.clone(), cfg.node_id);
     tasks.spawn(async move {
         let mut buf = vec![0u8; MAX_DATAGRAM];
         loop {
             match reader.recv(&mut buf).await {
-                Ok(len) => match return_tx.try_send((Instant::now(), buf[..len].to_vec())) {
+                Ok(_) if is_blocked(&blocked, node_id, peer_idx) => {}
+                Ok(len) => match return_tx.try_send((
+                    Instant::now() + stall_delay(&stalled, node_id, peer_idx),
+                    buf[..len].to_vec(),
+                )) {
                     Ok(()) => {}
                     Err(mpsc::error::TrySendError::Full(_)) => {
                         warn!(%peer, "relay return queue full; dropping datagram");
@@ -315,6 +373,77 @@ fn sender_worker(
     (tx, worker)
 }
 
+/// Keeps the blocked links in sync with `path`: one `a b` node pair per line cuts both directions
+/// between them. Lets a test partition two nodes mid-run; a missing file means no cuts.
+pub fn watch_blocked_links(path: std::path::PathBuf) -> BlockedLinks {
+    let blocked = BlockedLinks::default();
+    let shared = blocked.clone();
+    tokio::spawn(async move {
+        loop {
+            let links: HashSet<(usize, usize)> = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| {
+                    let mut ids = line.split_whitespace().map(str::parse::<usize>);
+                    match (ids.next(), ids.next()) {
+                        (Some(Ok(a)), Some(Ok(b))) => Some([(a, b), (b, a)]),
+                        _ => None,
+                    }
+                })
+                .flatten()
+                .collect();
+            if let Ok(mut current) = shared.write()
+                && *current != links
+            {
+                tracing::info!(?links, "latency relays: blocked links changed");
+                *current = links;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    });
+    blocked
+}
+
+/// Keeps the stalled links in sync with `path`: one `a b period_ms stall_ms delay_ms` line stalls
+/// both directions between nodes `a` and `b`. A missing file means no stalls.
+pub fn watch_stalled_links(path: std::path::PathBuf) -> StalledLinks {
+    let stalled = StalledLinks::default();
+    let shared = stalled.clone();
+    tokio::spawn(async move {
+        loop {
+            let links: HashMap<(usize, usize), Stall> = std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| {
+                    let v: Vec<u64> = line
+                        .split_whitespace()
+                        .filter_map(|t| t.parse().ok())
+                        .collect();
+                    let [a, b, period, stall, delay] = v[..] else {
+                        return None;
+                    };
+                    let ms = std::time::Duration::from_millis;
+                    let s = Stall {
+                        period: ms(period),
+                        stall: ms(stall),
+                        delay: ms(delay),
+                    };
+                    Some([((a as usize, b as usize), s), ((b as usize, a as usize), s)])
+                })
+                .flatten()
+                .collect();
+            if let Ok(mut current) = shared.write()
+                && *current != links
+            {
+                tracing::info!(?links, "latency relays: stalled links changed");
+                *current = links;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    });
+    stalled
+}
+
 /// Recover a peer's node index from its source port, or [`UNKNOWN_PEER`].
 fn peer_index(cfg: &RelayConfig, addr: SocketAddr) -> usize {
     let port = addr.port();
@@ -338,6 +467,8 @@ mod tests {
             target,
             p2p_port_base: 9000,
             latency: Arc::new(latency),
+            blocked: Default::default(),
+            stalled: Default::default(),
         }
     }
 
@@ -399,6 +530,8 @@ mod tests {
             target: node_addr,
             p2p_port_base,
             latency: Arc::new(latency),
+            blocked: Default::default(),
+            stalled: Default::default(),
         })
         .await
         .unwrap();
