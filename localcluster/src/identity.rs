@@ -39,7 +39,7 @@ pub const DEFAULT_PRIVATE_KEY: &str =
 pub const DEFAULT_CONFIG_HOME: &str = "/tmp/hopr-nodes";
 pub const DEFAULT_IDENTITY_PASSWORD: &str = "password";
 pub const DEFAULT_NUM_NODES: usize = 3;
-pub const MAX_NUM_NODES: usize = 5;
+pub const MAX_NUM_NODES: usize = 10;
 // Increased tx client timeout multiplier for Anvil
 pub const DEFAULT_TX_TIMEOUT_MULTIPLIER: u32 = 10;
 
@@ -150,6 +150,26 @@ const NODE_SECRETS: [([u8; 32], [u8; 32]); MAX_NUM_NODES] = [
     (
         hex!("9ab557eb14d8b081c7e1750eb87407d8c421aa79bdeb420f38980829e7dbf936"),
         hex!("6075c595103667537c33cdb954e3e5189921cab942e5fc0ba9ec27fe6d7787d1"),
+    ),
+    (
+        hex!("b7fb93ee0c174b60b2fca90f74a3e54eb5b6bd5a75e61137c9c9c8c2d4d35694"),
+        hex!("7bb93faf5eefa558d4c11effaeb9338177b0fdc3098b068bd2b4c8127da1d8ea"),
+    ),
+    (
+        hex!("01d3087f8f4ed0948c9a0c04ef7dfc9d392fa7e6b337ffbb1fd6ffb2362b5417"),
+        hex!("29e66d1d3a77ca0c887266e3f0442b765485aad9cdb1341361d0f9f48acc5906"),
+    ),
+    (
+        hex!("8e140a72fec685044fc63145c7ac3f97528db5713862b8dc5e9af63b8691f909"),
+        hex!("dbb3e361e2a0a13f3985edeb994c639fdb908a8c65d710bb1cd06156bcecfd38"),
+    ),
+    (
+        hex!("48b5142545bd7d8ce20c07af1bf3a2bd7ac7cfe819742c38fa855dbcd0004593"),
+        hex!("f80bd9f0ed5d1618faeae34f0aa6fe91593f15d33eaa0ffd6a204ca9aa18785c"),
+    ),
+    (
+        hex!("f776a0c4de2b9828de9291367672671c370a1fcd5c08d80055fabe1359476cc6"),
+        hex!("6863839382fa079e4c1cb2479ef0f0eb4d872680f5d95552fbda64af67d071b4"),
     ),
 ];
 
@@ -767,6 +787,26 @@ mod tests {
             (
                 "0x893809ff57c310561000ff17e2cd4862a020e959",
                 "0xd454f2b9ded9e6e5b20d8bc3aba7f4585748cdcf25ef849ea4f86ae7e8cf7184",
+            ),
+            (
+                "0x125f5a09ca8691919b352b46618bea69a0b56fe9",
+                "0xf2bcf30d81cb53ff646d39b447b79c42ea3df10911e90e01065bb5e2ff3fc3f1",
+            ),
+            (
+                "0x585ef0b634b36c47dd204cc6dcbdd84be35b691b",
+                "0x23b3a774f7a8b3958577851b5451440ecdef130321aa6c87142d192b627d0c96",
+            ),
+            (
+                "0x8bb6f324e4fe40456fc10897cdb7ce57ae6d1777",
+                "0x4d972ee64e0320d1d21bbfb6be6a37d77164710423e9818a3644b801575b6e50",
+            ),
+            (
+                "0xe108bcf61ae7cb4b9534c7a23f24f7a7537b2f97",
+                "0x7d7ae8407aad7336f09956d3cbe97ea2e68831aa76449d9272033257e54cb176",
+            ),
+            (
+                "0x6a853711fdc20ee296fd6e69ac44a4100913fe7c",
+                "0xce2db75d2d24939b5fc0970b841e4189a0987c509c77cf4da02f4448fbabb55f",
             ),
         ];
         const EXTRA_IDENTITIES: [(&str, &str); MAX_EXTRA_IDENTITIES] = [
