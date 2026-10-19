@@ -48,7 +48,7 @@ jobs:
       gpg_private_key: ${{ secrets.GPG_HOPRNET_PRIVATE_KEY }}
   build-docker:
     name: Docker
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@7263182fc9a2bab22cc5a029929940914eb9748d # setup-gcp-v4
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@837b94246698537325ecc664dfb22c72c0d6b8ed # setup-gcp-v4
     needs: build-binaries
     permissions:
       contents: read
@@ -112,7 +112,7 @@ jobs:
     steps:
       - name: Generate GitHub App token
         id: bot-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.GH_APP_GNOSISVPN_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_GNOSISVPN_BOT_PRIVATE_KEY }}
@@ -144,7 +144,7 @@ jobs:
       - name: Generate DAppNode token
         if: ${{ !cancelled() }}
         id: dappnode-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.GH_APP_HOPRNET_BOT_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_HOPRNET_BOT_PRIVATE_KEY }}
