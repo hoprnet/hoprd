@@ -217,7 +217,7 @@ jobs:
             build_file: ./localcluster/Cargo.toml
             binary: hoprd-localcluster
             required_label: ""
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@4485fe6bb59ddb7146a6af30ff3a030d7e5305ed # build-binaries-v0.10.2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@7b4d2c64b9f2ae77c0ba48c7109290086f95cdd2 # build-binaries-v0.10.2
     permissions:
       contents: read
       id-token: write
