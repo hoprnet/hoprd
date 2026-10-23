@@ -166,23 +166,39 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
 
 fn build_mixer_cfg_from_env() -> MixerConfig {
     let defaults = MixerConfig::default();
+
+    // The delay bounds now live inside the engine (`MixerType::Uniform`), not on `MixerConfig`,
+    // so they cannot be overridden by field assignment any more. When either env var is set,
+    // rebuild the config as the uniform engine with those bounds; otherwise keep whatever engine
+    // the default selects and only apply the capacity override.
+    let env_delay = |var: &str| {
+        std::env::var(var)
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map(Duration::from_millis)
+    };
+    let min_delay = env_delay("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS");
+    let delay_range = env_delay("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS");
+
+    let base = match (min_delay, delay_range) {
+        (None, None) => defaults,
+        (min, range) => {
+            // Fall back to the uniform engine's own defaults for whichever bound was not set.
+            let uniform = hopr_lib::exports::transport::config::MixerConfig::new_uniform(
+                min.unwrap_or_default(),
+                range.unwrap_or_default(),
+            );
+            MixerConfig { ..uniform }
+        }
+    };
+
     MixerConfig {
-        min_delay: std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.min_delay),
-        delay_range: std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.delay_range),
         capacity: std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .filter(|&c| c > 0)
-            .unwrap_or(defaults.capacity),
-        ..defaults
+            .unwrap_or(base.capacity),
+        ..base
     }
 }
 
@@ -609,10 +625,14 @@ pub struct UserHoprNetworkConfig {
     /// SURB store tuning (replying side).
     ///
     /// `pop_order` selects which end of an emission-window bucket a reply takes its
-    /// SURB from: `fifo` (default, oldest first) or `lifo` (newest first). Neither is a
-    /// correctness knob under PIX — the store spreads overflow across emission windows,
-    /// which is what actually keeps a cycle recoverable — so this exists for the
-    /// PopOrder experiment and for operators who want the v4 behaviour back.
+    /// SURB from: `fifo` (default, oldest first) or `lifo` (newest first).
+    ///
+    /// Neither is a correctness knob under PIX. The store buckets share-bearing SURBs by
+    /// emission window and spends them in rotation, so what a bounded buffer loses is
+    /// spread across the cycle; with that in place both orders recover a cycle
+    /// identically in measurement. This setting exists to run that comparison, not to fix
+    /// anything. Note it does *not* restore v4 semantics: v4 had no emission-window
+    /// bucketing at all, so its behaviour is not reachable from here by a config change.
     #[serde(default)]
     pub surb_store: UserSurbStoreConfig,
     /// Minimum incoming ticket price.
@@ -708,16 +728,21 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         surb_resolution_wait: Some(Duration::from_secs(1)),
                         ..Default::default()
                     },
-                    surb_store: SurbStoreConfig {
-                        pop_order: value.network.surb_store.pop_order.into(),
-                        ..match (value.network.surb_store.rb_capacity, value.network.surb_store.max_openers_per_pseudonym) {
-                            (None, None) => SurbStoreConfig::default(),
-                            (cap, openers) => SurbStoreConfig {
-                                rb_capacity: cap.unwrap_or_else(|| SurbStoreConfig::default().rb_capacity),
-                                max_openers_per_pseudonym: openers
-                                    .unwrap_or_else(|| SurbStoreConfig::default().max_openers_per_pseudonym),
-                                ..SurbStoreConfig::default()
-                            },
+                    surb_store: {
+                        // Each sizing field falls back to the LIBRARY default when unset — never to
+                        // zero. A literal-in-a-match here would silently set the unset field to 0,
+                        // which is below the validator floor and would be rejected at startup (or,
+                        // worse for the opener cap, strand every reply).
+                        let defaults = SurbStoreConfig::default();
+                        SurbStoreConfig {
+                            pop_order: value.network.surb_store.pop_order.into(),
+                            rb_capacity: value.network.surb_store.rb_capacity.unwrap_or(defaults.rb_capacity),
+                            max_openers_per_pseudonym: value
+                                .network
+                                .surb_store
+                                .max_openers_per_pseudonym
+                                .unwrap_or(defaults.max_openers_per_pseudonym),
+                            ..defaults
                         }
                     },
                     ..Default::default()
@@ -1419,21 +1444,20 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         use std::time::Duration;
 
         let mut cfg = example_cfg()?;
-        cfg.hopr.network.mixer = hopr_lib::config::MixerConfig {
-            min_delay: Duration::from_millis(0),
-            delay_range: Duration::from_millis(15),
-            capacity: 5_000,
-            ..Default::default()
-        };
+        // The delay bounds live inside the engine now, so the config is built through the
+        // constructor rather than by assigning fields.
+        cfg.hopr.network.mixer = hopr_lib::config::MixerConfig::new_uniform(
+            Duration::from_millis(0),
+            Duration::from_millis(15),
+        );
+        cfg.hopr.network.mixer.capacity = 5_000;
         let yaml = serde_saphyr::to_string(&cfg)?;
         let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
         assert_eq!(cfg, from_yaml);
         assert!(!yaml.contains("metric_delay_window"));
+        let expected_mixer = cfg.hopr.network.mixer;
         let lib_cfg: HoprLibConfig = cfg.hopr.into();
-        assert_eq!(
-            lib_cfg.protocol.mixer.delay_range,
-            Duration::from_millis(15)
-        );
+        assert_eq!(lib_cfg.protocol.mixer, expected_mixer);
 
         Ok(())
     }
@@ -1457,24 +1481,100 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         Ok(())
     }
 
+    /// The SURB store stanza must reach the library config, including the case where only one of
+    /// the two optional sizing fields is set.
+    ///
+    /// That mixed case is the one a struct-literal-in-a-match invites getting wrong: a naive
+    /// `SurbStoreConfig { rb_capacity: cap.unwrap_or_default(), .. }` would silently set the
+    /// unset field to ZERO rather than to the library default.
+    #[test]
+    fn surb_store_stanza_reaches_the_library_config() -> anyhow::Result<()> {
+        use hopr_lib::exports::transport::config::{SurbPopOrder, SurbStoreConfig};
+
+        // Default: no stanza, library defaults throughout.
+        let lib_cfg: HoprLibConfig = example_cfg()?.hopr.into();
+        let d = SurbStoreConfig::default();
+        assert_eq!(SurbPopOrder::Fifo, lib_cfg.protocol.packet.surb_store.pop_order);
+        assert_eq!(d.rb_capacity, lib_cfg.protocol.packet.surb_store.rb_capacity);
+        assert_eq!(
+            d.max_openers_per_pseudonym,
+            lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym
+        );
+
+        // pop_order alone.
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.surb_store.pop_order = UserSurbPopOrder::Lifo;
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+        assert_eq!(SurbPopOrder::Lifo, lib_cfg.protocol.packet.surb_store.pop_order);
+
+        // ONLY rb_capacity set: the opener cap must fall back to the library default, not zero.
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.surb_store.rb_capacity = Some(4_096);
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+        assert_eq!(4_096, lib_cfg.protocol.packet.surb_store.rb_capacity);
+        assert_eq!(
+            SurbStoreConfig::default().max_openers_per_pseudonym,
+            lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym,
+            "an unset opener cap must fall back to the library default, never to 0"
+        );
+
+        // ONLY the opener cap set: rb_capacity must fall back likewise.
+        let mut cfg = example_cfg()?;
+        cfg.hopr.network.surb_store.max_openers_per_pseudonym = Some(8_192);
+        let lib_cfg: HoprLibConfig = cfg.hopr.into();
+        assert_eq!(8_192, lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym);
+        assert_eq!(
+            SurbStoreConfig::default().rb_capacity,
+            lib_cfg.protocol.packet.surb_store.rb_capacity,
+            "an unset rb_capacity must fall back to the library default, never to 0"
+        );
+
+        Ok(())
+    }
+
+    /// A config file that predates the stanza must still load, and the stanza must round-trip.
+    #[test]
+    fn surb_store_stanza_is_optional_and_round_trips() -> anyhow::Result<()> {
+        let mut cfg = example_cfg()?;
+        let yaml = serde_saphyr::to_string(&cfg)?;
+        assert!(yaml.contains("surb_store"), "the stanza should be written");
+
+        cfg.hopr.network.surb_store.pop_order = UserSurbPopOrder::Lifo;
+        cfg.hopr.network.surb_store.rb_capacity = Some(2_048);
+        let yaml = serde_saphyr::to_string(&cfg)?;
+        let back: HoprdConfig = serde_saphyr::from_str(&yaml)?;
+        assert_eq!(cfg, back);
+
+        // A stanza-less document is the old shape and must keep loading with the default order.
+        let legacy: UserHoprNetworkConfig = serde_saphyr::from_str("probe_interval: 60s")?;
+        assert_eq!(UserSurbPopOrder::Fifo, legacy.surb_store.pop_order);
+
+        Ok(())
+    }
+
     #[test]
     fn mixer_env_var_fallback_is_read() {
         use std::time::Duration;
 
-        // Baseline: no env vars → compiled-in defaults.
+        // Baseline: no env vars → the engine the default selects, untouched.
         let base = build_mixer_cfg_from_env();
-        assert_eq!(base.delay_range, MixerConfig::default().delay_range);
+        assert_eq!(base.mixer_type, MixerConfig::default().mixer_type);
 
-        // With env var set → value is picked up.
+        // With a delay env var set → rebuilt as the uniform engine carrying that bound.
         unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "42") };
         let with_env = build_mixer_cfg_from_env();
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(with_env.delay_range, Duration::from_millis(42));
+        assert_eq!(
+            with_env,
+            MixerConfig::new_uniform(Duration::ZERO, Duration::from_millis(42)),
+            "a delay override must select the uniform engine with that bound"
+        );
 
-        // SmartDefault path (hopr.network absent from YAML) also reads env vars.
-        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "7") };
-        let default_net = UserHoprNetworkConfig::default();
-        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(default_net.mixer.delay_range, Duration::from_millis(7));
+        // Capacity is settable independently of the engine.
+        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_CAPACITY", "1234") };
+        let with_cap = build_mixer_cfg_from_env();
+        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_CAPACITY") };
+        assert_eq!(1234, with_cap.capacity);
+        assert_eq!(MixerConfig::default().mixer_type, with_cap.mixer_type);
     }
 }
