@@ -167,7 +167,8 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
 /// The uniform engine's default delay floor, in ms.
 ///
 /// Mirrors `hopr_transport_mixer::config::HOPR_MIXER_MINIMUM_DEFAULT_DELAY_IN_MS`, which hopr-lib
-/// does not re-export. `mixer_bounds_match_the_engine_defaults` pins the correspondence.
+/// does not re-export. `a_partial_mixer_override_leaves_the_other_bound_alone` is what would
+/// notice if these drifted, because it asserts the constructed engine against them.
 const UNIFORM_MIN_DELAY_DEFAULT_MS: u64 = 0;
 /// The uniform engine's default delay range, in ms. Mirrors
 /// `hopr_transport_mixer::config::HOPR_MIXER_DEFAULT_DELAY_RANGE_IN_MS`.
@@ -192,7 +193,8 @@ fn build_mixer_cfg_from_env() -> MixerConfig {
     // hoprd's contract, from before the mixer was reworked: an unset variable leaves its bound
     // alone. The two bounds live inside the uniform engine now, and `MixerConfig` does not expose
     // them, so the defaults are taken from the engine's own constants — pinned by
-    // `mixer_bounds_match_the_engine_defaults` below, which fails if upstream changes them.
+    // `a_partial_mixer_override_leaves_the_other_bound_alone`, which asserts the engine built
+    // from a partial override against the other bound's default.
     let base = if min_delay.is_none() && delay_range.is_none() {
         defaults
     } else {
@@ -1616,6 +1618,62 @@ min_incoming_ticket_price: "0.06 wxHOPR"
 
         // No env vars: the engine the default selects is untouched.
         assert_eq!(defaults.mixer_type, build_mixer_cfg_from_env().mixer_type);
+    }
+
+    /// The packaged sample config must load, including the SURB store stanza once uncommented.
+    ///
+    /// A commented example that sits under the wrong key is worse than no example: it uncomments
+    /// into an unknown-field error. `UserHoprLibConfig` denies unknown fields, so this parses the
+    /// real file and then again with the stanza's comments stripped, which is exactly what an
+    /// operator copying it would get.
+    #[test]
+    fn the_packaged_sample_config_loads_and_its_surb_stanza_is_accepted() -> anyhow::Result<()> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../deploy/nfpm/hoprd-sample.cfg.yaml");
+        let raw = std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "the packaged sample config is missing at {}",
+                path.display()
+            )
+        })?;
+
+        // As shipped.
+        let _: HoprdConfig =
+            serde_saphyr::from_str(&raw).context("the shipped sample must load")?;
+
+        // With the commented-out lines enabled, which is what the comments invite.
+        let uncommented: String = raw
+            .lines()
+            .map(|l| {
+                let t = l.trim_start();
+                if t.starts_with("# ")
+                    && (t.contains("surb_store:")
+                        || t.contains("pop_order:")
+                        || t.contains("rb_capacity:")
+                        || t.contains("max_openers_per_pseudonym:")
+                        || t.contains("outgoing_")
+                        || t.contains("min_incoming_"))
+                {
+                    // Drop the comment marker AND the space that followed it, so the indentation
+                    // stays exactly as the commented line had it.
+                    let indent = &l[..l.len() - t.len()];
+                    format!("{indent}{}", &t[2..])
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let cfg: HoprdConfig = serde_saphyr::from_str(&uncommented)
+            .context("the sample with its example lines enabled must still load")?;
+        assert_eq!(
+            UserSurbPopOrder::Fifo,
+            cfg.hopr.network.surb_store.pop_order,
+            "the enabled example should leave the default order"
+        );
+
+        Ok(())
     }
 
     #[test]
