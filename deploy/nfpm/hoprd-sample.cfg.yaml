@@ -31,9 +31,19 @@ hopr:
   network:
     probe_interval: "60s"
     probe_recheck_threshold: "120s"
-  # outgoing_ticket_winning_prob: 1.0
-  # outgoing_ticket_price: "0.03 wxHOPR"
-  # min_incoming_ticket_price: "0.06 wxHOPR"
+    # outgoing_ticket_winning_prob: 1.0
+    # outgoing_ticket_price: "0.03 wxHOPR"
+    # min_incoming_ticket_price: "0.06 wxHOPR"
+    # SURB store tuning (replying side). `pop_order` picks which end of an emission-window
+    # bucket a reply takes its SURB from; `fifo` (default) is oldest-first, `lifo` newest-first.
+    # Neither changes whether a PIX cycle can recover — the store spreads overflow across
+    # emission windows — so this is not a correctness knob. Keep `max_openers_per_pseudonym`
+    # at least as large as the counterparty's `rb_capacity`, or replies on SURBs whose opener
+    # was shed become undecryptable.
+    # surb_store:
+    #   pop_order: fifo
+    #   rb_capacity: 100000
+    #   max_openers_per_pseudonym: 100000
   safe_module:
     safe_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
     module_address: "0x0000000000000000000000000000000000000000" # NOTE: fill in value
