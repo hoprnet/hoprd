@@ -8,7 +8,7 @@ use hopr_lib::{
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
-        config::{HoprCodecConfig, PixGlobalConfig},
+        config::{HoprCodecConfig, PixGlobalConfig, SurbPopOrder, SurbStoreConfig},
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
@@ -517,6 +517,56 @@ fn default_pix_fill_finish_fraction() -> f64 {
     SupervisorConfig::default().fill.finish_fraction
 }
 
+
+/// SURB store tuning, as it appears in a node's config file.
+///
+/// Only the fields an operator has a reason to touch are exposed; everything else keeps the
+/// library default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UserSurbStoreConfig {
+    /// Which end of an emission-window bucket a reply's SURB is taken from.
+    ///
+    /// `fifo` (default) takes the oldest, `lifo` the newest. Under PIX neither is more
+    /// correct: the store buckets share-bearing SURBs by emission window and rotates
+    /// across the buckets, so overflow is spread over the whole cycle rather than taken
+    /// from one end of it. This setting therefore does not change whether a cycle can
+    /// recover.
+    #[serde(default)]
+    pub pop_order: UserSurbPopOrder,
+    /// Size of the per-pseudonym SURB ring buffer.
+    ///
+    /// `None` keeps the library default.
+    #[serde(default)]
+    pub rb_capacity: Option<usize>,
+    /// Maximum number of reply openers held per pseudonym.
+    ///
+    /// `None` keeps the library default. Must not be set below `rb_capacity` of the
+    /// counterparty, or replies on SURBs whose opener was shed become undecryptable.
+    #[serde(default)]
+    pub max_openers_per_pseudonym: Option<usize>,
+}
+
+/// The pop order a node's config may ask for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserSurbPopOrder {
+    /// Oldest first.
+    #[default]
+    Fifo,
+    /// Newest first.
+    Lifo,
+}
+
+impl From<UserSurbPopOrder> for SurbPopOrder {
+    fn from(value: UserSurbPopOrder) -> Self {
+        match value {
+            UserSurbPopOrder::Fifo => SurbPopOrder::Fifo,
+            UserSurbPopOrder::Lifo => SurbPopOrder::Lifo,
+        }
+    }
+}
+
 /// Subset of various selected HOPR library network-related configuration options.
 #[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
@@ -556,6 +606,15 @@ pub struct UserHoprNetworkConfig {
     #[serde(default)]
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub outgoing_ticket_price: Option<HoprBalance>,
+    /// SURB store tuning (replying side).
+    ///
+    /// `pop_order` selects which end of an emission-window bucket a reply takes its
+    /// SURB from: `fifo` (default, oldest first) or `lifo` (newest first). Neither is a
+    /// correctness knob under PIX — the store spreads overflow across emission windows,
+    /// which is what actually keeps a cycle recoverable — so this exists for the
+    /// PopOrder experiment and for operators who want the v4 behaviour back.
+    #[serde(default)]
+    pub surb_store: UserSurbStoreConfig,
     /// Minimum incoming ticket price.
     ///
     /// The value cannot be lower than the minimum network ticket price multiplied by the node's path position,
@@ -648,6 +707,18 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         // routing resolution preserves submission order.
                         surb_resolution_wait: Some(Duration::from_secs(1)),
                         ..Default::default()
+                    },
+                    surb_store: SurbStoreConfig {
+                        pop_order: value.network.surb_store.pop_order.into(),
+                        ..match (value.network.surb_store.rb_capacity, value.network.surb_store.max_openers_per_pseudonym) {
+                            (None, None) => SurbStoreConfig::default(),
+                            (cap, openers) => SurbStoreConfig {
+                                rb_capacity: cap.unwrap_or_else(|| SurbStoreConfig::default().rb_capacity),
+                                max_openers_per_pseudonym: openers
+                                    .unwrap_or_else(|| SurbStoreConfig::default().max_openers_per_pseudonym),
+                                ..SurbStoreConfig::default()
+                            },
+                        }
                     },
                     ..Default::default()
                 },
