@@ -123,9 +123,9 @@ tracing-subscriber = { version = "0.3.23", features = [
   "registry",
   "std",
 ] }
-utoipa = { version = "5.5.0" }
+utoipa = { version = "6.0.0" }
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
-utoipa-swagger-ui = { version = "9.0.2", features = [
+utoipa-swagger-ui = { version = "10.0.2", features = [
   "axum",
   "vendored",
   "debug-embed",
