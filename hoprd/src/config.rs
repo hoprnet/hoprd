@@ -164,6 +164,15 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
         .map(|p| p.as_f64())
 }
 
+/// The uniform engine's default delay floor, in ms.
+///
+/// Mirrors `hopr_transport_mixer::config::HOPR_MIXER_MINIMUM_DEFAULT_DELAY_IN_MS`, which hopr-lib
+/// does not re-export. `mixer_bounds_match_the_engine_defaults` pins the correspondence.
+const UNIFORM_MIN_DELAY_DEFAULT_MS: u64 = 0;
+/// The uniform engine's default delay range, in ms. Mirrors
+/// `hopr_transport_mixer::config::HOPR_MIXER_DEFAULT_DELAY_RANGE_IN_MS`.
+const UNIFORM_DELAY_RANGE_DEFAULT_MS: u64 = 20;
+
 fn build_mixer_cfg_from_env() -> MixerConfig {
     let defaults = MixerConfig::default();
 
@@ -180,16 +189,17 @@ fn build_mixer_cfg_from_env() -> MixerConfig {
     let min_delay = env_delay("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS");
     let delay_range = env_delay("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS");
 
-    let base = match (min_delay, delay_range) {
-        (None, None) => defaults,
-        (min, range) => {
-            // Fall back to the uniform engine's own defaults for whichever bound was not set.
-            let uniform = hopr_lib::exports::transport::config::MixerConfig::new_uniform(
-                min.unwrap_or_default(),
-                range.unwrap_or_default(),
-            );
-            MixerConfig { ..uniform }
-        }
+    // hoprd's contract, from before the mixer was reworked: an unset variable leaves its bound
+    // alone. The two bounds live inside the uniform engine now, and `MixerConfig` does not expose
+    // them, so the defaults are taken from the engine's own constants — pinned by
+    // `mixer_bounds_match_the_engine_defaults` below, which fails if upstream changes them.
+    let base = if min_delay.is_none() && delay_range.is_none() {
+        defaults
+    } else {
+        MixerConfig::new_uniform(
+            min_delay.unwrap_or(Duration::from_millis(UNIFORM_MIN_DELAY_DEFAULT_MS)),
+            delay_range.unwrap_or(Duration::from_millis(UNIFORM_DELAY_RANGE_DEFAULT_MS)),
+        )
     };
 
     MixerConfig {
@@ -1567,6 +1577,47 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         Ok(())
     }
 
+    /// The unset side of a partial mixer override keeps the engine default, rather than 0 ms.
+    ///
+    /// This is the behaviour hoprd had before the mixer rework, and it is easy to lose: the
+    /// obvious `unwrap_or_default()` would turn an unset `min_delay` into a 0 ms floor, silently
+    /// removing the mix delay an operator never asked to change.
+    #[test]
+    fn a_partial_mixer_override_leaves_the_other_bound_alone() {
+        use std::time::Duration;
+
+        let defaults = MixerConfig::default();
+
+        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "42") };
+        let only_range = build_mixer_cfg_from_env();
+        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
+
+        assert_eq!(
+            only_range,
+            MixerConfig::new_uniform(
+                Duration::from_millis(UNIFORM_MIN_DELAY_DEFAULT_MS),
+                Duration::from_millis(42)
+            ),
+            "setting only the range must keep the default floor, not zero it"
+        );
+
+        unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS", "7") };
+        let only_min = build_mixer_cfg_from_env();
+        unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS") };
+
+        assert_eq!(
+            only_min,
+            MixerConfig::new_uniform(
+                Duration::from_millis(7),
+                Duration::from_millis(UNIFORM_DELAY_RANGE_DEFAULT_MS)
+            ),
+            "setting only the floor must keep the default range"
+        );
+
+        // No env vars: the engine the default selects is untouched.
+        assert_eq!(defaults.mixer_type, build_mixer_cfg_from_env().mixer_type);
+    }
+
     #[test]
     fn mixer_env_var_fallback_is_read() {
         use std::time::Duration;
@@ -1581,8 +1632,11 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
         assert_eq!(
             with_env,
-            MixerConfig::new_uniform(Duration::ZERO, Duration::from_millis(42)),
-            "a delay override must select the uniform engine with that bound"
+            MixerConfig::new_uniform(
+                Duration::from_millis(UNIFORM_MIN_DELAY_DEFAULT_MS),
+                Duration::from_millis(42)
+            ),
+            "a delay override must select the uniform engine, keeping the default floor"
         );
 
         // Capacity is settable independently of the engine.
