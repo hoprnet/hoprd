@@ -533,7 +533,6 @@ fn default_pix_fill_finish_fraction() -> f64 {
     SupervisorConfig::default().fill.finish_fraction
 }
 
-
 /// SURB store tuning, as it appears in a node's config file.
 ///
 /// Only the fields an operator has a reason to touch are exposed; everything else keeps the
@@ -736,7 +735,11 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         let defaults = SurbStoreConfig::default();
                         SurbStoreConfig {
                             pop_order: value.network.surb_store.pop_order.into(),
-                            rb_capacity: value.network.surb_store.rb_capacity.unwrap_or(defaults.rb_capacity),
+                            rb_capacity: value
+                                .network
+                                .surb_store
+                                .rb_capacity
+                                .unwrap_or(defaults.rb_capacity),
                             max_openers_per_pseudonym: value
                                 .network
                                 .surb_store
@@ -1494,8 +1497,14 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         // Default: no stanza, library defaults throughout.
         let lib_cfg: HoprLibConfig = example_cfg()?.hopr.into();
         let d = SurbStoreConfig::default();
-        assert_eq!(SurbPopOrder::Fifo, lib_cfg.protocol.packet.surb_store.pop_order);
-        assert_eq!(d.rb_capacity, lib_cfg.protocol.packet.surb_store.rb_capacity);
+        assert_eq!(
+            SurbPopOrder::Fifo,
+            lib_cfg.protocol.packet.surb_store.pop_order
+        );
+        assert_eq!(
+            d.rb_capacity,
+            lib_cfg.protocol.packet.surb_store.rb_capacity
+        );
         assert_eq!(
             d.max_openers_per_pseudonym,
             lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym
@@ -1505,7 +1514,10 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         let mut cfg = example_cfg()?;
         cfg.hopr.network.surb_store.pop_order = UserSurbPopOrder::Lifo;
         let lib_cfg: HoprLibConfig = cfg.hopr.into();
-        assert_eq!(SurbPopOrder::Lifo, lib_cfg.protocol.packet.surb_store.pop_order);
+        assert_eq!(
+            SurbPopOrder::Lifo,
+            lib_cfg.protocol.packet.surb_store.pop_order
+        );
 
         // ONLY rb_capacity set: the opener cap must fall back to the library default, not zero.
         let mut cfg = example_cfg()?;
@@ -1522,7 +1534,10 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         let mut cfg = example_cfg()?;
         cfg.hopr.network.surb_store.max_openers_per_pseudonym = Some(8_192);
         let lib_cfg: HoprLibConfig = cfg.hopr.into();
-        assert_eq!(8_192, lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym);
+        assert_eq!(
+            8_192,
+            lib_cfg.protocol.packet.surb_store.max_openers_per_pseudonym
+        );
         assert_eq!(
             SurbStoreConfig::default().rb_capacity,
             lib_cfg.protocol.packet.surb_store.rb_capacity,
