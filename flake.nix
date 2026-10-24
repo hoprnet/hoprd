@@ -8,7 +8,7 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.24.0";
-    nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
+    nix-lib.url = "github:hoprnet/nix-lib/v2.0.0";
     # No `hoprnet` input. It existed for one output — `binary-ticket-inspector` — which is now
     # built here instead; see `ticketInspectorBuildArgs` for why and how.
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
@@ -589,7 +589,6 @@
                 pkgs.tini
                 binary
                 hoprdPackages."binary-ticket-inspector-${architecture}"
-                pkgs.cacert
                 pkgs.curl
               ];
               Entrypoint = [
@@ -600,8 +599,6 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
               ];
             };
@@ -618,7 +615,6 @@
                 dockerHoprdEntrypoint
                 pkgs.tini
                 hoprdPackages."binary-hoprd-profile-${architecture}"
-                pkgs.cacert
                 pkgs.curl
                 analyzeMemoryScript
                 (pkgs.runCommand "jemalloc-lib-only" { } ''
@@ -638,8 +634,6 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
                 "_RJEM_MALLOC_CONF=prof:true,prof_active:true,prof_final:true,prof_prefix=/app/.tmp/jeprof,lg_prof_sample:19"
               ];
@@ -692,7 +686,6 @@
                 hoprdPackages.binary-hoprd-x86_64-linux
                 hoprdPackages.binary-hoprd-localcluster-x86_64-linux
                 hoprdPackages.binary-ticket-inspector-x86_64-linux
-                pkgs.cacert
               ];
               Entrypoint = [ "hoprd-localcluster" ];
               env = [ "TMPDIR=/app/.tmp" ];
