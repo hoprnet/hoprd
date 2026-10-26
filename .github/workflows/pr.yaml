@@ -255,7 +255,7 @@ jobs:
       # Pinned by digest so a chain-image rebuild cannot silently break CI.
       # Keep in sync with localcluster/docker-compose.yml.
       CHAIN_IMAGE: >-
-        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc
+        europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:dcaa7bfd108a85435de6554e081675dbac81937d9f4d101c8a2b89fb6a0ce4bb
     steps:
       - name: Start a local cluster and verify it becomes usable
         uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
