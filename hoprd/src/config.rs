@@ -194,6 +194,58 @@ fn build_mixer_cfg_from_env() -> MixerConfig {
     }
 }
 
+/// The pre-#8569 flat mixer shape: `min_delay`/`delay_range`/`capacity` directly on the mixer
+/// section, uniform-only (hoprd never exposed any other engine). Kept only so
+/// [`deserialize_mixer_config`] can still load a config file saved before the upstream
+/// `MixerConfig` refactor into `{ capacity, mixer_type }`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct LegacyMixerConfig {
+    #[serde(with = "humantime_serde")]
+    min_delay: Duration,
+    #[serde(with = "humantime_serde")]
+    delay_range: Duration,
+    capacity: usize,
+}
+
+impl Default for LegacyMixerConfig {
+    fn default() -> Self {
+        let uniform = UniformConfig::default();
+        Self {
+            min_delay: uniform.min_delay,
+            delay_range: uniform.delay_range,
+            capacity: MixerConfig::default().capacity,
+        }
+    }
+}
+
+/// Accepts either the current `{ capacity, mixer_type }` mixer shape or the pre-#8569 flat
+/// `{ min_delay, delay_range, capacity }` shape, so an existing node's saved config.yaml keeps
+/// loading across the upstream mixer-engine refactor. Legacy configs always map onto the uniform
+/// engine, matching their pre-refactor (and only ever) behavior.
+fn deserialize_mixer_config<'de, D>(deserializer: D) -> Result<MixerConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MixerConfigCompat {
+        Current(MixerConfig),
+        Legacy(LegacyMixerConfig),
+    }
+
+    Ok(match MixerConfigCompat::deserialize(deserializer)? {
+        MixerConfigCompat::Current(cfg) => cfg,
+        MixerConfigCompat::Legacy(legacy) => MixerConfig {
+            capacity: legacy.capacity,
+            mixer_type: MixerType::Uniform(UniformConfig {
+                min_delay: legacy.min_delay,
+                delay_range: legacy.delay_range,
+            }),
+        },
+    })
+}
+
 /// User-facing PIX global configuration (wraps upstream [`PixGlobalConfig`] which has `serde(skip)`).
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -575,9 +627,13 @@ pub struct UserHoprNetworkConfig {
     ///
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
     /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
-    /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity).
+    /// then to compiled-in defaults (0 ms min, 10 ms spread, 20 000 capacity). Accepts either the
+    /// current nested shape or the pre-#8569 flat one (see [`deserialize_mixer_config`]).
     #[default(build_mixer_cfg_from_env())]
-    #[serde(default = "build_mixer_cfg_from_env")]
+    #[serde(
+        default = "build_mixer_cfg_from_env",
+        deserialize_with = "deserialize_mixer_config"
+    )]
     pub mixer: MixerConfig,
     /// PIX global configuration.
     #[serde(default)]
@@ -1381,6 +1437,30 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         assert_eq!(
             uniform_delay_range(&lib_cfg.protocol.mixer),
             Duration::from_millis(15)
+        );
+
+        Ok(())
+    }
+
+    /// A config.yaml saved before #8569's `MixerConfig` refactor has `min_delay`/`delay_range`
+    /// flat on the mixer section. It must still load, mapped onto the uniform engine.
+    #[test]
+    fn legacy_flat_mixer_section_still_loads() -> anyhow::Result<()> {
+        let yaml = r#"
+            mixer:
+              min_delay: 5ms
+              delay_range: 15ms
+              capacity: 5000
+        "#;
+        let cfg: UserHoprNetworkConfig = serde_saphyr::from_str(yaml)?;
+
+        assert_eq!(cfg.mixer.capacity, 5_000);
+        assert_eq!(
+            cfg.mixer.mixer_type,
+            MixerType::Uniform(UniformConfig {
+                min_delay: Duration::from_millis(5),
+                delay_range: Duration::from_millis(15),
+            })
         );
 
         Ok(())
