@@ -3,8 +3,8 @@ use std::{net::IpAddr, time::Duration};
 use hopr_lib::{
     api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
     config::{
-        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
-        SafeModule, SessionGlobalConfig, TransportConfig,
+        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, MixerType,
+        ProbeConfig, SafeModule, SessionGlobalConfig, TransportConfig, UniformConfig,
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
@@ -164,25 +164,33 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
         .map(|p| p.as_f64())
 }
 
+/// hoprd only ever exposes the uniform-delay engine's knobs (`min_delay`, `delay_range`), never
+/// `hopr_lib`'s Poisson tuning, so this builds `MixerType::Uniform` explicitly rather than relying
+/// on `MixerConfig::default()`'s own engine choice.
 fn build_mixer_cfg_from_env() -> MixerConfig {
-    let defaults = MixerConfig::default();
+    let defaults = UniformConfig::default();
+    let min_delay = std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(defaults.min_delay);
+    let delay_range = std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(defaults.delay_range);
+    let capacity = std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&c| c > 0)
+        .unwrap_or(MixerConfig::default().capacity);
+
     MixerConfig {
-        min_delay: std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.min_delay),
-        delay_range: std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.delay_range),
-        capacity: std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
-            .ok()
-            .and_then(|v| v.trim().parse::<usize>().ok())
-            .filter(|&c| c > 0)
-            .unwrap_or(defaults.capacity),
-        ..defaults
+        capacity,
+        mixer_type: MixerType::Uniform(UniformConfig {
+            min_delay,
+            delay_range,
+        }),
     }
 }
 
@@ -1343,16 +1351,27 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         Ok(())
     }
 
+    /// Pulls the uniform engine's `delay_range` out of a `MixerConfig`; panics on `Poisson`, since
+    /// hoprd only ever builds the uniform engine (see `build_mixer_cfg_from_env`).
+    fn uniform_delay_range(cfg: &hopr_lib::config::MixerConfig) -> Duration {
+        match cfg.mixer_type {
+            MixerType::Uniform(uniform) => uniform.delay_range,
+            #[allow(unreachable_patterns)]
+            _ => panic!("hoprd's mixer config must select the Uniform engine"),
+        }
+    }
+
     #[test]
     fn explicit_mixer_section_round_trips() -> anyhow::Result<()> {
         use std::time::Duration;
 
         let mut cfg = example_cfg()?;
         cfg.hopr.network.mixer = hopr_lib::config::MixerConfig {
-            min_delay: Duration::from_millis(0),
-            delay_range: Duration::from_millis(15),
             capacity: 5_000,
-            ..Default::default()
+            mixer_type: MixerType::Uniform(UniformConfig {
+                min_delay: Duration::from_millis(0),
+                delay_range: Duration::from_millis(15),
+            }),
         };
         let yaml = serde_saphyr::to_string(&cfg)?;
         let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
@@ -1360,7 +1379,7 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         assert!(!yaml.contains("metric_delay_window"));
         let lib_cfg: HoprLibConfig = cfg.hopr.into();
         assert_eq!(
-            lib_cfg.protocol.mixer.delay_range,
+            uniform_delay_range(&lib_cfg.protocol.mixer),
             Duration::from_millis(15)
         );
 
@@ -1392,18 +1411,24 @@ min_incoming_ticket_price: "0.06 wxHOPR"
 
         // Baseline: no env vars → compiled-in defaults.
         let base = build_mixer_cfg_from_env();
-        assert_eq!(base.delay_range, MixerConfig::default().delay_range);
+        assert_eq!(
+            uniform_delay_range(&base),
+            UniformConfig::default().delay_range
+        );
 
         // With env var set → value is picked up.
         unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "42") };
         let with_env = build_mixer_cfg_from_env();
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(with_env.delay_range, Duration::from_millis(42));
+        assert_eq!(uniform_delay_range(&with_env), Duration::from_millis(42));
 
         // SmartDefault path (hopr.network absent from YAML) also reads env vars.
         unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "7") };
         let default_net = UserHoprNetworkConfig::default();
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(default_net.mixer.delay_range, Duration::from_millis(7));
+        assert_eq!(
+            uniform_delay_range(&default_net.mixer),
+            Duration::from_millis(7)
+        );
     }
 }
