@@ -11,6 +11,7 @@ ignore = [
   "RUSTSEC-2026-0221", # 'event-listener' 5.4.1 [unsound] - transitive via moka; upstream fix pending
   "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
   "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal (0137)
+  "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 - only via alloy's k256/elliptic-curve 0.13, no 0.5.x fix; remove together with the alloy removal (0137)
   "RUSTSEC-2024-0449", # 'unsafe-libyaml' [unmaintained] - transitive via serde_yaml (deprecated) <- progenitor <- hoprd-api-client (hoprd-localcluster); no fix, cannot remove without progenitor dropping serde_yaml
   "RUSTSEC-2026-0367", # 'zip' 3.0.0 - build-dependency of utoipa-swagger-ui 9.0.2, only unpacks its bundled Swagger UI in build.rs; fix needs zip >= 9 and utoipa-swagger-ui 10.0.1 still pins zip ^8.6
   "RUSTSEC-2026-0368", # same zip 3.0.0 build-time extraction as 0367; no untrusted archive is ever extracted
