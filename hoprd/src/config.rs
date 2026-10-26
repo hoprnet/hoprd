@@ -3,8 +3,8 @@ use std::{net::IpAddr, time::Duration};
 use hopr_lib::{
     api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
     config::{
-        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, MixerType,
-        ProbeConfig, SafeModule, SessionGlobalConfig, TransportConfig, UniformConfig,
+        HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
+        SafeModule, SessionGlobalConfig, TransportConfig,
     },
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
@@ -14,6 +14,7 @@ use hopr_lib::{
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
+use hopr_transport_mixer::config::{MixerType, UniformConfig};
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
