@@ -628,7 +628,7 @@ pub struct UserHoprNetworkConfig {
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
     /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
     /// then to compiled-in defaults (0 ms min, 10 ms spread, 20 000 capacity). Accepts either the
-    /// current nested shape or the pre-#8569 flat one (see [`deserialize_mixer_config`]).
+    /// current nested shape or the pre-#8569 flat one.
     #[default(build_mixer_cfg_from_env())]
     #[serde(
         default = "build_mixer_cfg_from_env",
