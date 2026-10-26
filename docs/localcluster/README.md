@@ -141,7 +141,7 @@ nix build -L --out-link result-localcluster .#binary-hoprd-localcluster
 
 HOPRD_BIN=./result-hoprd/bin/hoprd \
 LOCALCLUSTER_BIN=./result-localcluster/bin/hoprd-localcluster \
-CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:7b64692cb74a2bc065e8de3ac11d24520889528fe9083e2233774b9cede3dbbc \
+CHAIN_IMAGE=europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:dcaa7bfd108a85435de6554e081675dbac81937d9f4d101c8a2b89fb6a0ce4bb \
   ./scripts/localcluster-smoke.sh
 ```
 
