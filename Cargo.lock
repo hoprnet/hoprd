@@ -6499,6 +6499,7 @@ dependencies = [
  "hopr-session-server-forwarder",
  "hopr-strategy",
  "hopr-ticket-manager",
+ "hopr-transport-mixer",
  "hopr-transport-p2p",
  "hopr-utils-session",
  "hoprd-api",

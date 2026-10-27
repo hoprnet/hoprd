@@ -17,6 +17,7 @@ hoprd-api-client = { path = "rest-api-client" }
 
 hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "af80993c9f7d20b1f277af6efacaeb05190698be", default-features = false }
 hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "af80993c9f7d20b1f277af6efacaeb05190698be", default-features = false }
+hopr-transport-mixer = { git = "https://github.com/hoprnet/hoprnet", rev = "af80993c9f7d20b1f277af6efacaeb05190698be", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=4.4.0" }
