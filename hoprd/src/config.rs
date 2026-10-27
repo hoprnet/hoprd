@@ -14,6 +14,7 @@ use hopr_lib::{
     },
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
+use hopr_transport_mixer::config::{MixerType, UniformConfig};
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
@@ -164,26 +165,101 @@ fn default_outgoing_ticket_winning_prob() -> Option<f64> {
         .map(|p| p.as_f64())
 }
 
+/// hoprd only ever exposes the uniform-delay engine's knobs (`min_delay`, `delay_range`), never
+/// `hopr_lib`'s Poisson tuning, so this builds `MixerType::Uniform` explicitly rather than relying
+/// on `MixerConfig::default()`'s own engine choice.
 fn build_mixer_cfg_from_env() -> MixerConfig {
-    let defaults = MixerConfig::default();
+    let defaults = UniformConfig::default();
+    let min_delay = std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(defaults.min_delay);
+    let delay_range = std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(defaults.delay_range);
+    let capacity = std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&c| c > 0)
+        .unwrap_or(MixerConfig::default().capacity);
+
     MixerConfig {
-        min_delay: std::env::var("HOPR_INTERNAL_MIXER_MINIMUM_DELAY_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.min_delay),
-        delay_range: std::env::var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS")
-            .ok()
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(defaults.delay_range),
-        capacity: std::env::var("HOPR_INTERNAL_MIXER_CAPACITY")
-            .ok()
-            .and_then(|v| v.trim().parse::<usize>().ok())
-            .filter(|&c| c > 0)
-            .unwrap_or(defaults.capacity),
-        ..defaults
+        capacity,
+        mixer_type: MixerType::Uniform(UniformConfig {
+            min_delay,
+            delay_range,
+        }),
     }
+}
+
+/// The pre-#8569 flat mixer shape: `min_delay`/`delay_range`/`capacity` directly on the mixer
+/// section, uniform-only (hoprd never exposed any other engine). Kept only so
+/// [`deserialize_mixer_config`] can still load a config file saved before the upstream
+/// `MixerConfig` refactor into `{ capacity, mixer_type }`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct LegacyMixerConfig {
+    #[serde(with = "humantime_serde")]
+    min_delay: Duration,
+    #[serde(with = "humantime_serde")]
+    delay_range: Duration,
+    capacity: usize,
+}
+
+impl Default for LegacyMixerConfig {
+    fn default() -> Self {
+        let uniform = UniformConfig::default();
+        Self {
+            min_delay: uniform.min_delay,
+            delay_range: uniform.delay_range,
+            capacity: MixerConfig::default().capacity,
+        }
+    }
+}
+
+/// The current `{ capacity, mixer_type }` shape with `mixer_type` optional. Upstream's serde default
+/// for an absent `mixer_type` is Poisson, so [`deserialize_mixer_config`] fills in the uniform
+/// engine instead.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CurrentMixerConfig {
+    capacity: usize,
+    mixer_type: Option<MixerType>,
+}
+
+/// Accepts either the current `{ capacity, mixer_type }` mixer shape or the pre-#8569 flat
+/// `{ min_delay, delay_range, capacity }` shape, so an existing node's saved config.yaml keeps
+/// loading across the upstream mixer-engine refactor. Legacy configs always map onto the uniform
+/// engine, matching their pre-refactor (and only ever) behavior.
+fn deserialize_mixer_config<'de, D>(deserializer: D) -> Result<MixerConfig, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MixerConfigCompat {
+        Current(CurrentMixerConfig),
+        Legacy(LegacyMixerConfig),
+    }
+
+    Ok(match MixerConfigCompat::deserialize(deserializer)? {
+        MixerConfigCompat::Current(cfg) => MixerConfig {
+            capacity: cfg.capacity,
+            mixer_type: cfg
+                .mixer_type
+                .unwrap_or_else(|| MixerType::Uniform(UniformConfig::default())),
+        },
+        MixerConfigCompat::Legacy(legacy) => MixerConfig {
+            capacity: legacy.capacity,
+            mixer_type: MixerType::Uniform(UniformConfig {
+                min_delay: legacy.min_delay,
+                delay_range: legacy.delay_range,
+            }),
+        },
+    })
 }
 
 /// User-facing PIX global configuration (wraps upstream [`PixGlobalConfig`] which has `serde(skip)`).
@@ -567,9 +643,13 @@ pub struct UserHoprNetworkConfig {
     ///
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
     /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
-    /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity).
+    /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity). Accepts either the
+    /// current nested shape or the pre-#8569 flat one.
     #[default(build_mixer_cfg_from_env())]
-    #[serde(default = "build_mixer_cfg_from_env")]
+    #[serde(
+        default = "build_mixer_cfg_from_env",
+        deserialize_with = "deserialize_mixer_config"
+    )]
     pub mixer: MixerConfig,
     /// PIX global configuration.
     #[serde(default)]
@@ -1343,16 +1423,27 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         Ok(())
     }
 
+    /// Pulls the uniform engine's `delay_range` out of a `MixerConfig`; panics on `Poisson`, since
+    /// hoprd only ever builds the uniform engine (see `build_mixer_cfg_from_env`).
+    fn uniform_delay_range(cfg: &hopr_lib::config::MixerConfig) -> Duration {
+        match cfg.mixer_type {
+            MixerType::Uniform(uniform) => uniform.delay_range,
+            #[allow(unreachable_patterns)]
+            _ => panic!("hoprd's mixer config must select the Uniform engine"),
+        }
+    }
+
     #[test]
     fn explicit_mixer_section_round_trips() -> anyhow::Result<()> {
         use std::time::Duration;
 
         let mut cfg = example_cfg()?;
         cfg.hopr.network.mixer = hopr_lib::config::MixerConfig {
-            min_delay: Duration::from_millis(0),
-            delay_range: Duration::from_millis(15),
             capacity: 5_000,
-            ..Default::default()
+            mixer_type: MixerType::Uniform(UniformConfig {
+                min_delay: Duration::from_millis(0),
+                delay_range: Duration::from_millis(15),
+            }),
         };
         let yaml = serde_saphyr::to_string(&cfg)?;
         let from_yaml: HoprdConfig = serde_saphyr::from_str(&yaml)?;
@@ -1360,8 +1451,46 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         assert!(!yaml.contains("metric_delay_window"));
         let lib_cfg: HoprLibConfig = cfg.hopr.into();
         assert_eq!(
-            lib_cfg.protocol.mixer.delay_range,
+            uniform_delay_range(&lib_cfg.protocol.mixer),
             Duration::from_millis(15)
+        );
+
+        Ok(())
+    }
+
+    /// A config.yaml saved before #8569's `MixerConfig` refactor has `min_delay`/`delay_range`
+    /// flat on the mixer section. It must still load, mapped onto the uniform engine.
+    #[test]
+    fn legacy_flat_mixer_section_still_loads() -> anyhow::Result<()> {
+        let yaml = r#"
+            mixer:
+              min_delay: 5ms
+              delay_range: 15ms
+              capacity: 5000
+        "#;
+        let cfg: UserHoprNetworkConfig = serde_saphyr::from_str(yaml)?;
+
+        assert_eq!(cfg.mixer.capacity, 5_000);
+        assert_eq!(
+            cfg.mixer.mixer_type,
+            MixerType::Uniform(UniformConfig {
+                min_delay: Duration::from_millis(5),
+                delay_range: Duration::from_millis(15),
+            })
+        );
+
+        Ok(())
+    }
+
+    /// Upstream defaults an absent `mixer_type` to Poisson; hoprd must keep the uniform engine.
+    #[test]
+    fn mixer_section_without_mixer_type_selects_uniform() -> anyhow::Result<()> {
+        let cfg: UserHoprNetworkConfig = serde_saphyr::from_str("mixer:\n  capacity: 5000\n")?;
+
+        assert_eq!(cfg.mixer.capacity, 5_000);
+        assert_eq!(
+            cfg.mixer.mixer_type,
+            MixerType::Uniform(UniformConfig::default())
         );
 
         Ok(())
@@ -1392,18 +1521,24 @@ min_incoming_ticket_price: "0.06 wxHOPR"
 
         // Baseline: no env vars → compiled-in defaults.
         let base = build_mixer_cfg_from_env();
-        assert_eq!(base.delay_range, MixerConfig::default().delay_range);
+        assert_eq!(
+            uniform_delay_range(&base),
+            UniformConfig::default().delay_range
+        );
 
         // With env var set → value is picked up.
         unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "42") };
         let with_env = build_mixer_cfg_from_env();
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(with_env.delay_range, Duration::from_millis(42));
+        assert_eq!(uniform_delay_range(&with_env), Duration::from_millis(42));
 
         // SmartDefault path (hopr.network absent from YAML) also reads env vars.
         unsafe { std::env::set_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS", "7") };
         let default_net = UserHoprNetworkConfig::default();
         unsafe { std::env::remove_var("HOPR_INTERNAL_MIXER_DELAY_RANGE_IN_MS") };
-        assert_eq!(default_net.mixer.delay_range, Duration::from_millis(7));
+        assert_eq!(
+            uniform_delay_range(&default_net.mixer),
+            Duration::from_millis(7)
+        );
     }
 }
