@@ -147,17 +147,10 @@ pub mod types {
         }
     }
     ///Query parameters selecting which channel (incoming or outgoing) to address.
-    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
+    #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, Default)]
     pub struct ChannelDirectionQuery {
-        #[serde(default = "defaults::channel_direction_query_direction")]
-        pub direction: ChannelDirection,
-    }
-    impl ::std::default::Default for ChannelDirectionQuery {
-        fn default() -> Self {
-            Self {
-                direction: defaults::channel_direction_query_direction(),
-            }
-        }
+        #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+        pub direction: ::std::option::Option<ChannelDirection>,
     }
     ///General information about a channel state.
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
@@ -820,12 +813,6 @@ at least the size of 2 Session packet payloads.*/
     #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug)]
     pub struct WithdrawResponse {
         pub receipt: ::std::string::String,
-    }
-    /// Generation of default values for serde.
-    pub mod defaults {
-        pub(super) fn channel_direction_query_direction() -> super::ChannelDirection {
-            super::ChannelDirection::Outgoing
-        }
     }
     /// Error types.
     pub mod error {
