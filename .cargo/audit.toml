@@ -1,40 +1,37 @@
 [advisories]
 ignore = [
+  "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained]
   "RUSTSEC-2024-0436", # 'paste' dependency in 'libp2p' [unmaintained]
-  "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
+  "RUSTSEC-2024-0449", # `unsafe-libyaml` unmaintained, transitive via serde_yaml (deprecated) <- progenitor <- hoprd-api-client (hoprd-localcluster); cannot remove without progenitor dropping serde_yaml
   "RUSTSEC-2025-0073", # 'alloy-dyn-abi' in 'alloy' - will be removed in 4.0
   "RUSTSEC-2025-0137", # `alloy` - held back until removed, see https://github.com/hoprnet/hoprnet/issues/7707
   "RUSTSEC-2026-0049", # `rustls-webpki` - needs alloy removal
   "RUSTSEC-2026-0118", # `hickory-proto` 0.25.2 pulled by libp2p-dns 0.44.0 -> libp2p 0.56.0; no fix for 0.25.x; cannot remove without a major libp2p bump
-  "RUSTSEC-2026-0119", # same root cause as 0118 (different advisory DB version); hickory-proto 0.25.2 still pulled by libp2p 0.56.0; remove together with 0118 once libp2p is bumped past 0.56.0
-  "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained]; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins validator_derive 0.20); no fix released yet
-  "RUSTSEC-2026-0221", # 'event-listener' 5.4.1 [unsound] - transitive via moka; upstream fix pending
-  "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
-  "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal (0137)
-  "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 - only via alloy's k256/elliptic-curve 0.13, no 0.5.x fix; remove together with the alloy removal (0137)
-  "RUSTSEC-2024-0449", # 'unsafe-libyaml' [unmaintained] - transitive via serde_yaml (deprecated) <- progenitor <- hoprd-api-client (hoprd-localcluster); no fix, cannot remove without progenitor dropping serde_yaml
-  "RUSTSEC-2026-0367", # 'zip' 3.0.0 - build-dependency of utoipa-swagger-ui 9.0.2, only unpacks its bundled Swagger UI in build.rs; fix needs zip >= 9 and utoipa-swagger-ui 10.0.1 still pins zip ^8.6
-  "RUSTSEC-2026-0368", # same zip 3.0.0 build-time extraction as 0367; no untrusted archive is ever extracted
-  "RUSTSEC-2026-0369", # same zip 3.0.0 build-time extraction as 0367; remove all three once utoipa-swagger-ui moves to zip >= 9
-  "RUSTSEC-2026-0391", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0403", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0398", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0395", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0401", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0404", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0400", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0397", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0406", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0402", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0399", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0396", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
-  "RUSTSEC-2026-0405", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0119", # same root cause as 0118 (different advisory DB version); remove together with 0118 once libp2p is bumped past 0.56.0
+  "RUSTSEC-2026-0173", # `proc-macro-error2` unmaintained; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins it); no fix released yet
+  "RUSTSEC-2026-0249", # `smartstring` unmaintained, requires `opentelemetry-prometheus-text-exporter` > 0.3.0
+  "RUSTSEC-2026-0367", # `zip` 3.0.0 is a build-dependency of utoipa-swagger-ui 9.0.2, only unpacks its bundled Swagger UI in build.rs; fix needs zip >= 9 and utoipa-swagger-ui 10.0.1 still pins zip ^8.6
+  "RUSTSEC-2026-0368", # `zip` 3.0.0; same root cause as 0367
+  "RUSTSEC-2026-0369", # `zip` 3.0.0; same root cause as 0367
+  "RUSTSEC-2026-0387", # `crypto-bigint` 0.5.5 timing variability, only via alloy's k256/elliptic-curve 0.13; no 0.5.x fix, remove together with the alloy removal (0137)
+  "RUSTSEC-2026-0391", # `zstd` 0.13.3 pulled by compression-codecs -> async-compression -> tower-http -> reqwest; fix needs zstd >= 0.14.3, blocked on compression-codecs upgrade
+  "RUSTSEC-2026-0395", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391, fix needs zstd-safe >= 8.2.0
+  "RUSTSEC-2026-0396", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0397", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0398", # `zstd-safe` 7.3.0; same root cause as 0391
+  "RUSTSEC-2026-0399", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0400", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0401", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0402", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0403", # `zstd-safe` 7.3.0; same root cause as 0391
+  "RUSTSEC-2026-0404", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0405", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
+  "RUSTSEC-2026-0406", # `zstd-safe` 7.3.0 [unsound]; same root cause as 0391
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
 
 [database]
-path = "~/.cargo/advisory-db"
 url = "https://github.com/RustSec/advisory-db.git"
 fetch = true
 stale = false
@@ -60,4 +57,4 @@ os = [
 
 [yanked]
 enabled = true
-update_index = true
+update_index = true # Auto-update the crates.io index (default: true)
