@@ -220,6 +220,16 @@ impl Default for LegacyMixerConfig {
     }
 }
 
+/// The current `{ capacity, mixer_type }` shape with `mixer_type` optional. Upstream's serde default
+/// for an absent `mixer_type` is Poisson, so [`deserialize_mixer_config`] fills in the uniform
+/// engine instead.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CurrentMixerConfig {
+    capacity: usize,
+    mixer_type: Option<MixerType>,
+}
+
 /// Accepts either the current `{ capacity, mixer_type }` mixer shape or the pre-#8569 flat
 /// `{ min_delay, delay_range, capacity }` shape, so an existing node's saved config.yaml keeps
 /// loading across the upstream mixer-engine refactor. Legacy configs always map onto the uniform
@@ -231,12 +241,17 @@ where
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum MixerConfigCompat {
-        Current(MixerConfig),
+        Current(CurrentMixerConfig),
         Legacy(LegacyMixerConfig),
     }
 
     Ok(match MixerConfigCompat::deserialize(deserializer)? {
-        MixerConfigCompat::Current(cfg) => cfg,
+        MixerConfigCompat::Current(cfg) => MixerConfig {
+            capacity: cfg.capacity,
+            mixer_type: cfg
+                .mixer_type
+                .unwrap_or_else(|| MixerType::Uniform(UniformConfig::default())),
+        },
         MixerConfigCompat::Legacy(legacy) => MixerConfig {
             capacity: legacy.capacity,
             mixer_type: MixerType::Uniform(UniformConfig {
@@ -628,7 +643,7 @@ pub struct UserHoprNetworkConfig {
     ///
     /// Controls the minimum delay, delay spread, and buffer capacity of the HOPR packet mixer.
     /// When omitted from the config file, falls back to `HOPR_INTERNAL_MIXER_*` env vars,
-    /// then to compiled-in defaults (0 ms min, 10 ms spread, 20 000 capacity). Accepts either the
+    /// then to compiled-in defaults (0 ms min, 20 ms spread, 20 000 capacity). Accepts either the
     /// current nested shape or the pre-#8569 flat one.
     #[default(build_mixer_cfg_from_env())]
     #[serde(
@@ -1462,6 +1477,20 @@ min_incoming_ticket_price: "0.06 wxHOPR"
                 min_delay: Duration::from_millis(5),
                 delay_range: Duration::from_millis(15),
             })
+        );
+
+        Ok(())
+    }
+
+    /// Upstream defaults an absent `mixer_type` to Poisson; hoprd must keep the uniform engine.
+    #[test]
+    fn mixer_section_without_mixer_type_selects_uniform() -> anyhow::Result<()> {
+        let cfg: UserHoprNetworkConfig = serde_saphyr::from_str("mixer:\n  capacity: 5000\n")?;
+
+        assert_eq!(cfg.mixer.capacity, 5_000);
+        assert_eq!(
+            cfg.mixer.mixer_type,
+            MixerType::Uniform(UniformConfig::default())
         );
 
         Ok(())
