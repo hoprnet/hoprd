@@ -4873,7 +4873,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -6128,9 +6128,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-strategy"
-version = "5.4.0"
+version = "5.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04a149e034ebd1a28923fba717a324b9011d7f64a03db59256eff9d631e87d51"
+checksum = "71c74c804d50149931fd5e02833f31809bc62cd0f2cd595c4851ae50a4ee4a64"
 dependencies = [
  "anyhow",
  "async-trait",
