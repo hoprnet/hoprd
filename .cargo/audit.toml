@@ -2,20 +2,13 @@
 ignore = [
   "RUSTSEC-2024-0436", # 'paste' dependency in 'libp2p' [unmaintained]
   "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
-  "RUSTSEC-2025-0073", # 'alloy-dyn-abi' in 'alloy' - will be removed in 4.0
-  "RUSTSEC-2025-0137", # `alloy` - held back until removed, see https://github.com/hoprnet/hoprnet/issues/7707
-  "RUSTSEC-2026-0049", # `rustls-webpki` - needs alloy removal
   "RUSTSEC-2026-0118", # `hickory-proto` 0.25.2 pulled by libp2p-dns 0.44.0 -> libp2p 0.56.0; no fix for 0.25.x; cannot remove without a major libp2p bump
   "RUSTSEC-2026-0119", # same root cause as 0118 (different advisory DB version); hickory-proto 0.25.2 still pulled by libp2p 0.56.0; remove together with 0118 once libp2p is bumped past 0.56.0
   "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained]; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins validator_derive 0.20); no fix released yet
-  "RUSTSEC-2026-0221", # 'event-listener' 5.4.1 [unsound] - transitive via moka; upstream fix pending
   "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
-  "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal (0137)
+  "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal
   "RUSTSEC-2024-0449", # 'unsafe-libyaml' [unmaintained] - transitive via serde_yaml (deprecated) <- progenitor build-dep of rest-api-client; no fix, cannot remove without progenitor dropping serde_yaml
-  "RUSTSEC-2026-0367", # 'zip' 3.0.0 [insecure SUID/SGID] - pinned by utoipa-swagger-ui 9.0.2; zip >=9.0.0 is semver-incompatible
-  "RUSTSEC-2026-0368", # 'zip' 3.0.0 [symlink escape] - same root cause as 0367; remove together with 0367 once utoipa-swagger-ui drops zip <9.0.0
-  "RUSTSEC-2026-0369", # 'zip' 3.0.0 [permissions through symlinks, critical] - same root cause; all three zip advisories clear together
-  "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 timing variability, pulled by elliptic-curve 0.13.8 -> k256 0.13.4 (alloy's signer stack); fix needs elliptic-curve 0.14.x / k256 0.14.x, blocked on the same alloy removal as 0137/0253
+  "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 via elliptic-curve 0.13 in 'alloy' (alloy 2.5.0 is newest and still pins k256 0.13.4); the 0.7.x instance is bumped to 0.7.10 - remove when alloy moves to elliptic-curve 0.14
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
