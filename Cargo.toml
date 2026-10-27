@@ -128,7 +128,6 @@ utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 utoipa-swagger-ui = { version = "10.0.2", features = [
   "axum",
   "vendored",
-  "debug-embed",
 ] }
 uuid = { version = "1.28.0" }
 validator = { version = "0.21.0", features = ["derive"] }
