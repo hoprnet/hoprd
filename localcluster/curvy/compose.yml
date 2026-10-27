@@ -17,7 +17,8 @@ services:
     ports:
       # CURVY_BIND_ADDR: where Blokli and the gateway are published. Loopback by default; a caller
       # whose clients sit behind a Docker bridge publishes on that bridge's gateway address instead.
-      - "${CURVY_BIND_ADDR:-127.0.0.1}:8080:8080"
+      # CURVY_CHAIN_PORT: the host port Blokli is published on, for hosts where 8080 is taken.
+      - "${CURVY_BIND_ADDR:-127.0.0.1}:${CURVY_CHAIN_PORT:-8080}:8080"
 
   db:
     # Public hopr-localcluster-pg: schemas/users are already in PGDATA. A fresh

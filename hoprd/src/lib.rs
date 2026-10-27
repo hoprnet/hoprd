@@ -204,15 +204,15 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
-    if cfg.api.enable {
-        let list = init_rest_api(&cfg, node.clone()).await?;
-        processes.extend_from(list);
-    }
-
     tracing::debug!("initializing strategies");
-    let mut multi_strategy =
+    let (mut multi_strategy, pix_funding) =
         crate::strategy::build_strategies(&cfg.strategy, Arc::clone(&node), &hopr_keys.chain_key)?;
     tracing::debug!(strategy = %multi_strategy, "initialized strategies");
+
+    if cfg.api.enable {
+        let list = init_rest_api(&cfg, node.clone(), pix_funding).await?;
+        processes.extend_from(list);
+    }
 
     tracing::debug!("starting up strategies");
     processes.insert(
@@ -255,6 +255,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 async fn init_rest_api(
     cfg: &HoprdConfig,
     hopr: Arc<HoprNode>,
+    pix_funding: crate::strategy::PixFundingHandle,
 ) -> anyhow::Result<AbortableList<HoprdProcess>> {
     let node_cfg_value =
         serde_json::to_value(cfg.as_redacted()).context("failed to serialize redacted config")?;
@@ -299,6 +300,7 @@ async fn init_rest_api(
                 default_session_listen_host: cfg_clone
                     .session_ip_forwarding
                     .default_entry_listen_host,
+                pix_funding,
             })
             .await
             {

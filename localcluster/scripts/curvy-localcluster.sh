@@ -209,7 +209,10 @@ done
 COMPOSE_STARTED=true
 compose up -d --no-build --pull never chain db
 CHAIN_ID=$(compose ps -q chain)
-export HOPRD_CHAIN_URL=http://$STACK_HOST:8080
+export CURVY_CHAIN_PORT="${CURVY_CHAIN_PORT:-8080}"
+export HOPRD_CHAIN_URL=http://$STACK_HOST:$CURVY_CHAIN_PORT
+# The companion dashboard reads the same Blokli; it must not fall back to its own :8080 default.
+export PIX_BLOKLI_URL="${PIX_BLOKLI_URL:-$HOPRD_CHAIN_URL}"
 assert_running() {
   local service id
   for service in "$@"; do
@@ -327,7 +330,7 @@ export CURVY_ZK_KEYS_DIR="$RUN_DIR/keys"
 [[ -z ${PIX_DEMO_RATE:-} ]] || export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 [[ -z ${PIX_DEMO_FLOAT:-} ]] || export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEYS
-unset HOPRD_CURVY_INITIAL_FUNDING HOPRD_CURVY_SCOPE_RPC_URL
+unset HOPRD_CURVY_SCOPE_RPC_URL
 unset HOPRD_PIX_SOAK_POOL_PREFUNDED HOPRD_PIX_FLOAT_NODE_IDS
 
 if $STACK_ONLY; then
