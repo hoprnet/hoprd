@@ -16,6 +16,19 @@ ignore = [
   "RUSTSEC-2026-0367", # 'zip' 3.0.0 - build-dependency of utoipa-swagger-ui 9.0.2, only unpacks its bundled Swagger UI in build.rs; fix needs zip >= 9 and utoipa-swagger-ui 10.0.1 still pins zip ^8.6
   "RUSTSEC-2026-0368", # same zip 3.0.0 build-time extraction as 0367; no untrusted archive is ever extracted
   "RUSTSEC-2026-0369", # same zip 3.0.0 build-time extraction as 0367; remove all three once utoipa-swagger-ui moves to zip >= 9
+  "RUSTSEC-2026-0391", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0403", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0398", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0395", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0401", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0404", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0400", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0397", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0406", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0402", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0399", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0396", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
+  "RUSTSEC-2026-0405", # zstd 0.13 / zstd-safe 7.x transitive dependency; release/4.1 upgrade requires coordinated migration
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
