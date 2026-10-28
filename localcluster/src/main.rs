@@ -239,6 +239,8 @@ async fn main() -> Result<()> {
             // `auto`/`0.0.0.0` aren't resolvable hostnames; map to the same loopback the
             // rest of localcluster advertises so lookup_host never sees the sentinel.
             let relay_host = hoprd_localcluster::summary::advertised_host(&args.p2p_host);
+            let blocked = relay::watch_blocked_links(data_dir.join("blocked_links"));
+            let stalled = relay::watch_stalled_links(data_dir.join("stalled_links"));
             for id in 0..args.size {
                 let listen_port = port_base.checked_add(id as u16).ok_or_else(|| {
                     anyhow::anyhow!("relay listen port overflow: base + node id {id} exceeds u16")
@@ -258,6 +260,8 @@ async fn main() -> Result<()> {
                     target,
                     p2p_port_base: args.p2p_port_base,
                     latency: latency_cfg.clone(),
+                    blocked: blocked.clone(),
+                    stalled: stalled.clone(),
                 })
                 .await
                 .with_context(|| format!("failed to start latency relay for node {id}"))?;
