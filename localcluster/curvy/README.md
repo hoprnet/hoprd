@@ -56,9 +56,7 @@ the service signers are not.`--down` removes the stack again.
 clients sit behind a Docker bridge or whose nodes already use port 3000. Both
 apply to the soak run as well.
 
-Verified 2026-09-15 with `--no-dashboard`: image pulls and proving-file
-downloads take about 10 minutes the first time, the soak then ran 10 of 10
-cycles and passed in 555 s.
+Image pulls and proving-file downloads take about 10 minutes the first time.
 
 For the already prepared offline bundle, transfer and load `images.tar.gz` with
 `docker load --input images.tar.gz`, then pass its `release.json` with `--offline`.
