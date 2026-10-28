@@ -182,3 +182,7 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# Builds against hoprnet/hopr-strategy#123 until it is released.
+[patch.crates-io]
+hopr-strategy = { git = "https://github.com/0xCurvy/hopr-strategy.git", branch = "feat/curvy-bound-circuits" }
