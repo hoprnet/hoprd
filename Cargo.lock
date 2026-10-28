@@ -3188,7 +3188,20 @@ checksum = "17f2842dcb08fefd48d0aed11d50daea49dfd641b5481eb3b52ab14b44cd9176"
 dependencies = [
  "alloy 1.8.3",
  "anyhow",
- "curvy-types",
+ "curvy-types 0.1.1",
+ "hex",
+ "serde_json",
+]
+
+[[package]]
+name = "curvy-abi"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d1ab2fcd735e691e4d98e2aabdbb451aed5369a116fa4c6a78f56c1661de6b8"
+dependencies = [
+ "alloy 1.8.3",
+ "anyhow",
+ "curvy-types 0.2.0",
  "hex",
  "serde_json",
 ]
@@ -3200,7 +3213,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5b85f9a9b2de3f665350c45e37174ca80cbc079dad372b9ede4344f4e64e87e"
 dependencies = [
  "async-trait",
- "curvy-types",
+ "curvy-types 0.1.1",
  "thiserror 1.0.69",
 ]
 
@@ -3212,7 +3225,7 @@ checksum = "08f60123881122d9a97b2a859bde301afe44df84cb28e4fbe2387e7d0db18116"
 dependencies = [
  "async-trait",
  "curvy-chain-api",
- "curvy-types",
+ "curvy-types 0.1.1",
  "num-bigint 0.5.1",
  "reqwest",
  "serde_json",
@@ -3274,10 +3287,10 @@ dependencies = [
  "anyhow",
  "ark-bn254 0.6.0",
  "ark-ff 0.6.0",
- "curvy-abi",
+ "curvy-abi 0.1.1",
  "curvy-chain-api",
  "curvy-core",
- "curvy-types",
+ "curvy-types 0.1.1",
  "curvy-witnesscalc",
  "hex",
  "num-bigint 0.5.1",
@@ -3291,6 +3304,15 @@ name = "curvy-types"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66940fe6e44985e87076b9abaf6c33c250658f97b3c3f2897b88d98995c0d2ca"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "curvy-types"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6377facda73ea91c91946b519dc3e6e4ae6b8fee10e03c362dc527cf5fc1b081"
 dependencies = [
  "serde",
 ]
@@ -6127,12 +6149,12 @@ dependencies = [
  "bytesize",
  "chacha20poly1305 0.11.0",
  "const-hex",
- "curvy-abi",
+ "curvy-abi 0.1.1",
  "curvy-chain-api",
  "curvy-chain-blokli",
  "curvy-core",
  "curvy-sdk",
- "curvy-types",
+ "curvy-types 0.1.1",
  "dashmap",
  "futures",
  "futures-concurrency",
@@ -6599,7 +6621,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
- "curvy-abi",
+ "curvy-abi 0.2.0",
  "futures",
  "hopr-chain-connector",
  "hopr-lib",

@@ -78,7 +78,8 @@ input in `flake.nix`. The launcher caches them in `${XDG_CACHE_HOME:-$HOME/.cach
 verifies them before reuse, and supplies them to both the Linux node and batch
 prover. Existing offline bundles can still supply these files from their artifact
 image. Pending-note graph and zkey hashes must match the release and database;
-the paired verifier uses batch size 5 and tree depth 30.
+the paired verifier is the calldata-bound pending-notes circuit, batch size 256 and
+tree depth 30, released by the chain's aggregator as circuit family `Pix` version 1.
 
 No metadata container is needed. The Rust relayer adapter calls `/protocol` for
 the fee collector's public spend, view and BabyJubjub keys when constructing an
