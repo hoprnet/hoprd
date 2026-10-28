@@ -677,14 +677,17 @@ pub struct UserHoprLibConfig {
     /// Various HOPR-network and transport-related configuration options.
     #[serde(default)]
     pub network: UserHoprNetworkConfig,
-    /// Path to a file that acts as incoming ticket storage.
+    /// Path to a file that stores the unredeemed incoming tickets and the outgoing ticket indices.
     ///
     /// The file will be in the `redb` file format and can contain already existing tickets.
     /// If the file does not exist, it will be created.
     ///
-    /// If omitted, a temporary file will be created and deleted on application exit.
+    /// If omitted, `tickets.redb` inside the data directory (`db.data`) is used. If no data directory
+    /// is set either, a temporary file is created and deleted on application exit: the node then loses
+    /// its unredeemed tickets and issues already used outgoing ticket indices again after a restart.
     ///
-    /// Make sure the file is secure and not accessible by unauthorized users on production.
+    /// The file must not be shared between nodes. Make sure the file is secure and not accessible
+    /// by unauthorized users on production.
     #[serde(default)]
     pub ticket_storage_file: Option<String>,
 }
