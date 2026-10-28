@@ -26,7 +26,7 @@ hopr-ct-full-network = { version = "0.7.0", default-features = false }
 hopr-network-graph = { version = "0.8.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
 hopr-strategy = { version = "5.5.0", default-features = false }
-hopr-ticket-manager = { version = "0.8.0", default-features = false, features = [
+hopr-ticket-manager = { version = "0.9.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
@@ -182,3 +182,7 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# TODO: remove once hopr-ticket-manager 0.9.0 is released from hoprnet/hopr-impls
+[patch.crates-io]
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", branch = "fix/ticket-index-persistence" }
