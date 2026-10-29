@@ -21,7 +21,7 @@ hopr-transport-mixer = { git = "https://github.com/hoprnet/hoprnet", rev = "af80
 
 # crates.io HOPR deps
 hopr-api = { version = "=4.4.0" }
-hopr-chain-connector = "0.28.0"
+hopr-chain-connector = "0.29.0"
 hopr-ct-full-network = { version = "0.7.0", default-features = false }
 hopr-network-graph = { version = "0.8.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
