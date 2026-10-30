@@ -4,8 +4,9 @@
 #
 # --stack-only brings the same stack up and leaves it running instead of running the soak, for a
 # harness that starts its own nodes against it (gnosis_vpn-testenv). It writes the environment those
-# nodes need to $CURVY_RUN_DIR/stack.env; --down removes the stack again. CURVY_BIND_ADDR and
-# CURVY_GATEWAY_PORT move where Blokli and the gateway are published (default 127.0.0.1, 3000).
+# nodes need to $CURVY_RUN_DIR/stack.env; --down removes the stack again. CURVY_BIND_ADDR,
+# CURVY_CHAIN_PORT and CURVY_GATEWAY_PORT move where Blokli and the gateway are published
+# (default 127.0.0.1, 8080, 3000).
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_DIR="$REPO_ROOT/localcluster/curvy"
