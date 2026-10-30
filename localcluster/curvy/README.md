@@ -51,10 +51,10 @@ needed. The environment those nodes need — `HOPRD_CHAIN_URL`, the pool's
 `HOPRD_CURVY*\*`overrides,`HOPRD_CURVY_SCOPE_AGGREGATOR`and`CURVY_ZK_KEYS_DIR`— is written to`stack.env`in the printed run directory;
 the service signers are not.`--down` removes the stack again.
 
-`CURVY_BIND_ADDR` (default `127.0.0.1`) and `CURVY_GATEWAY_PORT` (default
-`3000`) move where Blokli and the gateway are published, for callers whose
-clients sit behind a Docker bridge or whose nodes already use port 3000. Both
-apply to the soak run as well.
+`CURVY_BIND_ADDR` (default `127.0.0.1`), `CURVY_CHAIN_PORT` (default `8080`)
+and `CURVY_GATEWAY_PORT` (default `3000`) move where Blokli and the gateway are
+published, for callers whose clients sit behind a Docker bridge or whose nodes
+already use port 8080 or 3000. All three apply to the soak run as well.
 
 Verified 2026-09-15 with `--no-dashboard`: image pulls and proving-file
 downloads take about 10 minutes the first time, the soak then ran 10 of 10
