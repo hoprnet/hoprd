@@ -5827,7 +5827,7 @@ dependencies = [
 [[package]]
 name = "hopr-api"
 version = "4.4.1"
-source = "git+https://github.com/0xCurvy/hopr-api.git?branch=lazar%2Fpool-funding#3a755ebd4cfbf7ad4c218c08a13ee758ba18cfdc"
+source = "git+https://github.com/0xCurvy/hopr-api.git?branch=lazar%2Fpool-funding#2970522981d9f6ab553f5ee66c01a523a82c1d71"
 dependencies = [
  "async-trait",
  "atomic_enum",
@@ -5865,7 +5865,7 @@ dependencies = [
 [[package]]
 name = "hopr-chain-connector"
 version = "0.28.0"
-source = "git+https://github.com/0xCurvy/hopr-impls.git?branch=lazar%2Fshield-router#699f1e8ae81e49feda4a88efb33506fe8286f01a"
+source = "git+https://github.com/0xCurvy/hopr-impls.git?branch=lazar%2Fshield-router#25d53466b9d59c730facacd982b03f7d861e7717"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6127,7 +6127,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "5.5.1"
-source = "git+https://github.com/0xCurvy/hopr-strategy.git?branch=lazar%2Fpool-funding#c97365d05903aaf68cdfcadd9526a3b2ae4758c2"
+source = "git+https://github.com/0xCurvy/hopr-strategy.git?branch=lazar%2Fpool-funding#14a15e3ed42f1cf22bfd4cef3623bbfd1dfe3345"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6361,7 +6361,7 @@ dependencies = [
 [[package]]
 name = "hopr-types"
 version = "4.1.1"
-source = "git+https://github.com/0xCurvy/hopr-types.git?branch=lazar%2Fshield-router#0b74935f0f483ae4c8b8461049580ccbdcca5aed"
+source = "git+https://github.com/0xCurvy/hopr-types.git?branch=lazar%2Fshield-router#13eb853c4afac7cc357d2c9d45411fe3d04bc6c4"
 dependencies = [
  "aes 0.9.3",
  "anyhow",
@@ -6424,7 +6424,7 @@ dependencies = [
 [[package]]
 name = "hopr-utilities"
 version = "0.17.3"
-source = "git+https://github.com/0xCurvy/hopr-utilities.git?branch=lazar%2Fshield-router#1c28d906bcca7e7f051120970c5e027635107df0"
+source = "git+https://github.com/0xCurvy/hopr-utilities.git?branch=lazar%2Fshield-router#cc9d049f3539c106ea7c1ac47a01a8da4bc1e431"
 dependencies = [
  "anyhow",
  "arrayvec",
