@@ -687,7 +687,7 @@ fn curvy_shield(net: HoprBalance) -> HoprBalance {
     HoprBalance::from((gross + one - U256::one()) / one * one)
 }
 
-/// Validate Curvy configuration before bootstrap and size the direct shield.
+/// Validate Curvy configuration before bootstrap and assemble the operator-key environment.
 /// Relayed nodes need no operator key; manual operator runs retain the deployer default.
 fn curvy_node_env() -> anyhow::Result<Vec<(String, String)>> {
     let zk_keys = std::env::var(CURVY_ZK_KEYS_ENV).with_context(|| {

@@ -340,7 +340,7 @@ pub type PixFundingHandle = Option<Arc<dyn hoprd_api::PixFunding>>;
 ///
 /// Maps each [`StrategyKind`] variant to its concrete builder, wires in the node,
 /// and returns a single `Box<dyn Strategy + Send>` that runs all sub-strategies
-/// concurrently.
+/// concurrently, together with the PIX deposit pool's [`PixFundingHandle`] for the API.
 ///
 /// PIX is one of those variants ([`StrategyKind::Pix`]) rather than a special case. It used
 /// to be enabled by `HOPRD_ENABLE_PIX=1` and tuned by four more environment variables,
