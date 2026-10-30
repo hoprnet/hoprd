@@ -333,11 +333,11 @@ impl ChainWriteAccountOperations for StubChain {
         Err(StubError("stub cannot withdraw".into()))
     }
 
-    async fn send(
+    async fn send_erc777(
         &self,
         _balance: HoprBalance,
         _recipient: &Address,
-        _data: &[u8],
+        _payload: &hopr_lib::api::types::chain::prelude::Erc777Payload,
     ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
     {
         Err(StubError("stub cannot send".into()))
