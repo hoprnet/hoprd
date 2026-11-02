@@ -6,7 +6,7 @@ services:
     platform: linux/amd64
     # Pinned by digest; keep in sync with CHAIN_IMAGE in .github/workflows/pr.yaml.
     # 0.13.4-pr.543; earlier pins were garbage-collected from the registry (404).
-    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:dcaa7bfd108a85435de6554e081675dbac81937d9f4d101c8a2b89fb6a0ce4bb
+    image: europe-west3-docker.pkg.dev/hoprassociation/docker-images/bloklid-anvil@sha256:f0eed2fddf85f41524bc3ebaf144aeca8daf8d6c1589668d3dd7a694fdac319f
     ports:
       - "8080:8080"
     healthcheck:
