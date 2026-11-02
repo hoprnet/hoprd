@@ -21,17 +21,17 @@ hopr-transport-mixer = { git = "https://github.com/hoprnet/hoprnet", rev = "af80
 
 # crates.io HOPR deps
 hopr-api = { version = "=4.4.0" }
-hopr-chain-connector = "0.28.0"
-hopr-ct-full-network = { version = "0.7.0", default-features = false }
-hopr-network-graph = { version = "0.8.0", default-features = false }
+hopr-chain-connector = "0.30.1"
+hopr-ct-full-network = { version = "0.8.0", default-features = false }
+hopr-network-graph = { version = "0.9.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.6.0", default-features = false }
 hopr-strategy = { version = "5.5.0", default-features = false }
-hopr-ticket-manager = { version = "0.8.0", default-features = false, features = [
+hopr-ticket-manager = { version = "0.9.0", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
-hopr-transport-p2p = { version = "0.12.3", features = ["transport-quic"] }
+hopr-transport-p2p = { version = "0.13.0", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
@@ -49,9 +49,9 @@ chrono = { version = "0.4.45", default-features = false, features = [
 ] }
 # Signs raw EIP-1559 calls from key bytes; the localcluster uses it to grant each node's Safe the
 # Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
-curvy-abi = "=0.1.1"
+curvy-abi = "=0.2.0"
 clap = { version = "4.6.7", features = ["derive", "env", "string"] }
-const_format = "0.2.36"
+const_format = "0.2.37"
 console-subscriber = "0.5.0"
 flagset = "0.4.7"
 futures = { version = "0.3.34", default-features = false, features = [
@@ -70,14 +70,14 @@ mimalloc = { version = "0.1.52", default-features = false, features = [
   "secure",
 ] }
 nix = { version = "0.31.3", features = ["fs", "signal"] }
-parking_lot = "0.12.5"
-rstest = "0.27.0"
+parking_lot = "0.13.0"
+rstest = "0.28.0"
 oas3 = "0.22.0"
 openapiv3 = "2.2.0"
-opentelemetry = { version = "0.32.0" }
-opentelemetry-otlp = { version = "0.32.0", default-features = false }
-opentelemetry-prometheus-text-exporter = { version = "0.3.0" }
-opentelemetry_sdk = { version = "0.32.1" }
+opentelemetry = { version = "0.33.1" }
+opentelemetry-otlp = { version = "0.33.1", default-features = false }
+opentelemetry-prometheus-text-exporter = { version = "0.4.0" }
+opentelemetry_sdk = { version = "0.33.1" }
 percent-encoding = "2.3.2"
 prettyplease = "0.3.0"
 proc-macro-regex = "~1.1.0"
@@ -94,7 +94,7 @@ serde-saphyr = "0.0.29"
 serde_json = "1.0.154"
 serde_urlencoded = "0.7.1"
 serde_with = { version = "3.24.0", features = ["base64"] }
-signal-hook = "0.4.5"
+signal-hook = "0.4.6"
 smart-default = "0.7.1"
 strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "3.0.9", features = ["full"] }
@@ -103,7 +103,7 @@ test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.21"
 tikv-jemalloc-ctl = { version = "0.7.0", features = ["stats"] }
 tikv-jemallocator = "0.7.0"
-tokio = { version = "1.53.2", features = [
+tokio = { version = "1.54.1", features = [
   "rt-multi-thread",
   "macros",
   "tracing",
@@ -117,7 +117,7 @@ tower-http = { version = "0.7.1", features = [
   "sensitive-headers",
 ] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
-tracing-opentelemetry = { version = "0.33.0" }
+tracing-opentelemetry = { version = "0.34.0" }
 tracing-subscriber = { version = "0.3.23", features = [
   "env-filter",
   "fmt",
@@ -127,7 +127,7 @@ tracing-subscriber = { version = "0.3.23", features = [
 utoipa = { version = "6.0.0" }
 utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 utoipa-swagger-ui = { version = "10.0.2", features = ["axum", "vendored"] }
-uuid = { version = "1.28.0" }
+uuid = { version = "1.29.0" }
 validator = { version = "0.21.0", features = ["derive"] }
 vergen-gix = { version = "10.0.3", features = ["build"] }
 
