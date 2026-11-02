@@ -56,9 +56,7 @@ the service signers are not.`--down` removes the stack again.
 clients sit behind a Docker bridge or whose nodes already use port 3000. Both
 apply to the soak run as well.
 
-Verified 2026-09-15 with `--no-dashboard`: image pulls and proving-file
-downloads take about 10 minutes the first time, the soak then ran 10 of 10
-cycles and passed in 555 s.
+Image pulls and proving-file downloads take about 10 minutes the first time.
 
 For the already prepared offline bundle, transfer and load `images.tar.gz` with
 `docker load --input images.tar.gz`, then pass its `release.json` with `--offline`.
@@ -78,7 +76,8 @@ input in `flake.nix`. The launcher caches them in `${XDG_CACHE_HOME:-$HOME/.cach
 verifies them before reuse, and supplies them to both the Linux node and batch
 prover. Existing offline bundles can still supply these files from their artifact
 image. Pending-note graph and zkey hashes must match the release and database;
-the paired verifier uses batch size 5 and tree depth 30.
+the paired verifier is the calldata-bound pending-notes circuit, batch size 256 and
+tree depth 30, released by the chain's aggregator as circuit family `Pix` version 1.
 
 No metadata container is needed. The Rust relayer adapter calls `/protocol` for
 the fee collector's public spend, view and BabyJubjub keys when constructing an

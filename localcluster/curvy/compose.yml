@@ -88,7 +88,8 @@ services:
       PROVER_THREADS: "1"
       POLL_INTERVAL_MS: "1000"
       # Commit partial batches promptly, including the Entry's first shield.
-      # Keep the verifier's batch dimension (5); changing BATCH_SIZE is invalid.
+      # The batch size (256) and circuit family version (pix 1) come from
+      # reference.circuit_configs and must match the pending zkey.
       MAX_BATCH_AGE_MS: "1000"
       ZK_KEYS_BUCKET: ""
     volumes:
