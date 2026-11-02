@@ -35,13 +35,15 @@ SELECT 1,type,wasm_key,witness_engine,witness_graph_key,witness_graph_sha256,
 FROM local_circuits;
 INSERT INTO reference.circuit_configs
   (network_id,type,witness_engine,witness_graph_key,witness_graph_sha256,
-   zkey_key,zkey_sha256,tree_depth,max_inputs,max_outputs,batch_size,group_fee)
+   zkey_key,zkey_sha256,tree_depth,max_inputs,max_outputs,batch_size,group_fee,
+   circuit_family,circuit_version)
 VALUES (1,'pending_notes_commitment','curvy-graph-v1',:'graph',
-  :'graph_sha256',:'zkey',:'zkey_sha256',30,0,0,5,0)
+  :'graph_sha256',:'zkey',:'zkey_sha256',30,0,0,256,0,'pix',1)
 ON CONFLICT (network_id,type) DO UPDATE SET
   witness_engine=excluded.witness_engine,witness_graph_key=excluded.witness_graph_key,
   witness_graph_sha256=excluded.witness_graph_sha256,zkey_key=excluded.zkey_key,
-  zkey_sha256=excluded.zkey_sha256,tree_depth=30,max_inputs=0,max_outputs=0,batch_size=5,group_fee=0;
+  zkey_sha256=excluded.zkey_sha256,tree_depth=30,max_inputs=0,max_outputs=0,batch_size=256,group_fee=0,
+  circuit_family='pix',circuit_version=1;
 SELECT setval(pg_get_serial_sequence('reference.networks','id'),1);
 SELECT setval(pg_get_serial_sequence('reference.currencies','id'),2);
 COMMIT;
