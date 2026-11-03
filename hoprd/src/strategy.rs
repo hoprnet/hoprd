@@ -448,6 +448,10 @@ where
                 .build(Arc::clone(&node))?,
             ),
             #[cfg(feature = "runtime-tokio")]
+            #[allow(
+                deprecated,
+                reason = "hoprd still exposes AutoFunding as its own strategy kind; folding it into ChannelLifecycleStrategy changes the config surface"
+            )]
             StrategyKind::AutoFunding(sub_cfg) => strategies.push(
                 hopr_strategy::auto_funding::AutoFundingStrategy::new(
                     *sub_cfg,
@@ -456,6 +460,10 @@ where
                 .build(Arc::clone(&node))?,
             ),
             #[cfg(feature = "runtime-tokio")]
+            #[allow(
+                deprecated,
+                reason = "hoprd still exposes ClosureFinalizer as its own strategy kind; folding it into ChannelLifecycleStrategy changes the config surface"
+            )]
             StrategyKind::ClosureFinalizer(sub_cfg) => strategies.push(
                 hopr_strategy::channel_finalizer::ClosureFinalizerStrategy::new(
                     *sub_cfg,
