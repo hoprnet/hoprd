@@ -19,6 +19,11 @@
 //! - *jitter* lets a packet that drew a smaller delay overtake an earlier one, so packets
 //!   reorder — exactly as they do on the real internet.
 //!
+//! **Impairment.** Beyond the delay, every relay consults the shared [`Impairment`] before it
+//! forwards a datagram, on both legs: a scenario takes the link away (blackhole) or hands it back
+//! degraded (loss) while the run is in flight, which a startup-time delay model cannot express.
+//! See [`crate::impair`].
+//!
 //! Ordering is therefore a consequence of the delays, never forced. (A naive
 //! task-per-datagram timer using a *relative* sleep would also reorder under a *fixed*
 //! delay because equal timer deadlines wake in arbitrary order — an artefact this avoids.)
@@ -40,7 +45,10 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::latency::{DelayDist, LatencyConfig};
+use crate::{
+    impair::{Direction, Impairment},
+    latency::{DelayDist, LatencyConfig},
+};
 
 /// Largest datagram the relay will buffer. QUIC datagrams stay well under this.
 const MAX_DATAGRAM: usize = 64 * 1024;
@@ -87,6 +95,10 @@ pub struct RelayConfig {
     pub p2p_port_base: u16,
     /// Latency model resolved per directed link.
     pub latency: Arc<LatencyConfig>,
+    /// Runtime impairment (blackhole / loss) shared by every relay. Unlike the latency model this
+    /// is not resolved at startup: a scenario takes the link away and hands it back degraded while
+    /// the run is in flight.
+    pub impairment: Arc<Impairment>,
 }
 
 /// Handle to a running relay; aborts the relay task on [`RelayHandle::abort`].
@@ -139,6 +151,17 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
             }
         };
 
+        // Admitted before any session work. During a blackhole every datagram is dropped anyway,
+        // and letting them allocate sessions would churn the table — and evict live peers — for
+        // traffic that is about to be discarded. An existing session still gets its `last_seen`
+        // refreshed, so a blackhole does not make a live peer look idle to the LRU.
+        if let Some(session) = sessions.get_mut(&peer) {
+            session.last_seen = Instant::now();
+        }
+        if !cfg.impairment.admit() {
+            continue;
+        }
+
         // Not the entry API: creating the value is an async, fallible call (bind/connect)
         // that may `continue` on error, which `entry().or_insert_with` can't express.
         #[allow(clippy::map_entry)]
@@ -164,9 +187,8 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
             }
         }
 
-        let datagram = buf[..len].to_vec();
         let session = sessions.get_mut(&peer).expect("inserted above");
-        session.last_seen = Instant::now();
+        let datagram = buf[..len].to_vec();
         // Forward leg: peer Y -> node X, shaped by resolve(Y, X). Drop on a full queue
         // (link saturated), tear the session down only when the worker is gone.
         match session.forward_tx.try_send((Instant::now(), datagram)) {
@@ -211,15 +233,22 @@ async fn new_upstream(
     let mut tasks = JoinSet::new();
 
     // Return leg: node X -> peer Y, sent from the listen socket back to the peer.
-    let (return_tx, return_worker) =
-        sender_worker(listen, ForwardTarget::SendTo(peer), return_delay);
+    let (return_tx, return_worker) = sender_worker(
+        listen,
+        ForwardTarget::SendTo(peer),
+        return_delay,
+        cfg.impairment.clone(),
+        Direction::Return,
+    );
     tasks.spawn(return_worker);
 
     let reader = upstream.clone();
+    let impairment = cfg.impairment.clone();
     tasks.spawn(async move {
         let mut buf = vec![0u8; MAX_DATAGRAM];
         loop {
             match reader.recv(&mut buf).await {
+                Ok(_) if !impairment.admit() => {}
                 Ok(len) => match return_tx.try_send((Instant::now(), buf[..len].to_vec())) {
                     Ok(()) => {}
                     Err(mpsc::error::TrySendError::Full(_)) => {
@@ -232,8 +261,13 @@ async fn new_upstream(
         }
     });
 
-    let (forward_tx, forward_worker) =
-        sender_worker(upstream, ForwardTarget::Connected, forward_delay);
+    let (forward_tx, forward_worker) = sender_worker(
+        upstream,
+        ForwardTarget::Connected,
+        forward_delay,
+        cfg.impairment.clone(),
+        Direction::Forward,
+    );
     tasks.spawn(forward_worker);
 
     Ok(Session {
@@ -262,6 +296,8 @@ fn sender_worker(
     socket: Arc<UdpSocket>,
     target: ForwardTarget,
     delay: Option<DelayDist>,
+    impairment: Arc<Impairment>,
+    direction: Direction,
 ) -> (mpsc::Sender<Pending>, impl std::future::Future<Output = ()>) {
     let (tx, mut rx) = mpsc::channel::<Pending>(RELAY_QUEUE_CAP);
     let worker = async move {
@@ -279,8 +315,12 @@ fn sender_worker(
                         socket.send_to(&datagram, addr).await.map(|_| ())
                     }
                 };
-                if let Err(e) = result {
-                    warn!(error = %e, "relay forward failed");
+                match result {
+                    // Counted here, not at admission: a datagram the schedule let through can
+                    // still be dropped by a full queue or a failed send, and the counters are
+                    // what a run uses to prove traffic crossed the relay.
+                    Ok(()) => impairment.record_forwarded(direction),
+                    Err(e) => warn!(error = %e, "relay forward failed"),
                 }
             }
 
@@ -338,6 +378,7 @@ mod tests {
             target,
             p2p_port_base: 9000,
             latency: Arc::new(latency),
+            impairment: Default::default(),
         }
     }
 
@@ -379,6 +420,52 @@ mod tests {
         relay.abort();
     }
 
+    /// A blackhole drops in both directions and a cleared one lets traffic through again — the
+    /// schedule a scenario changes mid-run, and the counters it checks afterwards.
+    #[tokio::test]
+    async fn a_blackhole_drops_both_legs_and_clears() {
+        let node = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let node_addr = node.local_addr().unwrap();
+        let impairment = Arc::new(Impairment::default());
+
+        let mut cfg = relay_cfg(
+            0,
+            node_addr,
+            LatencyConfig::global(DelayDist::Fixed(Duration::ZERO)),
+        );
+        cfg.impairment = impairment.clone();
+        let relay = spawn_relay(cfg).await.unwrap();
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut buf = [0u8; 16];
+
+        impairment.set_spec(crate::impair::parse("blackhole on\n"));
+        client
+            .send_to(b"dropped", relay.listen_addr())
+            .await
+            .unwrap();
+        let lost = tokio::time::timeout(Duration::from_millis(100), node.recv_from(&mut buf)).await;
+        assert!(lost.is_err(), "a blackholed datagram reached the node");
+        assert_eq!(impairment.counters().dropped, 1);
+
+        impairment.set_spec(crate::impair::parse("blackhole off\n"));
+        client
+            .send_to(b"through", relay.listen_addr())
+            .await
+            .unwrap();
+        let (n, from) = node.recv_from(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], b"through");
+
+        // The return leg is impaired too, so the reply never reaches the client.
+        impairment.set_spec(crate::impair::parse("blackhole on\n"));
+        node.send_to(b"reply", from).await.unwrap();
+        let lost =
+            tokio::time::timeout(Duration::from_millis(100), client.recv_from(&mut buf)).await;
+        assert!(lost.is_err(), "a blackholed reply reached the client");
+        assert_eq!(impairment.counters().dropped, 2);
+
+        relay.abort();
+    }
+
     #[tokio::test]
     async fn per_link_delay_is_keyed_by_source_port() {
         let p2p_port_base = 49_000u16;
@@ -399,6 +486,7 @@ mod tests {
             target: node_addr,
             p2p_port_base,
             latency: Arc::new(latency),
+            impairment: Default::default(),
         })
         .await
         .unwrap();
