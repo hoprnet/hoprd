@@ -19,6 +19,11 @@
 //! - *jitter* lets a packet that drew a smaller delay overtake an earlier one, so packets
 //!   reorder — exactly as they do on the real internet.
 //!
+//! **Impairment.** Beyond the delay, every relay consults the shared [`Impairment`] before it
+//! forwards a datagram, on both legs: a scenario takes the link away (blackhole) or hands it back
+//! degraded (loss) while the run is in flight, which a startup-time delay model cannot express.
+//! See [`crate::impair`].
+//!
 //! Ordering is therefore a consequence of the delays, never forced. (A naive
 //! task-per-datagram timer using a *relative* sleep would also reorder under a *fixed*
 //! delay because equal timer deadlines wake in arbitrary order — an artefact this avoids.)
@@ -40,7 +45,10 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::latency::{DelayDist, LatencyConfig};
+use crate::{
+    impair::{Direction, Impairment},
+    latency::{DelayDist, LatencyConfig},
+};
 
 /// Largest datagram the relay will buffer. QUIC datagrams stay well under this.
 const MAX_DATAGRAM: usize = 64 * 1024;
@@ -91,6 +99,10 @@ pub struct RelayConfig {
     pub blocked: BlockedLinks,
     /// Directed links that periodically hold every datagram back, to emulate a relay that trickles.
     pub stalled: StalledLinks,
+    /// Runtime impairment (blackhole / loss) shared by every relay. Unlike the latency model this
+    /// is not resolved at startup: a scenario takes the link away and hands it back degraded while
+    /// the run is in flight.
+    pub impairment: Arc<Impairment>,
 }
 
 /// A link stalls for `stall` out of every `period`, holding each datagram an extra `delay`.
@@ -213,9 +225,14 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
         if is_blocked(&cfg.blocked, peer_index(&cfg, peer), cfg.node_id) {
             continue;
         }
-        let datagram = buf[..len].to_vec();
         let session = sessions.get_mut(&peer).expect("inserted above");
         session.last_seen = Instant::now();
+        // Dropped before the queue, so a blackhole costs no session state: the peer keeps its
+        // socket and the flow resumes from where it was when the impairment clears.
+        if !cfg.impairment.admit(Direction::Forward) {
+            continue;
+        }
+        let datagram = buf[..len].to_vec();
         // Forward leg: peer Y -> node X, shaped by resolve(Y, X). Drop on a full queue
         // (link saturated), tear the session down only when the worker is gone.
         let held = stall_delay(&cfg.stalled, peer_index(&cfg, peer), cfg.node_id);
@@ -270,11 +287,13 @@ async fn new_upstream(
 
     let reader = upstream.clone();
     let (blocked, stalled, node_id) = (cfg.blocked.clone(), cfg.stalled.clone(), cfg.node_id);
+    let impairment = cfg.impairment.clone();
     tasks.spawn(async move {
         let mut buf = vec![0u8; MAX_DATAGRAM];
         loop {
             match reader.recv(&mut buf).await {
                 Ok(_) if is_blocked(&blocked, node_id, peer_idx) => {}
+                Ok(_) if !impairment.admit(Direction::Return) => {}
                 Ok(len) => match return_tx.try_send((
                     Instant::now() + stall_delay(&stalled, node_id, peer_idx),
                     buf[..len].to_vec(),
@@ -469,6 +488,7 @@ mod tests {
             latency: Arc::new(latency),
             blocked: Default::default(),
             stalled: Default::default(),
+            impairment: Default::default(),
         }
     }
 
@@ -510,6 +530,52 @@ mod tests {
         relay.abort();
     }
 
+    /// A blackhole drops in both directions and a cleared one lets traffic through again — the
+    /// schedule a scenario changes mid-run, and the counters it checks afterwards.
+    #[tokio::test]
+    async fn a_blackhole_drops_both_legs_and_clears() {
+        let node = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let node_addr = node.local_addr().unwrap();
+        let impairment = Arc::new(Impairment::default());
+
+        let mut cfg = relay_cfg(
+            0,
+            node_addr,
+            LatencyConfig::global(DelayDist::Fixed(Duration::ZERO)),
+        );
+        cfg.impairment = impairment.clone();
+        let relay = spawn_relay(cfg).await.unwrap();
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut buf = [0u8; 16];
+
+        impairment.set_spec(crate::impair::parse("blackhole on\n"));
+        client
+            .send_to(b"dropped", relay.listen_addr())
+            .await
+            .unwrap();
+        let lost = tokio::time::timeout(Duration::from_millis(100), node.recv_from(&mut buf)).await;
+        assert!(lost.is_err(), "a blackholed datagram reached the node");
+        assert_eq!(impairment.counters().dropped, 1);
+
+        impairment.set_spec(crate::impair::parse("blackhole off\n"));
+        client
+            .send_to(b"through", relay.listen_addr())
+            .await
+            .unwrap();
+        let (n, from) = node.recv_from(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], b"through");
+
+        // The return leg is impaired too, so the reply never reaches the client.
+        impairment.set_spec(crate::impair::parse("blackhole on\n"));
+        node.send_to(b"reply", from).await.unwrap();
+        let lost =
+            tokio::time::timeout(Duration::from_millis(100), client.recv_from(&mut buf)).await;
+        assert!(lost.is_err(), "a blackholed reply reached the client");
+        assert_eq!(impairment.counters().dropped, 2);
+
+        relay.abort();
+    }
+
     #[tokio::test]
     async fn per_link_delay_is_keyed_by_source_port() {
         let p2p_port_base = 49_000u16;
@@ -532,6 +598,7 @@ mod tests {
             latency: Arc::new(latency),
             blocked: Default::default(),
             stalled: Default::default(),
+            impairment: Default::default(),
         })
         .await
         .unwrap();
