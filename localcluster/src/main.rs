@@ -23,7 +23,7 @@ use hopr_chain_connector::api::HoprBalance;
 use hoprd_localcluster::{
     blokli_helper, cli, client_helper, control,
     control::{ControlServer, SharedSummary},
-    identity,
+    identity, impair,
     lock::ClusterLock,
     relay::{self, RelayConfig, RelayHandle},
     state,
@@ -143,7 +143,14 @@ async fn main() -> Result<()> {
         &args,
         latency_model.as_ref(),
     )));
-    let _control = ControlServer::start(control::socket_path(&control_base), summary.clone())?;
+    // Runtime impairment: watched from a file the test rewrites between phases, shared by every
+    // relay, and reported in the status snapshot so a run can prove it applied.
+    let impairment = impair::watch(data_dir.join("impairment"));
+    let _control = ControlServer::start(
+        control::socket_path(&control_base),
+        summary.clone(),
+        Some(impairment.clone()),
+    )?;
 
     let explicit_chain_url = args.chain_url.clone();
 
@@ -258,6 +265,7 @@ async fn main() -> Result<()> {
                     target,
                     p2p_port_base: args.p2p_port_base,
                     latency: latency_cfg.clone(),
+                    impairment: impairment.clone(),
                 })
                 .await
                 .with_context(|| format!("failed to start latency relay for node {id}"))?;
