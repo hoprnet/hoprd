@@ -405,10 +405,19 @@ link by. It applies on top of the latency delay and needs `--latency` (the relay
 `status` reports what the relays saw, so a run can prove the impairment reached the traffic:
 
 ```json
-"relay": { "forwarded": 12043, "dropped": 37, "blackhole": false, "drop_every": 20, "loss_ppm": 0 }
+"relay": {
+  "forwarded_forward": 6021,
+  "forwarded_return": 6022,
+  "dropped": 37,
+  "blackhole": false,
+  "drop_every": 20,
+  "loss_ppm": 0
+}
 ```
 
-`relay` is absent when the relays are not running.
+`forwarded_forward` counts datagrams the relays sent towards the nodes and `forwarded_return`
+those sent back to the peers; both are counted on a successful send, so a datagram dropped by a
+full queue does not appear in them. `relay` is absent when the relays are not running.
 
 ### Channel management modes
 

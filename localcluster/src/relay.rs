@@ -197,6 +197,17 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
             }
         };
 
+        // Admitted before any session work. During a blackhole every datagram is dropped anyway,
+        // and letting them allocate sessions would churn the table — and evict live peers — for
+        // traffic that is about to be discarded. An existing session still gets its `last_seen`
+        // refreshed, so a blackhole does not make a live peer look idle to the LRU.
+        if let Some(session) = sessions.get_mut(&peer) {
+            session.last_seen = Instant::now();
+        }
+        if !cfg.impairment.admit() {
+            continue;
+        }
+
         // Not the entry API: creating the value is an async, fallible call (bind/connect)
         // that may `continue` on error, which `entry().or_insert_with` can't express.
         #[allow(clippy::map_entry)]
@@ -226,12 +237,6 @@ async fn run_relay(cfg: Arc<RelayConfig>, listen: Arc<UdpSocket>) {
             continue;
         }
         let session = sessions.get_mut(&peer).expect("inserted above");
-        session.last_seen = Instant::now();
-        // Dropped before the queue, so a blackhole costs no session state: the peer keeps its
-        // socket and the flow resumes from where it was when the impairment clears.
-        if !cfg.impairment.admit(Direction::Forward) {
-            continue;
-        }
         let datagram = buf[..len].to_vec();
         // Forward leg: peer Y -> node X, shaped by resolve(Y, X). Drop on a full queue
         // (link saturated), tear the session down only when the worker is gone.
@@ -281,8 +286,13 @@ async fn new_upstream(
     let mut tasks = JoinSet::new();
 
     // Return leg: node X -> peer Y, sent from the listen socket back to the peer.
-    let (return_tx, return_worker) =
-        sender_worker(listen, ForwardTarget::SendTo(peer), return_delay);
+    let (return_tx, return_worker) = sender_worker(
+        listen,
+        ForwardTarget::SendTo(peer),
+        return_delay,
+        cfg.impairment.clone(),
+        Direction::Return,
+    );
     tasks.spawn(return_worker);
 
     let reader = upstream.clone();
@@ -293,7 +303,7 @@ async fn new_upstream(
         loop {
             match reader.recv(&mut buf).await {
                 Ok(_) if is_blocked(&blocked, node_id, peer_idx) => {}
-                Ok(_) if !impairment.admit(Direction::Return) => {}
+                Ok(_) if !impairment.admit() => {}
                 Ok(len) => match return_tx.try_send((
                     Instant::now() + stall_delay(&stalled, node_id, peer_idx),
                     buf[..len].to_vec(),
@@ -309,8 +319,13 @@ async fn new_upstream(
         }
     });
 
-    let (forward_tx, forward_worker) =
-        sender_worker(upstream, ForwardTarget::Connected, forward_delay);
+    let (forward_tx, forward_worker) = sender_worker(
+        upstream,
+        ForwardTarget::Connected,
+        forward_delay,
+        cfg.impairment.clone(),
+        Direction::Forward,
+    );
     tasks.spawn(forward_worker);
 
     Ok(Session {
@@ -339,6 +354,8 @@ fn sender_worker(
     socket: Arc<UdpSocket>,
     target: ForwardTarget,
     delay: Option<DelayDist>,
+    impairment: Arc<Impairment>,
+    direction: Direction,
 ) -> (mpsc::Sender<Pending>, impl std::future::Future<Output = ()>) {
     let (tx, mut rx) = mpsc::channel::<Pending>(RELAY_QUEUE_CAP);
     let worker = async move {
@@ -356,8 +373,12 @@ fn sender_worker(
                         socket.send_to(&datagram, addr).await.map(|_| ())
                     }
                 };
-                if let Err(e) = result {
-                    warn!(error = %e, "relay forward failed");
+                match result {
+                    // Counted here, not at admission: a datagram the schedule let through can
+                    // still be dropped by a full queue or a failed send, and the counters are
+                    // what a run uses to prove traffic crossed the relay.
+                    Ok(()) => impairment.record_forwarded(direction),
+                    Err(e) => warn!(error = %e, "relay forward failed"),
                 }
             }
 

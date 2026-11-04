@@ -102,12 +102,17 @@ impl Impairment {
         }
     }
 
-    /// Decide one datagram's fate, counting it.
+    /// Decide one datagram's fate, counting a drop if that is the verdict.
     ///
     /// `true` means forward it. The decision is taken per datagram rather than per flow, so a
     /// blackhole that ends mid-run lets the next datagram through instead of holding a session
     /// that will never be used again.
-    pub fn admit(&self, direction: Direction) -> bool {
+    ///
+    /// Admission is not delivery: a datagram let through here can still be dropped by a full
+    /// queue, a full release heap or a failed socket send. [`Self::record_forwarded`] counts the
+    /// ones that actually left, so `forwarded_*` measures traffic that crossed the relay rather
+    /// than traffic the schedule allowed.
+    pub fn admit(&self) -> bool {
         let spec = self.spec();
         let seen = self.decisions.fetch_add(1, Ordering::Relaxed);
         let drop = spec.blackhole
@@ -117,14 +122,17 @@ impl Impairment {
             || (spec.loss_ppm > 0 && rand::random::<u32>() % 1_000_000 < spec.loss_ppm);
         if drop {
             self.dropped.fetch_add(1, Ordering::Relaxed);
-        } else {
-            let counter = match direction {
-                Direction::Forward => &self.forwarded_forward,
-                Direction::Return => &self.forwarded_return,
-            };
-            counter.fetch_add(1, Ordering::Relaxed);
         }
         !drop
+    }
+
+    /// Count a datagram the relay sent, in the direction it was sent.
+    pub fn record_forwarded(&self, direction: Direction) {
+        let counter = match direction {
+            Direction::Forward => &self.forwarded_forward,
+            Direction::Return => &self.forwarded_return,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -219,7 +227,7 @@ mod tests {
         let impairment = Impairment::default();
         impairment.set_spec(parse("blackhole on\n"));
         for _ in 0..5 {
-            assert!(!impairment.admit(Direction::Forward));
+            assert!(!impairment.admit());
         }
         assert_eq!(
             impairment.counters(),
@@ -235,9 +243,7 @@ mod tests {
     fn drop_every_spreads_over_the_datagrams_offered() {
         let impairment = Impairment::default();
         impairment.set_spec(parse("drop-every 4\n"));
-        let forwarded = (0..8)
-            .filter(|_| impairment.admit(Direction::Forward))
-            .count();
+        let forwarded = (0..8).filter(|_| impairment.admit()).count();
         // One in four, starting with the first: 2 of 8.
         assert_eq!(forwarded, 6);
         assert_eq!(impairment.counters().dropped, 2);
@@ -247,9 +253,10 @@ mod tests {
     fn clearing_the_schedule_stops_dropping_but_keeps_the_counts() {
         let impairment = Impairment::default();
         impairment.set_spec(parse("blackhole on\n"));
-        assert!(!impairment.admit(Direction::Forward));
+        assert!(!impairment.admit());
         impairment.set_spec(parse("blackhole off\n"));
-        assert!(impairment.admit(Direction::Return));
+        assert!(impairment.admit());
+        impairment.record_forwarded(Direction::Return);
         assert_eq!(
             impairment.counters(),
             Counters {
