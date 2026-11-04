@@ -112,6 +112,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                         .ok()
                 })
                 .unwrap_or_else(|| BlockchainConnectorConfig::default().tx_timeout_multiplier),
+            nonce_gap_tolerance: BlockchainConnectorConfig::default().nonce_gap_tolerance,
         },
         BlokliClient::new(
             cfg.blokli_url.parse()?,
@@ -136,9 +137,14 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     };
     prober_cfg.validate_against_probe_timeout(hopr_lib_cfg.protocol.probe.timeout)?;
 
-    let (ticket_manager, ticket_factory) = ticket_manager_from_chain(&chain_connector)
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to seed ticket manager: {e}"))?;
+    let ticket_store = match cfg.hopr.ticket_storage_file.as_deref() {
+        Some(path) => RedbStore::new(path)?,
+        None => RedbStore::new_temp()?,
+    };
+    let (ticket_manager, ticket_factory) =
+        ticket_manager_from_chain(&chain_connector, ticket_store)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to seed ticket manager: {e}"))?;
 
     let path_cfg = hopr_lib_cfg.protocol.path_planner;
     let graph: SharedChannelGraph = Arc::new(ChannelGraph::with_edge_params(

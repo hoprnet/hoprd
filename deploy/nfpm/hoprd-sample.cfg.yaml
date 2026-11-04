@@ -31,6 +31,12 @@ hopr:
   network:
     probe_interval: "60s"
     probe_recheck_threshold: "120s"
+    # CT nodes may retain remote relayers by reducing latency bias and retaining more candidates.
+    # path_planner:
+    #   latency_halflife: "10s"
+    #   max_cached_paths: 128
+    #   min_paths_anonymity_floor: 0
+    #   return_path_exploration: 0.25
   # outgoing_ticket_winning_prob: 1.0
   # outgoing_ticket_price: "0.03 wxHOPR"
   # min_incoming_ticket_price: "0.06 wxHOPR"
