@@ -1,6 +1,5 @@
 [advisories]
 ignore = [
-  "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained]
   "RUSTSEC-2024-0436", # 'paste' dependency in 'libp2p' [unmaintained]
   "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
   "RUSTSEC-2026-0118", # `hickory-proto` 0.25.2 pulled by libp2p-dns 0.44.0 -> libp2p 0.56.0; no fix for 0.25.x; cannot remove without a major libp2p bump
@@ -42,4 +41,4 @@ os = [
 
 [yanked]
 enabled = true
-update_index = true # Auto-update the crates.io index (default: true)
+update_index = true
