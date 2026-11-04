@@ -176,7 +176,10 @@ pub fn watch(path: std::path::PathBuf) -> Arc<Impairment> {
     let shared = impairment.clone();
     tokio::spawn(async move {
         loop {
-            let spec = std::fs::read_to_string(&path)
+            // Read through tokio: this loop shares a runtime with the relays, and a blocking
+            // read on a worker thread would stall datagrams for as long as the file takes.
+            let spec = tokio::fs::read_to_string(&path)
+                .await
                 .map(|contents| parse(&contents))
                 .unwrap_or_default();
             if shared.spec() != spec {
