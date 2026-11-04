@@ -146,10 +146,14 @@ async fn main() -> Result<()> {
     // Runtime impairment: watched from a file the test rewrites between phases, shared by every
     // relay, and reported in the status snapshot so a run can prove it applied.
     let impairment = impair::watch(data_dir.join("impairment"));
+    // Only when the relays exist: without `--latency` there is nothing to impair, and reporting a
+    // `relay` object (possibly with `blackhole: true` read from the file) would claim an
+    // impairment that no traffic passes through.
+    let relay_impairment = latency_model.is_some().then(|| impairment.clone());
     let _control = ControlServer::start(
         control::socket_path(&control_base),
         summary.clone(),
-        Some(impairment.clone()),
+        relay_impairment,
     )?;
 
     let explicit_chain_url = args.chain_url.clone();
