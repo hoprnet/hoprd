@@ -829,6 +829,12 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
                 // default rather than restated, so the number lives in one place.
                 surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
+                // Relayer health is the path planner's mitigation for a relayer that stops replying
+                // (hoprnet#8595). Both knobs stay at upstream's defaults: `1.0` is "as judged", and
+                // `4` is how many races are remembered when judging a relayer. Named rather than
+                // swept up by `..Default::default()` for the same reason as the fields above.
+                latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
+                relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },
