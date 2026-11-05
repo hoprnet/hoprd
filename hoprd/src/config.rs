@@ -789,10 +789,14 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         // and `tombstone_retention_window` must clear the former — so exposing
                         // either while `reconstructor` above stays pinned to upstream's defaults
                         // would only be a way to break a pairing `validate` then rejects. Three are
-                        // unreachable below a batch size of two, which is not hoprd's default. The
-                        // last is a latency-versus-exposure dial with no second half to disagree
-                        // with, left alone because upstream's number is sized against the deployed
-                        // profile and hoprd has nothing to add to it.
+                        // unreachable below a batch size of two, which is not hoprd's default.
+                        // `commitment_recommit_interval` is a latency-versus-exposure dial with no
+                        // second half to disagree with, left alone because upstream's number is
+                        // sized against the deployed profile and hoprd has nothing to add to it.
+                        // `ssa_request_resend_interval` has the same shape: its upper bound is half
+                        // the reconstructor's `incomplete_commitment_lifetime`, which hoprd does
+                        // not expose either, so a value set from the outside could only break a
+                        // pairing `validate` rejects.
                         max_failed_cycles: supervision_defaults.max_failed_cycles,
                         max_recovery_idle: supervision_defaults.max_recovery_idle,
                         max_off_front_share_fraction: supervision_defaults
@@ -802,6 +806,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
+                        ssa_request_resend_interval: supervision_defaults
+                            .ssa_request_resend_interval,
                         // Four of the seven are hoprd dials: whether the Exit fills at all, the
                         // ceiling on what it originates for itself, whether a close mid-cycle
                         // drains or tears down, and where in `max_recovery_time` fill aims to be
