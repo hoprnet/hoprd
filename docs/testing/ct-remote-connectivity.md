@@ -21,8 +21,8 @@ It makes a failure unambiguous and prevents a timing-sensitive test.
 
 Run the fixture twice.
 
-1. With `PathPlannerConfig::default()`, the selector may retain only its default
-   50 candidates, so the remote candidate is not required to be present.
+1. With `PathPlannerConfig::default()`, the default candidate cap (50) and the
+   8-candidate latency prune deterministically exclude the remote candidate.
 2. With the following hoprd configuration, the remote candidate must be included
    in the generated candidate collection:
 

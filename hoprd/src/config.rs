@@ -609,7 +609,7 @@ pub struct UserPathPlannerConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub latency_halflife: Option<Duration>,
-    /// Maximum candidate paths retained after latency-only pruning.
+    /// Maximum number of candidate paths the selector may enumerate per query, before pruning.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_cached_paths: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -718,8 +718,9 @@ pub struct UserHoprNetworkConfig {
     ///
     /// A CT node that must keep remote relayers observable can raise
     /// `latency_halflife` and `max_cached_paths`: the first avoids making a
-    /// high-RTT path effectively weightless and the second keeps it from being
-    /// discarded during latency-only candidate pruning.
+    /// high-RTT path effectively weightless and the second widens the enumerated
+    /// candidate set; whether a slow path is then dropped is decided by the
+    /// latency prune controlled by `min_paths_anonymity_floor`.
     #[serde(default)]
     pub path_planner: UserPathPlannerConfig,
     /// Should local addresses be announced on-chain?
@@ -1050,7 +1051,7 @@ mod tests {
     use hopr_lib::{
         api::{
             graph::{
-                NetworkGraphWrite,
+                NetworkGraphUpdate, NetworkGraphWrite,
                 traits::{EdgeObservableWrite, EdgeWeightType},
             },
             types::{
@@ -1219,6 +1220,7 @@ path_planner:
         let destination = offchain_key(2);
         let remote = offchain_key(3);
         let graph = ChannelGraph::new(me);
+        graph.set_ticket_face_value(hopr_lib::api::graph::traits::Balance::from(1u64));
         graph.add_node(destination);
 
         // 60 nearby relayers exceed both the default candidate cap (50) and the default
