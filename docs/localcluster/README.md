@@ -89,7 +89,7 @@ Press **Ctrl-C** to stop — the orchestrator kills all `hoprd` processes and re
 ### State across runs
 
 Each launch that starts a managed chain container clears the node directories
-`<data-dir>/db_0` through `db_4` before provisioning and starting nodes. This also
+`<data-dir>/db_0` through `db_9` before provisioning and starting nodes. This also
 clears nodes left over from a larger cluster. You do not need to delete the data
 directory between runs. The reset leaves files outside those node directories
 alone, including the control locks.
@@ -296,7 +296,7 @@ Flags take precedence over env vars. Only the flags marked with an env var below
 
 | Flag                   | Env var                   | Default              | Description                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--size`               | —                         | `3`                  | Number of nodes to start (1–5)                                                                                                                                                                                                                                                                    |
+| `--size`               | —                         | `3`                  | Number of nodes to start (1–10)                                                                                                                                                                                                                                                                   |
 | `--api-host`           | —                         | `localhost`          | Host to bind the REST API on                                                                                                                                                                                                                                                                      |
 | `--api-port-base`      | —                         | `3000`               | First API port (each node gets base + id)                                                                                                                                                                                                                                                         |
 | `--p2p-host`           | —                         | `localhost`          | Host to bind P2P on (use an IP address for local clusters; hostname-based multiaddrs require DNS resolution at dial time)                                                                                                                                                                         |
@@ -360,6 +360,25 @@ Caveats:
   address peers dial, `latency_port_base + id`), not the node's real listen port, and each
   node's `latency` field describes the delay applied to its inbound traffic (a single value,
   or a per-source breakdown when links differ). It is `null` when latency is disabled.
+
+### Link faults
+
+With `--latency`, the relays also watch two optional files in the `--data-dir`. They cut or
+stall a link between two nodes while the cluster runs, without touching the processes. Both
+are re-read every 250 ms: a missing file means no rules, and deleting a line (or the file)
+reverts its rule within one poll. Nodes are named by index, `0..size`, the same number as in
+`hoprd_<i>.log`. A peer that is not a node, such as an in-process client, matches no rule.
+
+- **`blocked_links`**, one `a b` per line: drops every datagram between nodes `a` and `b`,
+  in both directions. Both nodes keep running, and every other link is untouched.
+- **`stalled_links`**, one `a b period_ms stall_ms delay_ms` per line: during the first
+  `stall_ms` of every `period_ms`, a datagram entering the link in either direction is held
+  an extra `delay_ms` on top of the latency model. The phase follows the wall clock, so
+  every relay agrees on it. Nothing is dropped, so the link trickles rather than going
+  silent, as a slow relay does. A `period_ms` of 0 is read as 1.
+
+Lines that do not parse are skipped. A change is logged at info
+(`latency relays: blocked links changed` / `stalled links changed`).
 
 ### Channel management modes
 
