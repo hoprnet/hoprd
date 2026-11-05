@@ -23,16 +23,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1791798588,
-        "narHash": "sha256-iO0ca9kx6qwuA2rOSEWGu+KHibN2jhRfharrGHVFgv0=",
+        "lastModified": 1793190023,
+        "narHash": "sha256-yRqbGBTrVoRLydxDaYVNZr8sjO2UUfYsysonmf8NfLY=",
         "owner": "0xCurvy",
         "repo": "rs-sdk",
-        "rev": "5b8fa0de2dce4bec16c1600064d24710012117d8",
+        "rev": "fe2de273d6597cfd29be06c534d3d526100e5070",
         "type": "github"
       },
       "original": {
         "owner": "0xCurvy",
-        "ref": "v0.1.1",
+        "ref": "v0.2.0",
         "repo": "rs-sdk",
         "type": "github"
       }
