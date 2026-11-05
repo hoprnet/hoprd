@@ -144,6 +144,7 @@ hopr-lib = { workspace = true, features = [
   "telemetry",
 ] }
 hopr-utils-session = { workspace = true }
+hopr-transport-mixer = { workspace = true, features = ["serde"] }
 hoprd-api = { workspace = true, features = ["telemetry"] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }

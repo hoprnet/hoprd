@@ -12,9 +12,9 @@ use hopr_lib::{
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
-    mixer::{MixerType, UniformConfig},
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
+use hopr_transport_mixer::config::{MixerType, UniformConfig};
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
