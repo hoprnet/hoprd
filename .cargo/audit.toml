@@ -9,7 +9,7 @@ ignore = [
   "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal
   "RUSTSEC-2024-0449", # 'unsafe-libyaml' [unmaintained] - transitive via serde_yaml (deprecated) <- progenitor build-dep of rest-api-client; no fix, cannot remove without progenitor dropping serde_yaml
   "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 via elliptic-curve 0.13 in 'alloy' (alloy 2.5.0 is newest and still pins k256 0.13.4); the 0.7.x instance is bumped to 0.7.10 - remove when alloy moves to elliptic-curve 0.14
-  "RUSTSEC-2026-0441", # 'pin-utils' 0.1.1 [unmaintained] - pulled by alloy -> wasmtimer; wasmtimer is wasm-only, so it is absent from the linux/macos/windows build graphs this config targets. Same entry as hoprnet 80e5ed8 (.cargo/audit.toml) and the same reasoning as the entries above
+  "RUSTSEC-2026-0441", # 'pin-utils' 0.1.1 [unmaintained] - via alloy -> wasmtimer, wasm-only, absent from our build graphs
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"

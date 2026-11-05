@@ -779,24 +779,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .incoming_session_pix
                             .max_served_without_progress,
-                        // The rest of the supervision policy is left where upstream put it, and
-                        // named rather than swept up by `..Default::default()` for the reason
-                        // `reconstructor` above is: the exhaustive literal is what turns a new
-                        // upstream field into a compile error here instead of a silent default.
-                        //
-                        // Two of them are the reconstructor's other half — `max_recovery_idle` must
-                        // sit between its `max_ack_await_time` and its `unused_verifier_lifetime`,
-                        // and `tombstone_retention_window` must clear the former — so exposing
-                        // either while `reconstructor` above stays pinned to upstream's defaults
-                        // would only be a way to break a pairing `validate` then rejects. Three are
-                        // unreachable below a batch size of two, which is not hoprd's default.
-                        // `commitment_recommit_interval` is a latency-versus-exposure dial with no
-                        // second half to disagree with, left alone because upstream's number is
-                        // sized against the deployed profile and hoprd has nothing to add to it.
-                        // `ssa_request_resend_interval` has the same shape: its upper bound is half
-                        // the reconstructor's `incomplete_commitment_lifetime`, which hoprd does
-                        // not expose either, so a value set from the outside could only break a
-                        // pairing `validate` rejects.
+                        // Upstream defaults, named so a new upstream field fails to compile here.
+                        // Some pair with the pinned reconstructor; exposing them breaks `validate`.
+                        // Three more only apply at a batch size of two or more, not hoprd's default.
+                        // `commitment_recommit_interval` is sized upstream for the deployed profile.
                         max_failed_cycles: supervision_defaults.max_failed_cycles,
                         max_recovery_idle: supervision_defaults.max_recovery_idle,
                         max_off_front_share_fraction: supervision_defaults
