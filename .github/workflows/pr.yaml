@@ -48,6 +48,8 @@ jobs:
   label:
     name: Add labels
     if: github.event_name == 'pull_request'
+    # Fork PRs get a read-only token, so labelling fails there; the gate must not depend on it.
+    continue-on-error: true
     runs-on: depot-ubuntu-24.04
     permissions:
       contents: read
