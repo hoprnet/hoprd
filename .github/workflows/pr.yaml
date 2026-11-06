@@ -291,9 +291,9 @@ jobs:
     # Docker builds are too heavy to run in the queue and build-docker.yaml has no
     # skip input, so this stays skipped on merge_group; the required `Docker / *`
     # contexts are reported (green) by merge-queue-docker.yaml instead.
-    # Stage 3. Not path-filtered: build-docker has no `enabled` input, and a skipped caller would
-    # leave the required `Docker / *` contexts unreported. `!failure()` also lets it run after a
-    # skipped `build-binaries` (path filter false).
+    # Stage 3. Not path-filtered, for the same reason it stays out of the merge queue (see
+    # above): a skipped caller would leave the required `Docker / *` contexts unreported.
+    # `!failure()` also lets it run after a skipped `build-binaries` (path filter false).
     if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' }}
     needs: [changes, checks, tests, build-binaries]
     uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@668074b9d98d53c248cbadffb01d5f20617d8cb1 # build-docker-v3.2.3
