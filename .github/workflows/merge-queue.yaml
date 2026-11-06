@@ -17,10 +17,9 @@ on:
       - labeled
   merge_group:
     types: [checks_requested]
-permissions:
-  contents: read
+permissions: {}
 concurrency:
-  group: ${{ github.event.pull_request.head.ref || github.ref_name }}-merge-queue
+  group: ${{ github.event.pull_request.number || github.ref }}-merge-queue
   cancel-in-progress: true
 jobs:
   integration-throughput:
