@@ -12,9 +12,9 @@ use hopr_lib::{
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
+    mixer::{MixerType, UniformConfig},
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
-use hopr_transport_mixer::config::{MixerType, UniformConfig};
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
@@ -719,6 +719,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
                         outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
+                        // Bounded replay detection, added upstream with hoprnet#8590: a sharded
+                        // tag filter whose capacity and shard count are sized upstream against the
+                        // deployed profile. Named so a new upstream field fails to compile here.
+                        replay_filter: Default::default(),
                     },
                     pipeline: PacketPipelineConfig {
                         // Tighter than the library default, which errs long because it cannot know
