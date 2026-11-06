@@ -164,7 +164,7 @@ pub fn parse(contents: &str) -> Spec {
     spec
 }
 
-/// Keep `impairment` in sync with the file at `path`, polling it every [`POLL`].
+/// Keep `impairment` in sync with the file at `path`, polling it every `POLL` (100 ms).
 ///
 /// A missing file means "no impairment", which is also the state a finished test leaves behind.
 pub fn watch(path: std::path::PathBuf) -> Arc<Impairment> {
