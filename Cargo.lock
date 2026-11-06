@@ -7619,9 +7619,8 @@ dependencies = [
 
 [[package]]
 name = "libp2p-quic"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcc597d70bf7f6f30cbe07081802c836184e48416e89e9ce73a0ba2c56a319e"
+version = "0.13.2"
+source = "git+https://github.com/hoprnet/rust-libp2p?rev=6921ef5fdad59bf9d05f7da317f5821fd238c482#6921ef5fdad59bf9d05f7da317f5821fd238c482"
 dependencies = [
  "futures",
  "futures-timer",
