@@ -13,9 +13,9 @@ use hopr_lib::{
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
+    mixer::{MixerType, UniformConfig},
 };
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
-use hopr_transport_mixer::config::{MixerType, UniformConfig};
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
 use serde::{Deserialize, Serialize};
@@ -729,6 +729,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .and_then(|v| WinningProbability::try_from_f64(v).ok()),
                         outgoing_ticket_price: value.network.outgoing_ticket_price,
                         min_incoming_ticket_price: value.network.min_incoming_ticket_price,
+                        // Bounded replay detection, added upstream with hoprnet#8590: a sharded
+                        // tag filter whose capacity and shard count are sized upstream against the
+                        // deployed profile. Named so a new upstream field fails to compile here.
+                        replay_filter: Default::default(),
                     },
                     pipeline: PacketPipelineConfig {
                         // Tighter than the library default, which errs long because it cannot know
@@ -789,22 +793,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .incoming_session_pix
                             .max_served_without_progress,
-                        ssa_request_resend_interval: SupervisorConfig::default()
-                            .ssa_request_resend_interval,
-                        // The rest of the supervision policy is left where upstream put it, and
-                        // named rather than swept up by `..Default::default()` for the reason
-                        // `reconstructor` above is: the exhaustive literal is what turns a new
-                        // upstream field into a compile error here instead of a silent default.
-                        //
-                        // Two of them are the reconstructor's other half — `max_recovery_idle` must
-                        // sit between its `max_ack_await_time` and its `unused_verifier_lifetime`,
-                        // and `tombstone_retention_window` must clear the former — so exposing
-                        // either while `reconstructor` above stays pinned to upstream's defaults
-                        // would only be a way to break a pairing `validate` then rejects. Three are
-                        // unreachable below a batch size of two, which is not hoprd's default. The
-                        // last is a latency-versus-exposure dial with no second half to disagree
-                        // with, left alone because upstream's number is sized against the deployed
-                        // profile and hoprd has nothing to add to it.
+                        // Upstream defaults, named so a new upstream field fails to compile here.
+                        // Some pair with the pinned reconstructor; exposing them breaks `validate`.
+                        // Three more only apply at a batch size of two or more, not hoprd's default.
+                        // `commitment_recommit_interval` is sized upstream for the deployed profile.
                         max_failed_cycles: supervision_defaults.max_failed_cycles,
                         max_recovery_idle: supervision_defaults.max_recovery_idle,
                         max_off_front_share_fraction: supervision_defaults
@@ -814,6 +806,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
+                        ssa_request_resend_interval: supervision_defaults
+                            .ssa_request_resend_interval,
                         // Four of the seven are hoprd dials: whether the Exit fills at all, the
                         // ceiling on what it originates for itself, whether a close mid-cycle
                         // drains or tears down, and where in `max_recovery_time` fill aims to be
@@ -849,6 +843,12 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
                 // default rather than restated, so the number lives in one place.
                 surb_flush_interval: HoprProtocolConfig::default().surb_flush_interval,
+                // Relayer health is the path planner's mitigation for a relayer that stops replying
+                // (hoprnet#8595). Both knobs stay at upstream's defaults: `1.0` is "as judged", and
+                // `4` is how many races are remembered when judging a relayer. Named rather than
+                // swept up by `..Default::default()` for the same reason as the fields above.
+                latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
+                relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },
