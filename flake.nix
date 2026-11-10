@@ -85,10 +85,14 @@
           overlays = baseOverlays ++ [
             # In release-26.05, nss-cacert-3.131.1 fails to build when overridden with
             # a blacklist because Mozilla removed 'emSign ECC Root CA - G3' from certdata.txt,
-            # triggering buildcatrust assertion error code 3. Use cacert from pkgs-unstable
-            # (3.126) which builds cleanly under the blacklist override used by nixLib.mkDockerImage.
+            # triggering buildcatrust assertion error code 3.
+            # Intercept only .override so stock cacert remains unmodified (preserving binary
+            # cache substitution for gnupg and others in nixpkgs), while blacklist overrides
+            # (used by nixLib.mkDockerImage) delegate to pkgs-unstable.cacert.override.
             (final: prev: {
-              cacert = pkgs-unstable.cacert;
+              cacert = prev.cacert // {
+                override = args: pkgs-unstable.cacert.override args;
+              };
             })
           ];
           pkgs = import nixpkgs { inherit localSystem overlays; };
