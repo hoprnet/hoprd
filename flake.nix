@@ -74,12 +74,24 @@
           ];
 
           localSystem = system;
-          overlays = [
+          baseOverlays = [
             (import rust-overlay)
             foundry.overlay
           ];
+          pkgs-unstable = import nixpkgs-unstable {
+            inherit localSystem;
+            overlays = baseOverlays;
+          };
+          overlays = baseOverlays ++ [
+            # In release-26.05, nss-cacert-3.131.1 fails to build when overridden with
+            # a blacklist because Mozilla removed 'emSign ECC Root CA - G3' from certdata.txt,
+            # triggering buildcatrust assertion error code 3. Use cacert from pkgs-unstable
+            # (3.126) which builds cleanly under the blacklist override used by nixLib.mkDockerImage.
+            (final: prev: {
+              cacert = pkgs-unstable.cacert;
+            })
+          ];
           pkgs = import nixpkgs { inherit localSystem overlays; };
-          pkgs-unstable = import nixpkgs-unstable { inherit localSystem overlays; };
           buildPlatform = pkgs.stdenv.buildPlatform;
 
           nixLib = nix-lib.lib.${system};
