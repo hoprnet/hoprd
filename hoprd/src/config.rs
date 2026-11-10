@@ -594,101 +594,6 @@ fn default_pix_fill_finish_fraction() -> f64 {
     SupervisorConfig::default().fill.finish_fraction
 }
 
-/// Optional overrides for the transport path planner.
-///
-/// The upstream transport type deliberately keeps its defaults, while hoprd exposes only values
-/// named here. This makes a sparse `hopr.network.path_planner` YAML block safe for operators: an
-/// omitted field always retains the transport default from the version hoprd was built against.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UserPathPlannerConfig {
-    /// Higher values make high-RTT paths less strongly down-weighted.
-    #[serde(
-        default,
-        with = "humantime_serde",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub latency_halflife: Option<Duration>,
-    /// Maximum number of candidate paths the selector may enumerate per query, before pruning.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_cached_paths: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capacity_reference: Option<u128>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub edge_penalty: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_ack_rate: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub return_path_weight_temper: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub return_path_exploration: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_paths_anonymity_floor: Option<usize>,
-    #[serde(
-        default,
-        with = "humantime_serde",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub cache_ttl: Option<Duration>,
-    #[serde(
-        default,
-        with = "humantime_serde",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub refresh_period: Option<Duration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_cache_capacity: Option<u64>,
-    #[serde(
-        default,
-        with = "humantime_serde",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub max_plausible_loopback_rtt: Option<Duration>,
-}
-
-impl From<UserPathPlannerConfig> for PathPlannerConfig {
-    fn from(value: UserPathPlannerConfig) -> Self {
-        let mut planner = Self::default();
-        if let Some(v) = value.latency_halflife {
-            planner.latency_halflife = v;
-        }
-        if let Some(v) = value.max_cached_paths {
-            planner.max_cached_paths = v;
-        }
-        if let Some(v) = value.capacity_reference {
-            planner.capacity_reference = v;
-        }
-        if let Some(v) = value.edge_penalty {
-            planner.edge_penalty = v;
-        }
-        if let Some(v) = value.min_ack_rate {
-            planner.min_ack_rate = v;
-        }
-        if let Some(v) = value.return_path_weight_temper {
-            planner.return_path_weight_temper = v;
-        }
-        if let Some(v) = value.return_path_exploration {
-            planner.return_path_exploration = v;
-        }
-        if let Some(v) = value.min_paths_anonymity_floor {
-            planner.min_paths_anonymity_floor = v;
-        }
-        if let Some(v) = value.cache_ttl {
-            planner.cache_ttl = v;
-        }
-        if let Some(v) = value.refresh_period {
-            planner.refresh_period = v;
-        }
-        if let Some(v) = value.max_cache_capacity {
-            planner.max_cache_capacity = v;
-        }
-        if let Some(v) = value.max_plausible_loopback_rtt {
-            planner.max_plausible_loopback_rtt = v;
-        }
-        planner
-    }
-}
-
 /// Subset of various selected HOPR library network-related configuration options.
 #[serde_with::serde_as]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
@@ -722,7 +627,7 @@ pub struct UserHoprNetworkConfig {
     /// candidate set; whether a slow path is then dropped is decided by the
     /// latency prune controlled by `min_paths_anonymity_floor`.
     #[serde(default)]
-    pub path_planner: UserPathPlannerConfig,
+    pub path_planner: PathPlannerConfig,
     /// Should local addresses be announced on-chain?
     #[serde(default)]
     pub announce_local_addresses: bool,
@@ -938,7 +843,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         },
                     },
                 },
-                path_planner: value.network.path_planner.into(),
+                path_planner: value.network.path_planner,
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 // Same standing as `counter_flush_interval` above: an interval at which telemetry
                 // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
