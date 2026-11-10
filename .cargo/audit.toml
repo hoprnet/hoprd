@@ -12,6 +12,7 @@ ignore = [
   "RUSTSEC-2026-0368", # same zip 3.0.0 build-time extraction as 0367; no untrusted archive is ever extracted
   "RUSTSEC-2026-0369", # same zip 3.0.0 build-time extraction as 0367; remove all three once utoipa-swagger-ui moves to zip >= 9
   "RUSTSEC-2026-0429", # 'zip' 3.0.0 - build-dependency of utoipa-swagger-ui 9.0.2, only unpacks its bundled Swagger UI in build.rs; fix needs zip >= 9 and utoipa-swagger-ui 10.0.1 still pins zip ^8.6
+  "RUSTSEC-2026-0441", # 'pin-utils' 0.1.1 [unmaintained] - transitive via wasmtimer 0.4.3 <- alloy-contract; wasmtimer 0.4.3 is latest, no fix; remove together with the alloy removal
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
