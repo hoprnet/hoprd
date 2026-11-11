@@ -20,17 +20,17 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "f01142
 
 # crates.io HOPR deps
 hopr-api = { version = "=5.0.0" }
-hopr-chain-connector = "0.31.0"
-hopr-ct-full-network = { version = "0.9.0", default-features = false }
-hopr-network-graph = { version = "0.10.0", default-features = false }
-hopr-session-server-forwarder = { version = "0.7.0", default-features = false }
-hopr-strategy = { version = "7.0.0", default-features = false }
-hopr-ticket-manager = { version = "0.10.0", default-features = false, features = [
+hopr-chain-connector = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9" }
+hopr-ct-full-network = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9", default-features = false }
+hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9", default-features = false }
+hopr-session-server-forwarder = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9", default-features = false }
+hopr-strategy = { git = "https://github.com/hoprnet/hopr-strategy", rev = "a73bd247aaafea5b9d04c7ff64dbde04d28ceaeb", default-features = false }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9", default-features = false, features = [
   "redb",
   "cli",
   "serde",
 ] }
-hopr-transport-p2p = { version = "0.14.0", features = ["transport-quic"] }
+hopr-transport-p2p = { git = "https://github.com/hoprnet/hopr-impls", rev = "e371c44295e030575675d8e0834745862f031dd9", features = ["transport-quic"] }
 
 # Third-party deps
 anyhow = "1.0.104"
