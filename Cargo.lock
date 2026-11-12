@@ -6123,7 +6123,7 @@ dependencies = [
 [[package]]
 name = "hopr-strategy"
 version = "8.0.0"
-source = "git+https://github.com/hoprnet/hopr-strategy?rev=69816f8fdca07ed5488f032a93eeaaa55e3d835e#69816f8fdca07ed5488f032a93eeaaa55e3d835e"
+source = "git+https://github.com/hoprnet/hopr-strategy?rev=1bf143981583bf519daf94f6be8c0fd7efa768ce#1bf143981583bf519daf94f6be8c0fd7efa768ce"
 dependencies = [
  "anyhow",
  "async-trait",
