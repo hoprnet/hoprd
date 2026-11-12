@@ -199,7 +199,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         .with_cover_traffic(move |ctx| {
             hopr_ct_full_network::FullNetworkDiscovery::new(
                 *ctx.packet_key.public(),
-                prober_cfg,
+                egress_cfg,
                 graph_for_ct,
             )
         });
