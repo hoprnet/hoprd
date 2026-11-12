@@ -270,9 +270,10 @@ jobs:
     # Stage 3: after checks and tests (see `tests` for `!failure()`).
     if: ${{ !cancelled() && !failure() }}
     needs: [changes, checks, tests]
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@43c833e72dffe4f2f3be60193733e5657f8aa0d7 # build-binaries-v4.0.0
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-binaries-v4.0.1
     permissions:
       contents: read
+      pull-requests: read
       id-token: write
     with:
       repo_sha: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -296,7 +297,7 @@ jobs:
     # `!failure()` also lets it run after a skipped `build-binaries` (path filter false).
     if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' }}
     needs: [changes, checks, tests, build-binaries]
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@43c833e72dffe4f2f3be60193733e5657f8aa0d7 # build-docker-v4.0.0
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-docker-v4.0.1
     permissions:
       contents: read
       pull-requests: write
@@ -323,7 +324,7 @@ jobs:
     # Not a required check; skip in the merge queue.
     if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' }}
     needs: [changes, checks, tests, build-binaries]
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@43c833e72dffe4f2f3be60193733e5657f8aa0d7 # build-docker-v4.0.0
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-docker-v4.0.1
     permissions:
       contents: read
       pull-requests: write
