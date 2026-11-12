@@ -132,12 +132,12 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     chain_connector.connect().await?;
     let chain_connector = Arc::new(chain_connector);
 
-    let prober_cfg = hopr_ct_full_network::ProberConfig {
+    let egress_cfg = hopr_ct_full_network::EgressConfig {
         interval: cfg.hopr.network.probe_interval,
         shuffle_ttl: cfg.hopr.network.probe_interval * 2,
         ..Default::default()
     };
-    prober_cfg.validate_against_probe_timeout(hopr_lib_cfg.protocol.probe.timeout)?;
+    egress_cfg.validate_against_probe_timeout(hopr_lib_cfg.protocol.probe.timeout)?;
 
     // `hopr-ticket-manager` 0.10 takes the store from the caller. Keep the temporary store this
     // call used to create internally; making it durable from `hopr.ticket_storage_file` is
