@@ -333,6 +333,17 @@ impl ChainWriteAccountOperations for StubChain {
         Err(StubError("stub cannot withdraw".into()))
     }
 
+    /// hopr-api 6 added this write. The stub sends nothing, like its siblings.
+    async fn send_erc777(
+        &self,
+        _balance: HoprBalance,
+        _recipient: &Address,
+        _payload: &hopr_lib::api::types::chain::prelude::Erc777Payload,
+    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot send".into()))
+    }
+
     async fn withdraw_from_signer<C: Currency + Send>(
         &self,
         _key: &ChainKeypair,

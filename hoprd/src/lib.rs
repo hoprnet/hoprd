@@ -132,7 +132,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     chain_connector.connect().await?;
     let chain_connector = Arc::new(chain_connector);
 
-    let prober_cfg = hopr_ct_full_network::ProberConfig {
+    let prober_cfg = hopr_ct_full_network::EgressConfig {
         interval: cfg.hopr.network.probe_interval,
         shuffle_ttl: cfg.hopr.network.probe_interval * 2,
         ..Default::default()
