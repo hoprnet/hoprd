@@ -1,6 +1,6 @@
 [package]
 name = "hoprd"
-version = "5.0.2"
+version = "5.0.3"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -144,7 +144,6 @@ hopr-lib = { workspace = true, features = [
   "telemetry",
 ] }
 hopr-utils-session = { workspace = true }
-hopr-transport-mixer = { workspace = true, features = ["serde"] }
 hoprd-api = { workspace = true, features = ["telemetry"] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }

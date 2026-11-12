@@ -4,11 +4,15 @@
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
-    rust-overlay.url = "github:oxalica/rust-overlay/master";
-    crane.url = "github:ipetkov/crane/v0.24.0";
-    nix-lib.url = "github:hoprnet/nix-lib/v2.0.0";
+    # nix-lib is the anchor for the heavy pins: nixpkgs, nixpkgs-unstable, rust-overlay and crane
+    # come from its lock, so every hoprnet flake on the same nix-lib release evaluates against the
+    # same revisions and shares one set of store paths. To bump them, point nix-lib.url at the new
+    # release tag, then run `nix flake update nix-lib`.
+    nix-lib.url = "github:hoprnet/nix-lib/v2.1.7";
+    nixpkgs.follows = "nix-lib/nixpkgs";
+    nixpkgs-unstable.follows = "nix-lib/nixpkgs-unstable";
+    rust-overlay.follows = "nix-lib/rust-overlay";
+    crane.follows = "nix-lib/crane";
     # No `hoprnet` input. It existed for one output — `binary-ticket-inspector` — which is now
     # built here instead; see `ticketInspectorBuildArgs` for why and how.
     foundry.url = "github:hoprnet/foundry.nix/tb/202505-add-xz";
@@ -26,15 +30,10 @@
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
     foundry.inputs.flake-utils.follows = "flake-utils";
     foundry.inputs.nixpkgs.follows = "nixpkgs";
-    nix-lib.inputs.nixpkgs.follows = "nixpkgs";
     nix-lib.inputs.flake-utils.follows = "flake-utils";
-    nix-lib.inputs.crane.follows = "crane";
     nix-lib.inputs.flake-parts.follows = "flake-parts";
-    nix-lib.inputs.rust-overlay.follows = "rust-overlay";
     nix-lib.inputs.treefmt-nix.follows = "treefmt-nix";
-    nix-lib.inputs.nixpkgs-unstable.follows = "nixpkgs-unstable";
     pre-commit.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -75,12 +74,28 @@
           ];
 
           localSystem = system;
-          overlays = [
+          baseOverlays = [
             (import rust-overlay)
             foundry.overlay
           ];
+          pkgs-unstable = import nixpkgs-unstable {
+            inherit localSystem;
+            overlays = baseOverlays;
+          };
+          overlays = baseOverlays ++ [
+            # In release-26.05, nss-cacert-3.131.1 fails to build when overridden with
+            # a blacklist because Mozilla removed 'emSign ECC Root CA - G3' from certdata.txt,
+            # triggering buildcatrust assertion error code 3.
+            # Intercept only .override so stock cacert remains unmodified (preserving binary
+            # cache substitution for gnupg and others in nixpkgs), while blacklist overrides
+            # (used by nixLib.mkDockerImage) delegate to pkgs-unstable.cacert.override.
+            (final: prev: {
+              cacert = prev.cacert // {
+                override = args: pkgs-unstable.cacert.override args;
+              };
+            })
+          ];
           pkgs = import nixpkgs { inherit localSystem overlays; };
-          pkgs-unstable = import nixpkgs-unstable { inherit localSystem overlays; };
           buildPlatform = pkgs.stdenv.buildPlatform;
 
           nixLib = nix-lib.lib.${system};

@@ -13,8 +13,7 @@ on:
 concurrency:
   group: merge-${{ github.event.pull_request.base.ref }}
   cancel-in-progress: false
-permissions:
-  contents: read
+permissions: {}
 jobs:
   build-binaries:
     name: Binary ${{ matrix.binary }} ${{ matrix.architecture }}
@@ -155,6 +154,7 @@ jobs:
       - docs
     if: ${{ always() && github.event.pull_request.merged == true && !success() }}
     runs-on: depot-ubuntu-24.04
+    permissions: {}
     steps:
       - name: Notify failed merge pipeline
         uses: zulip/github-actions-zulip/send-message@f675f2b4eb2a95fae974215476dcb7ad8dfeff6b # v2.0.2
@@ -188,8 +188,7 @@ jobs:
         run: |
           gh extension install actions/gh-actions-cache
 
-          REPO=${{ github.repository }}
-          BRANCH="refs/pull/${{ github.event.pull_request.number }}/merge"
+          BRANCH="refs/pull/${PR_NUMBER}/merge"
 
           echo "Fetching list of cache key"
           cacheKeysForPR=$(gh actions-cache list -R "$REPO" -B "$BRANCH" | cut -f 1 )
@@ -203,3 +202,5 @@ jobs:
           echo "Done"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

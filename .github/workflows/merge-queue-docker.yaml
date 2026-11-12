@@ -13,8 +13,7 @@ name: Merge queue (docker)
 on:
   merge_group:
     types: [checks_requested]
-permissions:
-  contents: read
+permissions: {}
 jobs:
   docker:
     # The job name IS the required-check context; the matrix expands because the
@@ -28,6 +27,9 @@ jobs:
           - Docker / Scan (x86_64-linux)
           - Docker / Multi-Arch
     runs-on: depot-ubuntu-24.04
+    permissions: {}
     steps:
       - name: Passthrough
-        run: echo "merge-queue passthrough for '${{ matrix.context }}' — the real check ran on the PR."
+        env:
+          CONTEXT: ${{ matrix.context }}
+        run: echo "merge-queue passthrough for '$CONTEXT' — the real check ran on the PR."
