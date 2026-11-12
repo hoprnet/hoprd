@@ -37,12 +37,13 @@ jobs:
             build_command: nix build -L .#binary-hoprd-localcluster-x86_64-linux
             build_file: ./localcluster/Cargo.toml
             binary: hoprd-localcluster
-    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@fd29bf3c58b72faacc300e068a05b59eb3b180bc # 0.10.1
+    uses: hoprnet/hopr-workflows/.github/workflows/build-binaries.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-binaries-v4.0.1
     permissions:
       contents: read
+      pull-requests: read
       id-token: write
     with:
-      source_branch: ${{ github.event.pull_request.merge_commit_sha }}
+      repo_sha: ${{ github.event.pull_request.merge_commit_sha }}
       version_type: pr
       architecture: ${{ matrix.architecture }}
       build_file: ${{ matrix.build_file }}
@@ -56,13 +57,13 @@ jobs:
     name: Docker
     needs: build-binaries
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@668074b9d98d53c248cbadffb01d5f20617d8cb1 # build-docker-v3.2.3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-docker-v4.0.1
     permissions:
       contents: read
       pull-requests: write
       id-token: write
     with:
-      source_branch: ${{ github.event.pull_request.merge_commit_sha }}
+      repo_sha: ${{ github.event.pull_request.merge_commit_sha }}
       version_type: pr
       build_matrix: >-
         [
@@ -132,9 +133,9 @@ jobs:
       contents: write
     steps:
       - name: Build docs
-        uses: hoprnet/hopr-workflows/actions/nix-action@3ee95c480962bb3c1fc0061887da9ba735f537c7 # nix-action-v1
+        uses: hoprnet/hopr-workflows/actions/nix-action@43c833e72dffe4f2f3be60193733e5657f8aa0d7 # nix-action-v2.0.0
         with:
-          source_branch: ${{ github.event.pull_request.merge_commit_sha }}
+          repo_sha: ${{ github.event.pull_request.merge_commit_sha }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           command: nix build -L .#docs
       - name: Increase git buffer size
