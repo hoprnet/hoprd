@@ -32,6 +32,7 @@ use hopr_lib::{
         },
         tickets::{ChannelStats, RedemptionResult, TicketManagement},
         types::{
+            chain::prelude::Erc777Payload,
             crypto::{
                 keypairs::{ChainKeypair, Keypair, OffchainKeypair},
                 types::OffchainPublicKey,
@@ -331,6 +332,16 @@ impl ChainWriteAccountOperations for StubChain {
     ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
     {
         Err(StubError("stub cannot withdraw".into()))
+    }
+
+    async fn send_erc777(
+        &self,
+        _balance: HoprBalance,
+        _recipient: &Address,
+        _payload: &Erc777Payload,
+    ) -> Result<futures::future::BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>
+    {
+        Err(StubError("stub cannot send erc777".into()))
     }
 
     async fn withdraw_from_signer<C: Currency + Send>(

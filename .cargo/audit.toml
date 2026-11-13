@@ -4,6 +4,17 @@ ignore = [
   "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
   "RUSTSEC-2026-0118", # `hickory-proto` 0.25.2 pulled by libp2p-dns 0.44.0 -> libp2p 0.56.0; no fix for 0.25.x; cannot remove without a major libp2p bump
   "RUSTSEC-2026-0119", # same root cause as 0118 (different advisory DB version); hickory-proto 0.25.2 still pulled by libp2p 0.56.0; remove together with 0118 once libp2p is bumped past 0.56.0
+  # libp2p-dns 0.44 and libp2p-mdns 0.48 require Hickory 0.25.x. Remove these
+  # ignores when the libp2p dependency chain supports the fixes in Hickory >=0.26.2.
+  "RUSTSEC-2026-0487", # hickory-proto: panic on malformed ALPN text in SVCB/HTTPS records
+  "RUSTSEC-2026-0489", # hickory-proto: panic on a single-quote SVCB/HTTPS parameter value
+  "RUSTSEC-2026-0490", # hickory-proto: zone-file lexer panics on tokens of 4096+ characters
+  "RUSTSEC-2026-0491", # hickory-proto: memory amplification from DNS header record counts
+  "RUSTSEC-2026-0504", # hickory-proto: inverted NSEC3 comparison in DNSSEC validation
+  "RUSTSEC-2026-0505", # hickory-proto: NSEC3 owner names not checked against the zone in DNSSEC validation
+  "RUSTSEC-2026-0511", # hickory-proto: NXDOMAIN accepted for a proven empty non-terminal
+  "RUSTSEC-2026-0512", # hickory-proto: DNSSEC validation accepted an unrelated signed RRset as the answer
+  "RUSTSEC-2026-0514", # hickory-resolver 0.25.2: lookup returned records that failed DNSSEC validation; fixed in 0.26.2
   "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained]; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins validator_derive 0.20); no fix released yet
   "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
   "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal
