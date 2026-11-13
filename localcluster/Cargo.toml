@@ -49,6 +49,7 @@ serde = { workspace = true, features = ["derive"] }
 serde-saphyr = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [
+  "fs",
   "io-util",
   "macros",
   "net",
