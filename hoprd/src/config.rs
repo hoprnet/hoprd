@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, PixGlobalConfig},
+        path::PathPlannerConfig,
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
@@ -618,6 +619,15 @@ pub struct UserHoprNetworkConfig {
     #[default(default_probe_interval())]
     #[serde(default = "default_probe_interval", with = "humantime_serde")]
     pub probe_interval: Duration,
+    /// Candidate-path and weighting policy used by CT traffic and automatic routing.
+    ///
+    /// A CT node that must keep remote relayers observable can raise
+    /// `latency_halflife` and `max_cached_paths`: the first avoids making a
+    /// high-RTT path effectively weightless and the second widens the enumerated
+    /// candidate set; whether a slow path is then dropped is decided by the
+    /// latency prune controlled by `min_paths_anonymity_floor`.
+    #[serde(default)]
+    pub path_planner: PathPlannerConfig,
     /// Should local addresses be announced on-chain?
     #[serde(default)]
     pub announce_local_addresses: bool,
@@ -827,7 +837,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         },
                     },
                 },
-                path_planner: Default::default(),
+                path_planner: value.network.path_planner,
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
                 // Same standing as `counter_flush_interval` above: an interval at which telemetry
                 // is folded into the network graph, not a knob hoprd exposes. Taken from upstream's
@@ -943,7 +953,20 @@ mod tests {
 
     use anyhow::Context;
     use clap::{Args, Command, FromArgMatches, Parser};
-    use hopr_lib::api::types::primitive::prelude::Address;
+    use hopr_lib::{
+        api::{
+            graph::{
+                NetworkGraphUpdate, NetworkGraphWrite,
+                traits::{EdgeObservableWrite, EdgeWeightType},
+            },
+            types::{
+                crypto::prelude::{Keypair, OffchainKeypair},
+                primitive::prelude::Address,
+            },
+        },
+        exports::transport::path::{HoprGraphPathSelector, traits::PathSelector},
+    };
+    use hopr_network_graph::ChannelGraph;
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -1065,6 +1088,125 @@ mod tests {
         assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
         assert_eq!(supervision.fill.finish_fraction, exit.fill_finish_fraction);
         assert_eq!(supervision.fill.drain_after_close, exit.drain_after_close);
+    }
+
+    /// CT nodes must be able to trade locality for reachability. The fixture contains 60 healthy
+    /// 20-ms relayers and one equally healthy 2-s relayer. It is intentionally implausible: the
+    /// exaggerated RTT makes it clear that the remote route survived due to configuration rather
+    /// than a chance ordering of similar routes.
+    #[test]
+    fn ct_remote_path_policy_reaches_the_transport_planner() -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str(
+            r#"
+path_planner:
+  # A deliberately generous half-life: a New-Zealand-scale RTT should remain useful to CT.
+  latency_halflife: "10s"
+  # Keep the remote candidate after the selector has enumerated 60 nearby alternatives.
+  max_cached_paths: 128
+  # Do not re-prune the retained set back to only the fastest relayers.
+  min_paths_anonymity_floor: 0
+  return_path_exploration: 0.25
+"#,
+        )?;
+
+        let lib = HoprLibConfig::from(UserHoprLibConfig {
+            network,
+            ..Default::default()
+        });
+        let planner = lib.protocol.path_planner;
+
+        assert_eq!(planner.latency_halflife, Duration::from_secs(10));
+        assert_eq!(planner.max_cached_paths, 128);
+        assert_eq!(planner.min_paths_anonymity_floor, 0);
+        assert_eq!(planner.return_path_exploration, 0.25);
+        assert!(lib.validate().is_ok(), "the tuned CT policy must be valid");
+
+        let me = offchain_key(1);
+        let destination = offchain_key(2);
+        let remote = offchain_key(3);
+        let graph = ChannelGraph::new(me);
+        graph.set_ticket_face_value(hopr_lib::api::graph::traits::Balance::from(1u64));
+        graph.add_node(destination);
+
+        // 60 nearby relayers exceed both the default candidate cap (50) and the default
+        // consistency floor (8). The final relayer models the remote region.
+        for index in 3..=63 {
+            let relay = offchain_key(index);
+            graph.add_node(relay);
+            let latency = if relay == remote { 2_000 } else { 20 };
+            add_healthy_edge(&graph, &me, &relay, latency);
+            add_healthy_edge(&graph, &relay, &destination, latency);
+        }
+
+        let defaults = PathPlannerConfig::default();
+        let default_selector = HoprGraphPathSelector::new(
+            me,
+            graph.clone(),
+            defaults.max_cached_paths,
+            defaults.edge_penalty,
+            defaults.min_ack_rate,
+            defaults.min_paths_anonymity_floor,
+        );
+        let default_paths = default_selector.select_path(me, destination, 1)?;
+        assert!(
+            !default_paths
+                .iter()
+                .any(|path| path.path.first() == Some(&remote)),
+            "the deliberately remote relayer must demonstrate the default latency-only exclusion"
+        );
+
+        let tuned_selector = HoprGraphPathSelector::new(
+            me,
+            graph,
+            planner.max_cached_paths,
+            planner.edge_penalty,
+            planner.min_ack_rate,
+            planner.min_paths_anonymity_floor,
+        );
+        let tuned_paths = tuned_selector.select_path(me, destination, 1)?;
+        assert!(
+            tuned_paths
+                .iter()
+                .any(|path| path.path.first() == Some(&remote)),
+            "the CT policy must retain a healthy remote relayer among its candidates"
+        );
+
+        Ok(())
+    }
+
+    fn offchain_key(byte: u8) -> hopr_lib::api::OffchainPublicKey {
+        *OffchainKeypair::from_secret(&[byte; 32])
+            .expect("a non-zero test scalar is a valid offchain key")
+            .public()
+    }
+
+    fn add_healthy_edge(
+        graph: &ChannelGraph,
+        source: &hopr_lib::api::OffchainPublicKey,
+        destination: &hopr_lib::api::OffchainPublicKey,
+        latency_ms: u64,
+    ) {
+        graph.upsert_edge(source, destination, |observation| {
+            observation.record(EdgeWeightType::Connected(true));
+            observation.record(EdgeWeightType::Immediate(Ok(Duration::from_millis(
+                latency_ms,
+            ))));
+            observation.record(EdgeWeightType::Intermediate(Ok(Duration::from_millis(
+                latency_ms,
+            ))));
+            observation.record(EdgeWeightType::Balance(Some(
+                hopr_lib::api::graph::traits::Balance::from(1_000u64),
+            )));
+        });
+        graph
+            .add_edge(source, destination)
+            .expect("test edge must be added");
+    }
+
+    #[test]
+    fn absent_path_planner_settings_keep_transport_defaults() {
+        let lib = HoprLibConfig::from(UserHoprLibConfig::default());
+        assert_eq!(lib.protocol.path_planner, PathPlannerConfig::default());
     }
 
     /// The other half of the literal: the fields hoprd pins on purpose stay pinned.
