@@ -713,6 +713,64 @@ mod tests {
         Ok(())
     }
 
+    /// A producer that keeps issuing indices while the node is torn down must not lose the last index.
+    ///
+    /// Mirrors the real ordering: `drop(node)` leaves the REST/strategy clones in place, the wait
+    /// holds until the producer stops, and only then does the final save run.
+    #[tokio::test]
+    async fn shutdown_saves_an_index_issued_by_a_concurrent_producer() -> anyhow::Result<()> {
+        use hopr_lib::api::{
+            chain::ChannelEntry,
+            types::{crypto::keypairs::ChainKeypair, internal::channels::ChannelStatus},
+        };
+
+        let dir = tempfile::tempdir()?;
+        let mut cfg = HoprdConfig::default();
+        cfg.db.data = dir.path().display().to_string();
+
+        let channel = ChannelEntry::builder()
+            .between(&ChainKeypair::random(), &ChainKeypair::random())
+            .amount(10)
+            .ticket_index(0)
+            .status(ChannelStatus::Open)
+            .epoch(1)
+            .build()?;
+
+        let factory = Arc::new(HoprTicketFactory::new(open_ticket_store(&cfg)?));
+        factory.sync_from_outgoing_channels(&[channel])?;
+
+        // A node task that holds a clone, as the REST API and the strategies do, and keeps issuing
+        // ticket indices until it is told to stop.
+        let producer = {
+            let factory = factory.clone();
+            let channel = channel.clone();
+            tokio::spawn(async move {
+                for _ in 0..50 {
+                    factory.next_outgoing_ticket_index(&channel);
+                    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                }
+            })
+        };
+
+        assert!(
+            wait_for_ticket_factory_release(&factory, std::time::Duration::from_secs(5)).await,
+            "the wait must hold until the producing task has finished"
+        );
+        producer.await?;
+        save_outgoing_ticket_indices_once(&factory).await;
+        drop(factory);
+
+        // 50 indices were issued; the next one must be 50, not 0.
+        let factory = HoprTicketFactory::new(open_ticket_store(&cfg)?);
+        factory.sync_from_outgoing_channels(&[channel])?;
+        assert_eq!(
+            50,
+            factory.next_outgoing_ticket_index(&channel),
+            "the final save must include every index the producer issued before it stopped"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn shutdown_wait_holds_until_the_other_factory_clones_are_dropped() -> anyhow::Result<()>
     {
