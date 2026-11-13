@@ -237,6 +237,12 @@ AGGREGATOR=$(docker exec "$CHAIN_ID" cat /data/curvy_deployed_addresses.json |
   jq -er '.["CurvyAggregator#CurvyAggregatorAlphaV2"] // .["CurvyAggregator#ERC1967Proxy"]')
 [[ $AGGREGATOR =~ ^0x[[:xdigit:]]{40}$ ]] || die "invalid Curvy aggregator address"
 VAULT=$(chain_cast call "$AGGREGATOR" 'curvyVault()(address)')
+# Nodes shield directly through the Curvy shield router, which Blokli publishes only when the chain
+# has it; an older chain image would leave every Entry refusing to shield, so say so here instead.
+ROUTER=$(docker exec "$CHAIN_ID" cat /data/curvy_deployed_addresses.json |
+  jq -er '.["ShieldRouter#CurvyShieldRouter"]') ||
+  die "the chain image predates the Curvy shield router; update the chain digest in curvy/release.json"
+[[ $(chain_cast code "$ROUTER") != 0x ]] || die "no Curvy shield router code at $ROUTER"
 # The Rust relayer adapter needs the collector's spend/view public keys from
 # /protocol. Serve the upstream localnet identity without a metadata service;
 # fail early if this chain was deployed with a different collector.
@@ -322,19 +328,18 @@ done
 export PIX_POOL=curvy HOPRD_CURVY_SHIELDING=direct HOPRD_CURVY_SUBMISSION=relayer
 export HOPRD_CURVY_RELAYER_URL=$GATEWAY_URL
 export HOPRD_CURVY_NOTE_SOURCE=blokli HOPRD_CURVY_TOKEN=3
-export HOPRD_CURVY_SCOPE_AGGREGATOR="$AGGREGATOR"
 export CURVY_ZK_KEYS_DIR="$RUN_DIR/keys"
 [[ -z ${PIX_DEMO_RATE:-} ]] || export HOPRD_PIX_SOAK_RATE="$PIX_DEMO_RATE"
 [[ -z ${PIX_DEMO_FLOAT:-} ]] || export HOPRD_PIX_SOAK_FLOAT="$PIX_DEMO_FLOAT"
 unset HOPRD_DEPLOYER_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEY HOPRD_CURVY_OPERATOR_PRIVATE_KEYS
-unset HOPRD_CURVY_INITIAL_FUNDING HOPRD_CURVY_SCOPE_RPC_URL
+unset HOPRD_CURVY_INITIAL_FUNDING HOPRD_CURVY_SCOPE_AGGREGATOR HOPRD_CURVY_SCOPE_RPC_URL
 unset HOPRD_PIX_SOAK_POOL_PREFUNDED HOPRD_PIX_FLOAT_NODE_IDS
 
 if $STACK_ONLY; then
   # Everything a node started against this stack needs; the service signers stay out of it.
   {
     for var in HOPRD_CHAIN_URL HOPRD_CURVY_SHIELDING HOPRD_CURVY_SUBMISSION HOPRD_CURVY_RELAYER_URL \
-      HOPRD_CURVY_NOTE_SOURCE HOPRD_CURVY_TOKEN HOPRD_CURVY_SCOPE_AGGREGATOR CURVY_ZK_KEYS_DIR; do
+      HOPRD_CURVY_NOTE_SOURCE HOPRD_CURVY_TOKEN CURVY_ZK_KEYS_DIR; do
       printf 'export %s=%q\n' "$var" "${!var}"
     done
     printf 'export CURVY_STACK_PROJECT=%q\n' "$PROJECT"
