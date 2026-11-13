@@ -55,6 +55,13 @@ const TICKET_STORE_FILE_NAME: &str = "tickets.redb";
 /// Indices issued after the last save are issued again if the node does not shut down gracefully.
 const OUTGOING_TICKET_INDEX_SAVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How long the shutdown waits for the tasks that issue tickets to release the ticket factory.
+///
+/// The final outgoing index save is only complete once nothing can issue another index, i.e. once
+/// the factory rests in the hands of the save task alone. `drop()` on the node is not enough for
+/// that: the REST API and the strategies hold their own clones until their tasks stop.
+const TICKET_FACTORY_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
 enum HoprdProcess {
     #[strum(to_string = "session listener sockets")]
@@ -263,16 +270,35 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
             }
             Signal::Int | Signal::Term => {
                 tracing::error!(signal = ?signal, "Received a termination signal... tearing down the node");
-                // Explicitly tear down running processes here
+                // Explicitly tear down running processes here. The REST API and the strategies hold
+                // clones of the node, and with it of the ticket factory, so they must stop before the
+                // factory can be left to us alone.
                 drop(node);
+                drop(processes);
 
-                // Stop the periodic save and let it finish its final write before the process dies:
-                // `abort()` would leave an in-flight `spawn_blocking` write racing the last save.
+                // Stop the periodic save, so it cannot write an older index after the final save.
                 let _ = shutdown_save_tx.send(());
                 let _ = save_task.await;
-                drop(processes);
-                // Release our references so a temporary ticket store is deleted instead of leaked:
-                // `emulate_default_handler` below terminates the process without unwinding.
+
+                // Without the node, no more tickets are issued, so this saves the final outgoing indices.
+                if wait_for_ticket_factory_release(
+                    &outgoing_index_factory,
+                    TICKET_FACTORY_SHUTDOWN_TIMEOUT,
+                )
+                .await
+                {
+                    tracing::debug!("saving the outgoing ticket indices before shutdown");
+                } else {
+                    tracing::warn!(
+                        timeout = ?TICKET_FACTORY_SHUTDOWN_TIMEOUT,
+                        "the ticket factory is still in use after the shutdown wait; a ticket issued in the \
+                         meantime may be issued again after a restart"
+                    );
+                }
+                save_outgoing_ticket_indices_once(&outgoing_index_factory).await;
+
+                // Release our references so a temporary ticket store is deleted and closed instead of
+                // leaked: `emulate_default_handler` below terminates the process without unwinding.
                 drop(outgoing_index_factory);
 
                 tracing::error!(signal = ?signal, "All processes stopped... emulating the default signal handler...");
@@ -395,9 +421,10 @@ fn open_ticket_store(cfg: &HoprdConfig) -> anyhow::Result<RedbStore> {
 
 /// Saves the outgoing ticket indices every [`OUTGOING_TICKET_INDEX_SAVE_INTERVAL`].
 ///
-/// Runs until `shutdown` fires, then saves once more before returning. Both saves go through this
-/// one task, so they cannot interleave: `save_outgoing_indices` snapshots each index before taking
-/// the store write lock, and two concurrent saves could write an older value last.
+/// Saves go through this one task, so they cannot interleave: `save_outgoing_indices` snapshots each
+/// index before taking the store write lock, and two concurrent saves could write an older value last.
+/// On `shutdown` the task returns without saving -- the caller saves the final indices, once nothing
+/// else can issue new ones. Returning also drops this task's clone of the factory.
 async fn save_outgoing_ticket_indices(
     factory: Arc<HoprTicketFactory<RedbStore>>,
     shutdown: tokio::sync::oneshot::Receiver<()>,
@@ -408,12 +435,29 @@ async fn save_outgoing_ticket_indices(
     loop {
         tokio::select! {
             _ = interval.tick() => save_outgoing_ticket_indices_once(&factory).await,
-            _ = &mut shutdown => {
-                // Without the node, no more tickets are issued, so this saves the final indices.
-                save_outgoing_ticket_indices_once(&factory).await;
-                return;
-            }
+            _ = &mut shutdown => return,
         }
+    }
+}
+
+/// Waits up to `timeout` for every other holder of `factory` to be gone.
+///
+/// Returns `true` once only the caller's reference is left. `drop()` alone does not suffice: the
+/// REST API and the strategies keep the node -- and with it a clone of the factory -- alive until
+/// their tasks actually stop, which is asynchronous.
+async fn wait_for_ticket_factory_release(
+    factory: &Arc<HoprTicketFactory<RedbStore>>,
+    timeout: std::time::Duration,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if Arc::strong_count(factory) == 1 {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
 
@@ -647,11 +691,16 @@ mod tests {
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(save_outgoing_ticket_indices(factory.clone(), shutdown_rx));
-        // The shutdown signal alone must trigger a save, without waiting for a period tick.
         shutdown_tx
             .send(())
             .map_err(|()| anyhow::anyhow!("the save task is gone"))?;
         task.await?;
+        // The task returns on shutdown without saving; the caller saves once the factory is free.
+        assert!(
+            wait_for_ticket_factory_release(&factory, TICKET_FACTORY_SHUTDOWN_TIMEOUT).await,
+            "the finished save task must have released its clone"
+        );
+        save_outgoing_ticket_indices_once(&factory).await;
         drop(factory);
 
         let factory = HoprTicketFactory::new(open_ticket_store(&cfg)?);
@@ -660,6 +709,44 @@ mod tests {
             1,
             factory.next_outgoing_ticket_index(&channel),
             "the index issued before shutdown must not be issued again"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shutdown_wait_holds_until_the_other_factory_clones_are_dropped() -> anyhow::Result<()>
+    {
+        let dir = tempfile::tempdir()?;
+        let mut cfg = HoprdConfig::default();
+        cfg.db.data = dir.path().display().to_string();
+
+        let factory = Arc::new(HoprTicketFactory::new(open_ticket_store(&cfg)?));
+        let clone = factory.clone();
+        let dropper = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            drop(clone);
+        });
+
+        assert!(
+            wait_for_ticket_factory_release(&factory, std::time::Duration::from_secs(5)).await,
+            "the wait must return once the other clone is dropped"
+        );
+        dropper.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shutdown_wait_gives_up_at_its_bound() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut cfg = HoprdConfig::default();
+        cfg.db.data = dir.path().display().to_string();
+
+        let factory = Arc::new(HoprTicketFactory::new(open_ticket_store(&cfg)?));
+        let _held = factory.clone();
+
+        assert!(
+            !wait_for_ticket_factory_release(&factory, std::time::Duration::from_millis(100)).await,
+            "a clone that is never dropped must make the wait time out"
         );
         Ok(())
     }
