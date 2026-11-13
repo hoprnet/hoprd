@@ -298,7 +298,8 @@ jq -e --arg aggregator "${AGGREGATOR,,}" --arg vault "${VAULT,,}" \
   --arg graph "$CURVY_PENDING_GRAPH_SHA256" --arg zkey "$CURVY_PENDING_ZKEY_SHA256" '
   .networks == 1 and (.aggregator | ascii_downcase) == $aggregator and
   (.vault | ascii_downcase) == $vault and .token_present and .schemas_present and
-  .pending.batch_size == 5 and .pending.tree_depth == 30 and
+  .pending.batch_size == 256 and .pending.tree_depth == 30 and
+  .pending.circuit_family == "pix" and .pending.circuit_version == 1 and
   .pending.witness_graph_sha256 == $graph and .pending.zkey_sha256 == $zkey
 ' "$RUN_DIR/localdb.json" >/dev/null || die "localdb seed does not match this chain/artifact release; see $RUN_DIR/localdb.json"
 
