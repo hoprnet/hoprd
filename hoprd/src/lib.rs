@@ -63,8 +63,6 @@ enum HoprdProcess {
     Strategies,
     #[strum(to_string = "REST API process")]
     RestApi,
-    #[strum(to_string = "outgoing ticket index persistence")]
-    TicketIndexPersistence,
 }
 
 #[cfg(feature = "runtime-tokio")]
@@ -113,7 +111,14 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         &hopr_keys.chain_key,
         BlockchainConnectorConfig {
             connection_sync_timeout: std::time::Duration::from_mins(1),
-            sync_tolerance: 90,
+            // The ticket manager syncs from the channel graph seeded by `connect()` and purges the
+            // persisted ticket queues and outgoing indices of every channel it does not see. That store
+            // is durable (`hopr.ticket_storage_file` or `db.data/tickets.redb`), so a channel that is
+            // missing here -- possible at the 90% default -- would lose its unredeemed tickets and its
+            // saved outgoing index, and the node would reissue ticket indices after a restart.
+            // Counters advance on every replayed account and channel event, so a complete replay also
+            // satisfies this when channels open or close during the sync.
+            sync_tolerance: 100,
             tx_timeout_multiplier: std::env::var("HOPR_TX_TIMEOUT_MULTIPLIER")
                 .ok()
                 .and_then(|p| {
@@ -221,12 +226,13 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
-    processes.insert(
-        HoprdProcess::TicketIndexPersistence,
-        tokio::spawn(save_outgoing_ticket_indices_periodically(
-            outgoing_index_factory.clone(),
-        )),
-    );
+    // The task is stopped through its channel, not through the abortable list: an in-flight
+    // `spawn_blocking` save cannot be aborted, so the shutdown path awaits the handle instead.
+    let (shutdown_save_tx, shutdown_save_rx) = tokio::sync::oneshot::channel();
+    let save_task = tokio::spawn(save_outgoing_ticket_indices(
+        outgoing_index_factory.clone(),
+        shutdown_save_rx,
+    ));
 
     if cfg.api.enable {
         let list = init_rest_api(&cfg, node.clone()).await?;
@@ -259,10 +265,15 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 tracing::error!(signal = ?signal, "Received a termination signal... tearing down the node");
                 // Explicitly tear down running processes here
                 drop(node);
-                drop(processes);
 
-                // Without the node, no more tickets are issued, so this saves the final outgoing ticket indices
-                save_outgoing_ticket_indices(&outgoing_index_factory).await;
+                // Stop the periodic save and let it finish its final write before the process dies:
+                // `abort()` would leave an in-flight `spawn_blocking` write racing the last save.
+                let _ = shutdown_save_tx.send(());
+                let _ = save_task.await;
+                drop(processes);
+                // Release our references so a temporary ticket store is deleted instead of leaked:
+                // `emulate_default_handler` below terminates the process without unwinding.
+                drop(outgoing_index_factory);
 
                 tracing::error!(signal = ?signal, "All processes stopped... emulating the default signal handler...");
                 low_level::emulate_default_handler(signal as i32)?;
@@ -354,6 +365,7 @@ fn open_ticket_store(cfg: &HoprdConfig) -> anyhow::Result<RedbStore> {
         .hopr
         .ticket_storage_file
         .as_ref()
+        .filter(|file| !file.is_empty())
         .map(std::path::PathBuf::from)
         .or_else(|| {
             (!cfg.db.data.is_empty())
@@ -382,17 +394,31 @@ fn open_ticket_store(cfg: &HoprdConfig) -> anyhow::Result<RedbStore> {
 }
 
 /// Saves the outgoing ticket indices every [`OUTGOING_TICKET_INDEX_SAVE_INTERVAL`].
-async fn save_outgoing_ticket_indices_periodically(factory: Arc<HoprTicketFactory<RedbStore>>) {
+///
+/// Runs until `shutdown` fires, then saves once more before returning. Both saves go through this
+/// one task, so they cannot interleave: `save_outgoing_indices` snapshots each index before taking
+/// the store write lock, and two concurrent saves could write an older value last.
+async fn save_outgoing_ticket_indices(
+    factory: Arc<HoprTicketFactory<RedbStore>>,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) {
     let mut interval = tokio::time::interval(OUTGOING_TICKET_INDEX_SAVE_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tokio::pin!(shutdown);
     loop {
-        interval.tick().await;
-        save_outgoing_ticket_indices(&factory).await;
+        tokio::select! {
+            _ = interval.tick() => save_outgoing_ticket_indices_once(&factory).await,
+            _ = &mut shutdown => {
+                // Without the node, no more tickets are issued, so this saves the final indices.
+                save_outgoing_ticket_indices_once(&factory).await;
+                return;
+            }
+        }
     }
 }
 
 /// Saves the outgoing ticket indices to the ticket store, so the node does not issue them again after a restart.
-async fn save_outgoing_ticket_indices(factory: &Arc<HoprTicketFactory<RedbStore>>) {
+async fn save_outgoing_ticket_indices_once(factory: &Arc<HoprTicketFactory<RedbStore>>) {
     let factory = factory.clone();
     match tokio::task::spawn_blocking(move || factory.save_outgoing_indices()).await {
         Ok(Ok(())) => tracing::trace!("saved outgoing ticket indices"),
@@ -493,10 +519,6 @@ mod tests {
             "hopr strategies process"
         );
         assert_eq!(HoprdProcess::RestApi.to_string(), "REST API process");
-        assert_eq!(
-            HoprdProcess::TicketIndexPersistence.to_string(),
-            "outgoing ticket index persistence"
-        );
         Ok(())
     }
 
@@ -521,6 +543,33 @@ mod tests {
                 .exists(),
             "the configured file takes precedence over the data directory"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn ticket_store_ignores_an_empty_configured_path() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let mut cfg = HoprdConfig::default();
+        // An empty YAML value must fall through to the data directory, not be opened as a path.
+        cfg.hopr.ticket_storage_file = Some(String::new());
+        cfg.db.data = dir.path().to_string_lossy().into_owned();
+
+        drop(open_ticket_store(&cfg)?);
+
+        assert!(
+            dir.path().join(TICKET_STORE_FILE_NAME).exists(),
+            "an empty ticket_storage_file must not shadow the data directory"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ticket_store_falls_back_to_a_temporary_file() -> anyhow::Result<()> {
+        let mut cfg = HoprdConfig::default();
+        cfg.db.data = String::new();
+
+        let store = open_ticket_store(&cfg)?;
+        drop(store);
         Ok(())
     }
 
@@ -570,6 +619,48 @@ mod tests {
         let factory = HoprTicketFactory::new(open_ticket_store(&cfg)?);
         factory.sync_from_outgoing_channels(&[channel])?;
         assert_eq!(2, factory.next_outgoing_ticket_index(&channel));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn shutdown_saves_the_outgoing_ticket_indices() -> anyhow::Result<()> {
+        use hopr_lib::api::{
+            chain::ChannelEntry,
+            types::{crypto::keypairs::ChainKeypair, internal::channels::ChannelStatus},
+        };
+
+        let dir = tempfile::tempdir()?;
+        let mut cfg = HoprdConfig::default();
+        cfg.db.data = dir.path().display().to_string();
+
+        let channel = ChannelEntry::builder()
+            .between(&ChainKeypair::random(), &ChainKeypair::random())
+            .amount(10)
+            .ticket_index(0)
+            .status(ChannelStatus::Open)
+            .epoch(1)
+            .build()?;
+
+        let factory = Arc::new(HoprTicketFactory::new(open_ticket_store(&cfg)?));
+        factory.sync_from_outgoing_channels(&[channel])?;
+        assert_eq!(0, factory.next_outgoing_ticket_index(&channel));
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(save_outgoing_ticket_indices(factory.clone(), shutdown_rx));
+        // The shutdown signal alone must trigger a save, without waiting for a period tick.
+        shutdown_tx
+            .send(())
+            .map_err(|()| anyhow::anyhow!("the save task is gone"))?;
+        task.await?;
+        drop(factory);
+
+        let factory = HoprTicketFactory::new(open_ticket_store(&cfg)?);
+        factory.sync_from_outgoing_channels(&[channel])?;
+        assert_eq!(
+            1,
+            factory.next_outgoing_ticket_index(&channel),
+            "the index issued before shutdown must not be issued again"
+        );
         Ok(())
     }
 

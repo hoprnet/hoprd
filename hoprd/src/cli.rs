@@ -454,6 +454,14 @@ impl TryFrom<CliArgs> for HoprdConfig {
                 .expect("home dir for a user must be specified")
                 + &cfg.identity.file[1..];
         }
+        if let Some(file) = cfg.hopr.ticket_storage_file.as_mut()
+            && file.starts_with(home_symbol)
+        {
+            *file = home::home_dir()
+                .map(|h| h.as_path().display().to_string())
+                .expect("home dir for a user must be specified")
+                + &file[1..];
+        }
 
         Ok(cfg)
     }
@@ -467,6 +475,35 @@ mod tests {
 
     use super::*;
     use crate::config::HoprdConfig;
+
+    #[test]
+    fn ticket_storage_file_expands_a_leading_tilde() -> anyhow::Result<()> {
+        let home = home::home_dir().context("home dir for a user must be specified")?;
+        let file = tempfile::NamedTempFile::new()?;
+        std::fs::write(
+            file.path(),
+            "blokli_url: http://localhost:8080\nhopr:\n  ticket_storage_file: \"~/hoprd/tickets.redb\"\n",
+        )?;
+        let args = CliArgs::try_parse_from([
+            "hoprd",
+            "--configurationFilePath",
+            &file.path().to_string_lossy(),
+        ])?;
+
+        let cfg = HoprdConfig::try_from(args)?;
+
+        assert_eq!(
+            cfg.hopr.ticket_storage_file.as_deref(),
+            Some(
+                home.join("hoprd")
+                    .join("tickets.redb")
+                    .to_string_lossy()
+                    .as_ref()
+            ),
+            "a leading tilde must resolve against the home directory, like db.data and identity.file"
+        );
+        Ok(())
+    }
 
     #[test]
     fn auto_sentinel_resolves_to_non_loopback_ipv4_with_given_port() -> anyhow::Result<()> {
