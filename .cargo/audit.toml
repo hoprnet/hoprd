@@ -15,6 +15,13 @@ ignore = [
   "RUSTSEC-2026-0511", # hickory-proto: NXDOMAIN accepted for a proven empty non-terminal
   "RUSTSEC-2026-0512", # hickory-proto: DNSSEC validation accepted an unrelated signed RRset as the answer
   "RUSTSEC-2026-0514", # hickory-resolver 0.25.2: lookup returned records that failed DNSSEC validation; fixed in 0.26.2
+  # The following DNSSEC validation paths are not enabled in our Hickory 0.25.2
+  # feature graph (including workspace --all-features --target all). libp2p still
+  # requires 0.25.x; the fixes live in hickory-net >=0.26.2. Remove these ignores
+  # when libp2p migrates, and reassess before enabling Hickory DNSSEC features.
+  "RUSTSEC-2026-0530", # hickory-proto: parent-side NSEC at a zone cut accepted as proof of nonexistence
+  "RUSTSEC-2026-0531", # hickory-proto: child-side NSEC or NSEC3 accepted as proof that a delegation has no DS record
+  "RUSTSEC-2026-0532", # hickory-proto: parent-side NSEC3 at a zone cut accepted as proof of nonexistence
   "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained]; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins validator_derive 0.20); no fix released yet
   "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
   "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal
