@@ -388,19 +388,13 @@ where
     build_strategies_inner(cfg, node, chain_key)
 }
 
-// `chain_key` is unread unless a PIX pool is compiled in; see `build_strategies`. Both pools
-// take it now — the plain one signs its deposit transfers with it, and the Curvy one drives the
-// node's Safe through its permission module, whose `execTransactionFromModule` accepts no other
-// signer — so with neither, `chain_key` reaches nothing but the recursive call below, which is
-// what both of these lints are pointing at. Gated on the features rather than blanket-allowed,
-// so the day something else here needs the key, an unused one is still caught in the builds
-// that have it.
+// Only the plain pool signs with `chain_key`; Curvy shields via the node's tx sequencer.
 #[cfg_attr(
-    not(any(feature = "strategy-pix-test", feature = "strategy-pix-curvy")),
+    not(feature = "strategy-pix-test"),
     allow(
         unused_variables,
         clippy::only_used_in_recursion,
-        reason = "only a PIX deposit pool signs with the node key"
+        reason = "only the plain PIX deposit pool signs with the node key"
     )
 )]
 fn build_strategies_inner<N>(
@@ -502,7 +496,6 @@ where
                 let built = PixStrategy::new(sub_cfg.strategy.clone())
                     .build_curvy::<_, SpecDepositAddress>(
                         Arc::clone(&node),
-                        chain_key.clone(),
                         sub_cfg.pool.clone(),
                     )?;
                 strategies.push(built);

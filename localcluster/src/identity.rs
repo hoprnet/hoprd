@@ -27,7 +27,10 @@ use hopr_strategy::{
     },
     // The pool matching this crate's `strategy-pix-test` on `hoprd`; `hoprd::strategy`
     // selects the same one, so this is the type its `PixConfig::pool` field expects.
-    pix::{pools::plain::PoolConfig as PixPoolConfig, strategy::PixStrategyConfig},
+    pix::{
+        pools::plain::PoolConfig as PixPoolConfig,
+        strategy::{PixFundingPolicy, PixStrategyConfig},
+    },
 };
 use hoprd::{
     config::{
@@ -273,6 +276,8 @@ pub struct PixSettings {
     /// xDai moved from the Safe to a recovered stealth address so it can pay gas for
     /// its own sweep. Zero disables the sweep's gas funding entirely.
     pub gas_xdai_per_sweep: XDaiBalance,
+    /// Moves Safe funds into a Curvy pool; the plain pool refuses one, so only Curvy runs set it.
+    pub funding: Option<PixFundingPolicy>,
 }
 
 impl PixSettings {
@@ -369,6 +374,7 @@ impl PixSettings {
                 })
                 .transpose()?
                 .unwrap_or(d.gas_xdai_per_sweep),
+            funding: d.funding,
         })
     }
 }
@@ -483,6 +489,7 @@ impl Default for PixSettings {
             spend_window: std::time::Duration::from_secs(24 * 3600),
             max_deposit_tracking_time: std::time::Duration::from_secs(30),
             gas_xdai_per_sweep: "0.01 xdai".parse().expect("valid static amount"),
+            funding: None,
         }
     }
 }
@@ -956,6 +963,7 @@ pub async fn generate(config: &GenerationConfig) -> anyhow::Result<GenerationOut
                 max_ssa_allocation: pix.max_ssa_allocation,
                 max_spend_per_window: pix.max_spend_per_window,
                 spend_window: pix.spend_window,
+                funding: pix.funding.clone(),
                 ..Default::default()
             },
             pool: PixPoolConfig {

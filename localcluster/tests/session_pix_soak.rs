@@ -169,7 +169,7 @@
 //! * The Entry's Safe pays **once**: the pool shields [`curvy_shield`] into the Curvy vault on
 //!   the first deposit and allocates every SSA deposit out of that note, so the Safe delta is the
 //!   shield and not a count of deposits — those are taken from the strategy's own metric. The
-//!   shield is sized by this test and handed to the pool through `HOPRD_CURVY_INITIAL_FUNDING`,
+//!   shield is sized by this test and handed to the pool as the `top_up` of its funding policy,
 //!   gross of the vault's deposit fee.
 //! * The Exit is credited by the vault **less its withdrawal fee** (20 bps on the pinned chain
 //!   image), so a sweep lands `per_cycle` minus the fee. Both fees are read from Blokli once the
@@ -211,6 +211,7 @@ use common::{
     ports,
 };
 use hopr_lib::api::types::primitive::prelude::{HoprBalance, U256};
+use hopr_strategy::pix::strategy::PixFundingPolicy;
 use hoprd_localcluster::{client_helper, identity};
 use pix_soak_monitor::SessionMonitor;
 use tokio::net::UdpSocket;
@@ -516,7 +517,6 @@ const MAX_DEPOSIT_TRACKING_TIME: Duration = Duration::from_secs(20);
 /// The pool's own knobs, read from the node's environment. `hopr_strategy::pix::pools::curvy`
 /// names them; they are restated here because the harness is built with the plain pool and that
 /// module is not in its graph.
-const CURVY_INITIAL_FUNDING_ENV: &str = "HOPRD_CURVY_INITIAL_FUNDING";
 const CURVY_OPERATOR_KEY_ENV: &str = "HOPRD_CURVY_OPERATOR_PRIVATE_KEY";
 /// Read by the Curvy SDK, which proves in-process and needs the zkeys on disk.
 const CURVY_ZK_KEYS_ENV: &str = "CURVY_ZK_KEYS_DIR";
@@ -686,9 +686,9 @@ fn curvy_shield(net: HoprBalance) -> HoprBalance {
     HoprBalance::from((gross + one - U256::one()) / one * one)
 }
 
-/// Validate Curvy configuration before bootstrap and size the direct shield.
+/// Validate Curvy configuration before bootstrap.
 /// Relayed nodes need no operator key; manual operator runs retain the deployer default.
-fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> {
+fn curvy_node_env() -> anyhow::Result<Vec<(String, String)>> {
     let zk_keys = std::env::var(CURVY_ZK_KEYS_ENV).with_context(|| {
         format!(
             "{CURVY_ZK_KEYS_ENV} must point at the Curvy proving keys for a Curvy binary: the \
@@ -699,12 +699,7 @@ fn curvy_node_env(shield: HoprBalance) -> anyhow::Result<Vec<(String, String)>> 
         Path::new(&zk_keys).is_dir(),
         "{CURVY_ZK_KEYS_ENV}={zk_keys} is not a directory"
     );
-    anyhow::ensure!(
-        std::env::var_os(CURVY_INITIAL_FUNDING_ENV).is_none(),
-        "{CURVY_INITIAL_FUNDING_ENV} is set, but this test sizes the shield itself ({shield}) and \
-         asserts that the Safe paid exactly that; unset it"
-    );
-    let mut env = vec![(CURVY_INITIAL_FUNDING_ENV.to_string(), shield.to_string())];
+    let mut env = Vec::new();
     match std::env::var("HOPRD_CURVY_SUBMISSION").as_deref() {
         Ok("operator") => {
             let key = std::env::var(CURVY_OPERATOR_KEY_ENV)
@@ -874,6 +869,15 @@ fn pix_settings(
             Pool::Curvy => curvy_max_deposit_wait()?,
         },
         gas_xdai_per_sweep: GAS_XDAI_PER_SWEEP.parse().context("parsing sweep gas")?,
+        // A 1 wei floor refills only an empty pool, so the Safe pays the one shield it is asserted to.
+        funding: match pool {
+            Pool::Test => None,
+            Pool::Curvy => Some(PixFundingPolicy {
+                min_available: HoprBalance::from(1u64),
+                top_up: safe_deposit_float,
+                fund_at_startup: false,
+            }),
+        },
     })
 }
 
@@ -1105,7 +1109,7 @@ async fn localcluster_pix_session_runs_until_the_entry_cannot_deposit() -> anyho
         Pool::Test => (float, Vec::new()),
         Pool::Curvy => {
             let shield = curvy_shield(float);
-            (shield, curvy_node_env(shield)?)
+            (shield, curvy_node_env()?)
         }
     };
     // Refuse a rate whose buffer would not fit, rather than running it and reporting the damage
