@@ -5876,6 +5876,7 @@ dependencies = [
  "petgraph",
  "postcard",
  "redb",
+ "serde",
  "serde_json",
  "smart-default",
  "tempfile",
@@ -5953,6 +5954,7 @@ dependencies = [
  "rand 0.10.4",
  "rstest 0.27.0",
  "serde",
+ "serde_json",
  "serde_with",
  "smart-default",
  "strum",
@@ -5973,6 +5975,7 @@ dependencies = [
  "anyhow",
  "bimap",
  "futures",
+ "futures-time",
  "hopr-api",
  "hopr-utilities",
  "indexmap 2.14.2",
@@ -6170,9 +6173,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-ticket-manager"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f9e64afccd66dea3576395dc3fe616dc9b46fd64371c822ec754dc33c5f7abd"
+checksum = "e9c30745adf3140cda76d1faf6ce88a53b92f0be998ab07149d084494758443c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -6271,6 +6274,7 @@ dependencies = [
  "backon",
  "dashmap",
  "futures",
+ "futures-time",
  "futures-timer",
  "hopr-api",
  "hopr-utilities",
@@ -6279,6 +6283,8 @@ dependencies = [
  "libp2p-stream",
  "pin-project",
  "quinn-udp 0.6.3",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tracing",
 ]
