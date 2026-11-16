@@ -292,7 +292,7 @@
               + (old.preBuild or "");
             });
 
-          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
+          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server,state-dump";
 
           clippyDerivation = rust-builder-local.callPackage nixLib.mkRustPackage (
             projectBuildArgs
