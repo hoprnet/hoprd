@@ -743,7 +743,6 @@ mod tests {
         // ticket indices until it is told to stop.
         let producer = {
             let factory = factory.clone();
-            let channel = channel.clone();
             tokio::spawn(async move {
                 for _ in 0..50 {
                     factory.next_outgoing_ticket_index(&channel);
