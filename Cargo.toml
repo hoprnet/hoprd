@@ -15,8 +15,8 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "31d2dc4be783900a5f49d81d14ff0d808bdcbeaf", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "31d2dc4be783900a5f49d81d14ff0d808bdcbeaf", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "bf78a94a058d4e571d1cb4567b897d6834305158", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "bf78a94a058d4e571d1cb4567b897d6834305158", default-features = false }
 
 # crates.io HOPR deps
 hopr-api = { version = "=6.1.0" }
@@ -24,8 +24,8 @@ hopr-chain-connector = "0.33.0"
 hopr-ct-full-network = { version = "0.11.0", default-features = false }
 hopr-network-graph = { version = "0.12.1", default-features = false }
 hopr-session-server-forwarder = { version = "0.8.0", default-features = false }
-hopr-strategy = { version = "8.0.1", default-features = false }
-hopr-ticket-manager = { version = "0.11.0", default-features = false, features = [
+hopr-strategy = { version = "9.0.2", default-features = false }
+hopr-ticket-manager = { version = "0.11.1", default-features = false, features = [
   "redb",
   "cli",
   "serde",
