@@ -22,9 +22,9 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "31d2dc
 hopr-api = { version = "=6.1.0" }
 hopr-chain-connector = "0.33.0"
 hopr-ct-full-network = { version = "0.11.0", default-features = false }
-hopr-network-graph = { version = "0.12.0", default-features = false }
+hopr-network-graph = { version = "0.12.1", default-features = false }
 hopr-session-server-forwarder = { version = "0.8.0", default-features = false }
-hopr-strategy = { version = "8.0.0", default-features = false }
+hopr-strategy = { version = "8.0.1", default-features = false }
 hopr-ticket-manager = { version = "0.11.0", default-features = false, features = [
   "redb",
   "cli",
@@ -50,7 +50,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
 # Curvy aggregator target (see `localcluster/src/curvy_grant.rs`). Same rc as hopr-strategy pins.
 curvy-abi = "=0.2.0"
 clap = { version = "4.6.7", features = ["derive", "env", "string"] }
-const_format = "0.2.36"
+const_format = "0.2.37"
 console-subscriber = "0.5.0"
 flagset = "0.4.7"
 futures = { version = "0.3.34", default-features = false, features = [
@@ -68,9 +68,9 @@ mockall = "0.15.0"
 mimalloc = { version = "0.1.52", default-features = false, features = [
   "secure",
 ] }
-nix = { version = "0.31.3", features = ["fs", "signal"] }
-parking_lot = "0.12.5"
-rstest = "0.27.0"
+nix = { version = "0.32.0", features = ["fs", "signal"] }
+parking_lot = "0.13.0"
+rstest = "0.28.0"
 oas3 = "0.22.0"
 openapiv3 = "2.2.0"
 opentelemetry = { version = "0.32.0" }
@@ -82,7 +82,7 @@ prettyplease = "0.3.0"
 proc-macro-regex = "~1.1.0"
 progenitor = "0.15.1"
 progenitor-client = "0.15.1"
-rand = "0.10.3"
+rand = "0.10.4"
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = [
   "json",
@@ -93,16 +93,16 @@ serde-saphyr = "0.0.29"
 serde_json = "1.0.154"
 serde_urlencoded = "0.7.1"
 serde_with = { version = "3.24.0", features = ["base64"] }
-signal-hook = "0.4.5"
+signal-hook = "0.4.6"
 smart-default = "0.7.1"
 strum = { version = "0.28.0", features = ["derive"] }
-syn = { version = "3.0.9", features = ["full"] }
+syn = { version = "3.0.10", features = ["full"] }
 tempfile = "3.27.0"
 test-log = { version = "0.2.21", features = ["trace"] }
 thiserror = "2.0.21"
 tikv-jemalloc-ctl = { version = "0.7.0", features = ["stats"] }
 tikv-jemallocator = "0.7.0"
-tokio = { version = "1.53.2", features = [
+tokio = { version = "1.54.1", features = [
   "rt-multi-thread",
   "macros",
   "tracing",
@@ -126,7 +126,7 @@ tracing-subscriber = { version = "0.3.23", features = [
 utoipa = { version = "6.0.0" }
 utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 utoipa-swagger-ui = { version = "10.0.2", features = ["axum", "vendored"] }
-uuid = { version = "1.28.0" }
+uuid = { version = "1.29.2" }
 validator = { version = "0.21.0", features = ["derive"] }
 vergen-gix = { version = "10.0.3", features = ["build"] }
 
