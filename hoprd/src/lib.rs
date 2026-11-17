@@ -13,6 +13,8 @@ pub mod strategy;
 
 #[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
 mod jemalloc_stats;
+#[cfg(feature = "state-dump")]
+mod state_dump;
 
 use async_signal::{Signal, Signals};
 use futures::{FutureExt, StreamExt, future::abortable};
@@ -222,6 +224,10 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 graph_for_ct,
             )
         });
+    #[cfg(feature = "state-dump")]
+    let builder = builder.with_state_dump(state_dump::ComponentStateReporter::new(
+        Keypair::public(&hopr_keys.chain_key).to_address().to_hex(),
+    ));
 
     #[cfg(feature = "session-server")]
     let node = Arc::new(

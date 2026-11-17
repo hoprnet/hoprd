@@ -18,6 +18,7 @@ default = [
   "transport-quic",
   "allocator-jemalloc",
   "session-server",
+  "state-dump",
 ] # uses tokio by default because of axum
 runtime-tokio = [
   "dep:tokio",
@@ -93,6 +94,13 @@ allocator-jemalloc-stats = [
   "dep:humansize",
 ]
 session-server = ["hopr-lib/session-server"]
+# Periodic chain, graph and transport state records in the log; see `src/state_dump.rs`.
+state-dump = [
+  "hopr-lib/state-dump",
+  "hopr-chain-connector/state-dump",
+  "hopr-network-graph/state-dump",
+  "hopr-transport-p2p/state-dump",
+]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -177,6 +185,12 @@ hopr-lib = { workspace = true, features = [
   "utils_parallel",
   "testing",
 ] }
+hopr-chain-connector = { workspace = true, features = ["testing"] }
+
+[[bench]]
+name = "state_dump"
+harness = false
+required-features = ["state-dump", "runtime-tokio"]
 
 [package.metadata.cargo-machete]
 ignored = ["humantime-serde", "lazy_static"]
