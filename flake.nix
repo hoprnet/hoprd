@@ -24,7 +24,8 @@
     # its checkout's version names. `hopr-strategy` pins the `curvy-*` crates of the same release,
     # so the two move together: change the ref here and in `hopr-strategy`, then
     # `nix flake update curvy-zk-artifacts`.
-    curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/v0.2.2";
+    # Stays on v0.2.0 under the 0.2.2 crates: same zkey/graph hashes, and v0.2.2's flake regex fails to evaluate on CI.
+    curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/v0.2.0";
 
     curvy-zk-artifacts.inputs.nixpkgs.follows = "nixpkgs";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
