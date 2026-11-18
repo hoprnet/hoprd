@@ -22,6 +22,11 @@ ignore = [
   "RUSTSEC-2026-0530", # hickory-proto: parent-side NSEC at a zone cut accepted as proof of nonexistence
   "RUSTSEC-2026-0531", # hickory-proto: child-side NSEC or NSEC3 accepted as proof that a delegation has no DS record
   "RUSTSEC-2026-0532", # hickory-proto: parent-side NSEC3 at a zone cut accepted as proof of nonexistence
+  "RUSTSEC-2026-0549", # hickory-proto: NSEC3 NODATA at a zone apex accepted without a matching NSEC3 record
+  "RUSTSEC-2026-0550", # hickory-proto: unsigned NSEC or NSEC3 record used in a nonexistence proof
+  "RUSTSEC-2026-0551", # hickory-proto: records of a non-query DNS class marked secure without validation
+  "RUSTSEC-2026-0542", # 'humantime' [unmaintained] via 'humantime-serde' (hoprd, hopr-lib, hopr-strategy); no patched version
+  "RUSTSEC-2026-0543", # 'chrono' [unmaintained] via 'hopr-api' and the hoprnet crates; no patched version
   "RUSTSEC-2026-0173", # 'proc-macro-error2' [unmaintained]; pulled via alloy (alloy-sol-macro) and validator_derive 0.20 (validator 0.21.0 still pins validator_derive 0.20); no fix released yet
   "RUSTSEC-2026-0249", # 'smartstring' 1.0.1 [unmaintained] - transitive via opentelemetry-prometheus-text-exporter; no fix released yet
   "RUSTSEC-2026-0253", # 'lru' 0.16.4 [unsound] - transitive via alloy-provider; remove together with the alloy removal
