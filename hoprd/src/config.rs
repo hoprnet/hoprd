@@ -874,7 +874,45 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
 
 impl Validate for UserHoprLibConfig {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        HoprLibConfig::from(self.clone()).validate()
+        let lib_cfg = HoprLibConfig::from(self.clone());
+        let mut errors = match lib_cfg.validate() {
+            Ok(()) => ValidationErrors::new(),
+            Err(errors) => errors,
+        };
+
+        // The node applies the same checks at startup, so fail here instead of after chain sync.
+        let network = &self.network;
+        if let Err(error) = hopr_network_graph::validate_loopback_window(network.loopback_window) {
+            errors.add(
+                "loopback_window",
+                ValidationError::new("loopback_window").with_message(error.into()),
+            );
+        } else if let Err(error) = network.egress_config().validate_against_loopback_window(
+            lib_cfg.protocol.probe.timeout,
+            network.loopback_window,
+        ) {
+            errors.add(
+                "probe_interval",
+                ValidationError::new("probe_interval").with_message(error.to_string().into()),
+            );
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+impl UserHoprNetworkConfig {
+    /// The CT egress configuration derived from the probe interval.
+    pub fn egress_config(&self) -> hopr_ct_full_network::EgressConfig {
+        hopr_ct_full_network::EgressConfig {
+            interval: self.probe_interval,
+            shuffle_ttl: self.probe_interval * 2,
+            ..Default::default()
+        }
     }
 }
 

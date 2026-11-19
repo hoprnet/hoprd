@@ -4861,7 +4861,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -5907,9 +5907,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-ct-full-network"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a8b9c0b368425475e7ee9aa005909fb12ada2b161796dadd874b67fca01de6f"
+version = "0.11.1"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -5968,9 +5967,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-network-graph"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0947dbc8e4e435e0b77c720dc6761ba832d39a2b2ac12003e413f6395a611ca"
+version = "0.12.2"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
 dependencies = [
  "anyhow",
  "bimap",
@@ -9364,7 +9362,7 @@ dependencies = [
  "quinn-udp 0.5.16",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9404,7 +9402,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9417,7 +9415,7 @@ checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "windows-sys 0.61.2",
 ]
 
@@ -12640,13 +12638,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "hopr-ct-full-network"
-version = "0.11.1"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
-
-[[patch.unused]]
-name = "hopr-network-graph"
-version = "0.12.2"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
