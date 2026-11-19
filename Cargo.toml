@@ -3,7 +3,7 @@ resolver = "2"
 members = ["hoprd", "rest-api", "rest-api-client", "localcluster"]
 
 [workspace.package]
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 edition = "2024"
 license = "GPL-3.0-only"
@@ -21,8 +21,8 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "2a67ec
 # crates.io HOPR deps
 hopr-api = { version = "=6.1.0" }
 hopr-chain-connector = "0.33.0"
-hopr-ct-full-network = { version = "0.11.0", default-features = false }
-hopr-network-graph = { version = "0.12.1", default-features = false }
+hopr-ct-full-network = { version = "0.11.1", default-features = false }
+hopr-network-graph = { version = "0.12.2", default-features = false }
 hopr-session-server-forwarder = { version = "0.8.0", default-features = false }
 hopr-strategy = { version = "9.2.0", default-features = false }
 hopr-ticket-manager = { version = "0.11.1", default-features = false, features = [

@@ -177,6 +177,7 @@ anyhow = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+rstest = { workspace = true }
 test-log = { workspace = true }
 hopr-lib = { workspace = true, features = [
   "runtime-tokio",

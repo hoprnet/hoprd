@@ -4862,7 +4862,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -5908,9 +5908,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-ct-full-network"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a8b9c0b368425475e7ee9aa005909fb12ada2b161796dadd874b67fca01de6f"
+checksum = "299f43af5280805146e95cb7eb4e572212ce10e42e379558c240228d81936e34"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -5969,9 +5969,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-network-graph"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0947dbc8e4e435e0b77c720dc6761ba832d39a2b2ac12003e413f6395a611ca"
+checksum = "112e21a401f1ea3db366ba54ac13d6787cecbb7bc4496412489ea8637cdbe1e2"
 dependencies = [
  "anyhow",
  "bimap",
@@ -5979,6 +5979,7 @@ dependencies = [
  "futures-time",
  "hopr-api",
  "hopr-utilities",
+ "humantime-serde",
  "indexmap 2.14.2",
  "lazy_static",
  "parking_lot 0.12.5",
@@ -5987,8 +5988,10 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "smart-default",
  "thiserror 2.0.21",
  "tracing",
+ "validator",
 ]
 
 [[package]]
@@ -6589,6 +6592,7 @@ dependencies = [
  "opentelemetry-prometheus-text-exporter",
  "opentelemetry_sdk",
  "proc-macro-regex",
+ "rstest 0.28.0",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -9364,7 +9368,7 @@ dependencies = [
  "quinn-udp 0.5.16",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9404,7 +9408,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9417,7 +9421,7 @@ checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "windows-sys 0.61.2",
 ]
 
