@@ -33,6 +33,20 @@ ignore = [
   "RUSTSEC-2024-0449", # 'unsafe-libyaml' [unmaintained] - transitive via serde_yaml (deprecated) <- progenitor build-dep of rest-api-client; no fix, cannot remove without progenitor dropping serde_yaml
   "RUSTSEC-2026-0387", # 'crypto-bigint' 0.5.5 via elliptic-curve 0.13 in 'alloy' (alloy 2.5.0 is newest and still pins k256 0.13.4); the 0.7.x instance is bumped to 0.7.10 - remove when alloy moves to elliptic-curve 0.14
   "RUSTSEC-2026-0441", # 'pin-utils' 0.1.1 [unmaintained] - transitive via wasmtimer 0.4.3 <- alloy-contract; wasmtimer 0.4.3 is latest, no fix; remove together with the alloy removal
+  "RUSTSEC-2026-0542", # 'humantime' 2.4.0 [unmaintained] - transitive via humantime-serde 1.1.1 and console-subscriber 0.5.0; all are the latest releases, no fix
+  "RUSTSEC-2026-0543", # 'chrono' 0.4.45 [unmaintained] - direct dependency and the latest release; no maintained replacement adopted yet
+  # 'heapless' 0.8.0 is a build-dependency only: vergen-gix -> gix -> faster-hex 0.10.1, which has no release
+  # on heapless 0.9. The advisories concern heapless collections that faster-hex does not use and that never
+  # ship in the binary. Remove these ignores when faster-hex moves to heapless >=0.9.
+  "RUSTSEC-2026-0574", # heapless: FindMutView::pop use after free
+  "RUSTSEC-2026-0575", # heapless: Spsc::peek used Relaxed ordering
+  "RUSTSEC-2026-0576", # heapless: IndexMap::truncate left an inconsistent state
+  "RUSTSEC-2026-0577", # heapless: panicking Drop implementation could lead to UB
+  "RUSTSEC-2026-0578", # heapless: SortedLinkedList::zeroize left an inconsistent state
+  "RUSTSEC-2026-0579", # heapless: Deque built from TryFrom was wrong when full
+  "RUSTSEC-2026-0580", # heapless: race condition in the treiber stack
+  "RUSTSEC-2026-0581", # heapless: Deque::make_contiguous could break invariants
+  "RUSTSEC-2026-0582", # heapless: IndexMap::insert broke an invariant at u16::MAX elements
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
