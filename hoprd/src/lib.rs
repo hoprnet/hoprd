@@ -36,7 +36,7 @@ use hopr_chain_connector::{
 use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
-use hopr_network_graph::{ChannelGraph, SharedChannelGraph};
+use hopr_network_graph::{ChannelGraph, ChannelGraphConfig, SharedChannelGraph, StarvationParams};
 #[cfg(feature = "session-server")]
 use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
 use hopr_ticket_manager::{
@@ -171,12 +171,15 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let path_cfg = hopr_lib_cfg.protocol.path_planner;
     let graph: SharedChannelGraph = Arc::new(
-        ChannelGraph::with_edge_params_and_window(
+        ChannelGraph::with_config(
             *hopr_keys.packet_key.public(),
-            path_cfg.edge_penalty,
-            path_cfg.min_ack_rate,
-            path_cfg.max_plausible_loopback_rtt,
-            loopback_window,
+            ChannelGraphConfig {
+                edge_penalty: path_cfg.edge_penalty,
+                min_ack_rate: path_cfg.min_ack_rate,
+                max_plausible_loopback_rtt: path_cfg.max_plausible_loopback_rtt,
+                starvation: StarvationParams::default(),
+                loopback_window,
+            },
         )
         .map_err(anyhow::Error::msg)?,
     );

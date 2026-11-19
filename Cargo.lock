@@ -5908,7 +5908,7 @@ dependencies = [
 [[package]]
 name = "hopr-ct-full-network"
 version = "0.11.1"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=e094e51eb381fe3f4e116bb80f0599b60851e115#e094e51eb381fe3f4e116bb80f0599b60851e115"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=7bc58e9f11685e61f90cf2d338f18a1bf55f0caf#7bc58e9f11685e61f90cf2d338f18a1bf55f0caf"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -5968,7 +5968,7 @@ dependencies = [
 [[package]]
 name = "hopr-network-graph"
 version = "0.12.2"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=e094e51eb381fe3f4e116bb80f0599b60851e115#e094e51eb381fe3f4e116bb80f0599b60851e115"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=7bc58e9f11685e61f90cf2d338f18a1bf55f0caf#7bc58e9f11685e61f90cf2d338f18a1bf55f0caf"
 dependencies = [
  "anyhow",
  "bimap",
