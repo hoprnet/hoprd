@@ -5908,7 +5908,7 @@ dependencies = [
 [[package]]
 name = "hopr-ct-full-network"
 version = "0.11.1"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=e094e51eb381fe3f4e116bb80f0599b60851e115#e094e51eb381fe3f4e116bb80f0599b60851e115"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -5968,7 +5968,7 @@ dependencies = [
 [[package]]
 name = "hopr-network-graph"
 version = "0.12.2"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=e094e51eb381fe3f4e116bb80f0599b60851e115#e094e51eb381fe3f4e116bb80f0599b60851e115"
 dependencies = [
  "anyhow",
  "bimap",
@@ -9362,7 +9362,7 @@ dependencies = [
  "quinn-udp 0.5.16",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9402,7 +9402,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9415,7 +9415,7 @@ checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "windows-sys 0.61.2",
 ]
 

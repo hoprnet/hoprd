@@ -171,13 +171,13 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let path_cfg = hopr_lib_cfg.protocol.path_planner;
     let graph: SharedChannelGraph = Arc::new(
-        ChannelGraph::with_edge_params(
+        ChannelGraph::with_edge_params_and_window(
             *hopr_keys.packet_key.public(),
             path_cfg.edge_penalty,
             path_cfg.min_ack_rate,
             path_cfg.max_plausible_loopback_rtt,
+            loopback_window,
         )
-        .with_loopback_window(loopback_window)
         .map_err(anyhow::Error::msg)?,
     );
     let graph_for_ct = graph.clone();
