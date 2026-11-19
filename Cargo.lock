@@ -6559,7 +6559,7 @@ dependencies = [
 
 [[package]]
 name = "hoprd"
-version = "5.0.3"
+version = "5.0.4"
 dependencies = [
  "anyhow",
  "async-signal",
@@ -6588,6 +6588,7 @@ dependencies = [
  "opentelemetry-prometheus-text-exporter",
  "opentelemetry_sdk",
  "proc-macro-regex",
+ "rstest 0.28.0",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -12639,3 +12640,13 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "hopr-ct-full-network"
+version = "0.11.1"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"
+
+[[patch.unused]]
+name = "hopr-network-graph"
+version = "0.12.2"
+source = "git+https://github.com/hoprnet/hopr-impls?rev=a736f5a523b83627dee7e225506ac2e9b421c01f#a736f5a523b83627dee7e225506ac2e9b421c01f"

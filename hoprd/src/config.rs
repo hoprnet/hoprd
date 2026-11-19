@@ -157,6 +157,11 @@ fn default_probe_interval() -> Duration {
     Duration::from_secs(60)
 }
 
+// Twice the probe interval: the shortest window the egress check accepts for it.
+fn default_loopback_window() -> Duration {
+    default_probe_interval() * 2
+}
+
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
     HoprLibConfig::default()
         .protocol
@@ -619,6 +624,13 @@ pub struct UserHoprNetworkConfig {
     #[default(default_probe_interval())]
     #[serde(default = "default_probe_interval", with = "humantime_serde")]
     pub probe_interval: Duration,
+    /// How long the loopback probe outcomes over a channel are counted.
+    ///
+    /// `probe_interval` must fit twice in it. A longer window delays noticing that a relay stopped
+    /// returning probes by up to the added span.
+    #[default(default_loopback_window())]
+    #[serde(default = "default_loopback_window", with = "humantime_serde")]
+    pub loopback_window: Duration,
     /// Candidate-path and weighting policy used by CT traffic and automatic routing.
     ///
     /// A CT node that must keep remote relayers observable can raise
@@ -970,6 +982,7 @@ mod tests {
         exports::transport::path::{HoprGraphPathSelector, traits::PathSelector},
     };
     use hopr_network_graph::ChannelGraph;
+    use rstest::rstest;
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -1406,6 +1419,43 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         .context("nfpm sample config must deserialize")?;
         cfg.validate().context("nfpm sample config must validate")?;
         Ok(())
+    }
+
+    fn hopr_cfg_with_probing(interval: Duration, window: Duration) -> UserHoprLibConfig {
+        let mut cfg = UserHoprLibConfig::default();
+        cfg.network.probe_interval = interval;
+        cfg.network.loopback_window = window;
+        cfg
+    }
+
+    #[test]
+    fn default_hopr_config_should_validate_and_keep_the_one_minute_probe_interval() {
+        let cfg = UserHoprLibConfig::default();
+        assert_eq!(cfg.network.probe_interval, Duration::from_secs(60));
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case::interval_does_not_fit_twice(Duration::from_secs(60), Duration::from_secs(119))]
+    #[case::default_window_with_long_interval(Duration::from_secs(61), Duration::from_secs(120))]
+    #[case::interval_below_probe_timeout(Duration::from_millis(500), Duration::from_secs(120))]
+    #[case::window_below_minimum(Duration::from_secs(1), Duration::from_secs(5))]
+    fn hopr_config_should_fail_validation_when_probing_does_not_fit_the_loopback_window(
+        #[case] interval: Duration,
+        #[case] window: Duration,
+    ) {
+        assert!(hopr_cfg_with_probing(interval, window).validate().is_err());
+    }
+
+    #[rstest]
+    #[case::exactly_twice(Duration::from_secs(60), Duration::from_secs(120))]
+    #[case::default_probing_in_a_longer_window(Duration::from_secs(60), Duration::from_secs(300))]
+    #[case::short_probing(Duration::from_secs(10), Duration::from_secs(30))]
+    fn hopr_config_should_validate_when_probing_fits_the_loopback_window(
+        #[case] interval: Duration,
+        #[case] window: Duration,
+    ) {
+        assert!(hopr_cfg_with_probing(interval, window).validate().is_ok());
     }
 
     #[test]
