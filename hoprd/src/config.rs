@@ -910,7 +910,8 @@ impl UserHoprNetworkConfig {
     pub fn egress_config(&self) -> hopr_ct_full_network::EgressConfig {
         hopr_ct_full_network::EgressConfig {
             interval: self.probe_interval,
-            shuffle_ttl: self.probe_interval * 2,
+            // Saturate: validation must reject an absurd interval, not panic on it.
+            shuffle_ttl: self.probe_interval.saturating_mul(2),
             ..Default::default()
         }
     }
@@ -1478,6 +1479,7 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     #[case::default_window_with_long_interval(Duration::from_secs(61), Duration::from_secs(120))]
     #[case::interval_below_probe_timeout(Duration::from_millis(500), Duration::from_secs(120))]
     #[case::window_below_minimum(Duration::from_secs(1), Duration::from_secs(5))]
+    #[case::interval_too_large_to_double(Duration::MAX, Duration::from_secs(120))]
     fn hopr_config_should_fail_validation_when_probing_does_not_fit_the_loopback_window(
         #[case] interval: Duration,
         #[case] window: Duration,
