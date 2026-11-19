@@ -5908,7 +5908,8 @@ dependencies = [
 [[package]]
 name = "hopr-ct-full-network"
 version = "0.11.1"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=7bc58e9f11685e61f90cf2d338f18a1bf55f0caf#7bc58e9f11685e61f90cf2d338f18a1bf55f0caf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "299f43af5280805146e95cb7eb4e572212ce10e42e379558c240228d81936e34"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -5968,7 +5969,8 @@ dependencies = [
 [[package]]
 name = "hopr-network-graph"
 version = "0.12.2"
-source = "git+https://github.com/hoprnet/hopr-impls?rev=7bc58e9f11685e61f90cf2d338f18a1bf55f0caf#7bc58e9f11685e61f90cf2d338f18a1bf55f0caf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "112e21a401f1ea3db366ba54ac13d6787cecbb7bc4496412489ea8637cdbe1e2"
 dependencies = [
  "anyhow",
  "bimap",
@@ -5976,6 +5978,7 @@ dependencies = [
  "futures-time",
  "hopr-api",
  "hopr-utilities",
+ "humantime-serde",
  "indexmap 2.14.2",
  "lazy_static",
  "parking_lot 0.12.5",
@@ -5984,8 +5987,10 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "smart-default",
  "thiserror 2.0.21",
  "tracing",
+ "validator",
 ]
 
 [[package]]
@@ -9362,7 +9367,7 @@ dependencies = [
  "quinn-udp 0.5.16",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -9402,7 +9407,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -9415,7 +9420,7 @@ checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "windows-sys 0.61.2",
 ]
 

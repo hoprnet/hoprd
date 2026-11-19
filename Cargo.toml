@@ -10,12 +10,6 @@ license = "GPL-3.0-only"
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hoprd"
 
-# Temporary: the configurable loopback window (hopr-impls PR 114, 7bc58e9) is not released yet.
-# Drop this section once hopr-network-graph 0.12.2 and hopr-ct-full-network 0.11.1 are on crates.io.
-[patch.crates-io]
-hopr-ct-full-network = { git = "https://github.com/hoprnet/hopr-impls", rev = "7bc58e9f11685e61f90cf2d338f18a1bf55f0caf" }
-hopr-network-graph = { git = "https://github.com/hoprnet/hopr-impls", rev = "7bc58e9f11685e61f90cf2d338f18a1bf55f0caf" }
-
 [workspace.dependencies]
 hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
@@ -27,8 +21,8 @@ hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "2a67ec
 # crates.io HOPR deps
 hopr-api = { version = "=6.1.0" }
 hopr-chain-connector = "0.33.0"
-hopr-ct-full-network = { version = "0.11.0", default-features = false }
-hopr-network-graph = { version = "0.12.1", default-features = false }
+hopr-ct-full-network = { version = "0.11.1", default-features = false }
+hopr-network-graph = { version = "0.12.2", default-features = false }
 hopr-session-server-forwarder = { version = "0.8.0", default-features = false }
 hopr-strategy = { version = "9.0.2", default-features = false }
 hopr-ticket-manager = { version = "0.11.1", default-features = false, features = [
