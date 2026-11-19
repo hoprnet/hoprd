@@ -1488,6 +1488,29 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     }
 
     #[rstest]
+    #[case::window_below_minimum(Duration::from_secs(3), Duration::from_secs(11))]
+    #[case::window_above_maximum(Duration::from_secs(60), Duration::from_secs(3601))]
+    fn hopr_config_should_blame_the_loopback_window_when_only_its_range_is_violated(
+        #[case] interval: Duration,
+        #[case] window: Duration,
+    ) -> anyhow::Result<()> {
+        // The interval fits twice in the window and is not below the probe timeout, so only the range is wrong.
+        let errors = hopr_cfg_with_probing(interval, window)
+            .validate()
+            .expect_err("a window outside the range must be rejected");
+
+        anyhow::ensure!(
+            errors.field_errors().contains_key("loopback_window"),
+            "expected a loopback_window error, got {errors}"
+        );
+        anyhow::ensure!(
+            !errors.field_errors().contains_key("probe_interval"),
+            "the interval must not be blamed, got {errors}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
     #[case::exactly_twice(Duration::from_secs(60), Duration::from_secs(120))]
     #[case::default_probing_in_a_longer_window(Duration::from_secs(60), Duration::from_secs(300))]
     #[case::short_probing(Duration::from_secs(10), Duration::from_secs(30))]
