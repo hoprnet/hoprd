@@ -823,6 +823,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .commitment_recommit_interval,
                         ssa_request_resend_interval: supervision_defaults
                             .ssa_request_resend_interval,
+                        max_opening_ssa_request_resends: supervision_defaults
+                            .max_opening_ssa_request_resends,
                         // Four of the seven are hoprd dials: whether the Exit fills at all, the
                         // ceiling on what it originates for itself, whether a close mid-cycle
                         // drains or tears down, and where in `max_recovery_time` fill aims to be
@@ -865,6 +867,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
                 relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
                 mixer: value.network.mixer,
+                output_priority: HoprProtocolConfig::default().output_priority,
                 stream: Default::default(),
             },
             ..Default::default()
