@@ -811,6 +811,7 @@ fn pix_settings(
         quota_range_min: 0,
         quota_range_max: 85 * 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
+        resume_window: None,
         max_deposit_wait: match pool {
             Pool::Test => MAX_DEPOSIT_WAIT,
             Pool::Curvy => curvy_max_deposit_wait()?,
