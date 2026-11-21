@@ -129,6 +129,13 @@ pub struct PixSettings {
     /// still exists upstream but nothing produces it now that every PIX deadline belongs to the
     /// supervisor and reports through one reason.
     pub max_deposit_wait: std::time::Duration,
+    /// How long an Exit keeps a funded Session detached after its data plane ends, so a client
+    /// reconnecting under the same pseudonym can take it over (`incoming_session_pix.resume_window`).
+    ///
+    /// `None` leaves hoprd's default (60 s), which is also what an omitted YAML key means. `Some(0)`
+    /// disables detaching. hoprnet caps it at half the session idle timeout at runtime. A test that exercises a takeover sets a short one so it need not wait a
+    /// minute for the window to end.
+    pub resume_window: Option<std::time::Duration>,
     /// Node ids that reject incoming Sessions which do not opt into PIX.
     ///
     /// Typically just the Exit — a relay never terminates a Session, so enforcement
@@ -328,6 +335,7 @@ impl PixSettings {
             quota_range_max: raw.quota_range_max.unwrap_or(d.quota_range_max),
             max_ssa_delivery_time: raw.max_ssa_delivery_time.unwrap_or(d.max_ssa_delivery_time),
             max_deposit_wait: raw.max_deposit_wait.unwrap_or(d.max_deposit_wait),
+            resume_window: raw.resume_window.or(d.resume_window),
             enforce_on_nodes: raw.enforce_on_nodes.unwrap_or(d.enforce_on_nodes),
             ssas_per_request: raw.ssas_per_request.unwrap_or(d.ssas_per_request),
             max_ssas_per_request: raw.max_ssas_per_request.unwrap_or(d.max_ssas_per_request),
@@ -393,6 +401,8 @@ struct RawPixSettings {
     max_ssa_delivery_time: Option<std::time::Duration>,
     #[serde(with = "humantime_serde::option")]
     max_deposit_wait: Option<std::time::Duration>,
+    #[serde(with = "humantime_serde::option")]
+    resume_window: Option<std::time::Duration>,
     enforce_on_nodes: Option<Vec<usize>>,
     ssas_per_request: Option<usize>,
     max_ssas_per_request: Option<usize>,
@@ -448,6 +458,8 @@ impl Default for PixSettings {
             quota_range_max: 1024 * 1024,
             max_ssa_delivery_time: std::time::Duration::from_secs(20),
             max_deposit_wait: std::time::Duration::from_secs(60),
+            // hoprd's own default (60 s): nothing here detaches on a shorter clock unless asked.
+            resume_window: None,
             enforce_on_nodes: Vec::new(),
             // hoprd's own two defaults, so an interactive cluster runs the unbatched exchange with
             // room for one pipelined cycle — exactly as it did before either was reachable here.
@@ -520,6 +532,9 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             quota_range_max: pix.quota_range_max,
             max_ssa_delivery_time: pix.max_ssa_delivery_time,
             max_deposit_wait: pix.max_deposit_wait,
+            resume_window: pix
+                .resume_window
+                .unwrap_or_else(|| UserIncomingSessionPixConfig::default().resume_window),
             // The Exit half of the batch pair; `pix_global_config` writes the Entry half. Both are
             // named rather than swept up by `..Default::default()`, so a new upstream field is a
             // compile error here instead of a silently defaulted one.
@@ -1458,6 +1473,7 @@ additional_shares: 16
         let d = PixSettings::default();
         assert_eq!(d.price_per_byte, parsed.price_per_byte);
         assert_eq!(d.max_deposit_wait, parsed.max_deposit_wait);
+        assert_eq!(None, parsed.resume_window);
         assert_eq!(d.max_recovery_time, parsed.max_recovery_time);
         assert_eq!(d.fill_enabled, parsed.fill_enabled);
         assert_eq!(d.fill_finish_fraction, parsed.fill_finish_fraction);
@@ -1471,6 +1487,7 @@ additional_shares: 16
             r#"
 max_recovery_time: 12min
 max_deposit_wait: 30s
+resume_window: 5s
 price_per_byte: "0.0000000533 wxHOPR"
 max_spend_per_window: "500 wxHOPR"
 gas_xdai_per_sweep: "0.02 xDai"
@@ -1488,6 +1505,10 @@ enforce_on_nodes: [2]
         );
         assert_eq!(std::time::Duration::from_secs(30), parsed.max_deposit_wait);
         assert_eq!(
+            Some(std::time::Duration::from_secs(5)),
+            parsed.resume_window
+        );
+        assert_eq!(
             "0.0000000533 wxHOPR".parse::<HoprBalance>()?,
             parsed.price_per_byte
         );
@@ -1504,6 +1525,35 @@ enforce_on_nodes: [2]
         assert_eq!(0.6, parsed.fill_finish_fraction);
         assert_eq!(vec![2], parsed.enforce_on_nodes);
         Ok(())
+    }
+
+    /// `resume_window` reaches every node's `incoming_session_pix`, and unset leaves hoprd's default.
+    #[test]
+    fn the_pix_resume_window_reaches_every_exit_config() {
+        let default = UserIncomingSessionPixConfig::default().resume_window;
+        for id in 0..3 {
+            assert_eq!(
+                default,
+                incoming_pix_config(Some(&PixSettings::default()), id).resume_window
+            );
+            let short = PixSettings {
+                resume_window: Some(std::time::Duration::from_secs(5)),
+                ..Default::default()
+            };
+            assert_eq!(
+                std::time::Duration::from_secs(5),
+                incoming_pix_config(Some(&short), id).resume_window
+            );
+        }
+        let disabled = PixSettings {
+            resume_window: Some(std::time::Duration::ZERO),
+            ..Default::default()
+        };
+        assert!(
+            incoming_pix_config(Some(&disabled), 0)
+                .resume_window
+                .is_zero()
+        );
     }
 
     /// A misspelled key is an error, not a silently ignored override.

@@ -388,6 +388,29 @@ pub struct UserIncomingSessionPixConfig {
     #[default(default_pix_max_deposit_wait())]
     #[serde(default = "default_pix_max_deposit_wait", with = "humantime_serde")]
     pub max_deposit_wait: Duration,
+    /// How long the Exit keeps a funded PIX Session after its data plane ends, so a client
+    /// reconnecting under the same pseudonym can take it over and keep its paid cycle.
+    ///
+    /// Once the window ends without a takeover, the Session drains or closes as
+    /// [`drain_after_close`](Self::drain_after_close) says, and a later reconnect under the same
+    /// pseudonym is refused as not resumable: the client continues under a fresh one and pays
+    /// again. `0` disables detaching, and with it every takeover.
+    ///
+    /// Capped at half the session idle timeout
+    /// ([`session_idle_timeout`](UserHoprNetworkConfig::session_idle_timeout)), which would
+    /// otherwise evict the slot before the window ran out. The cap is applied by upstream at
+    /// runtime, with a warning logged when it takes effect; the configured value is passed through
+    /// unchanged and is not rejected here.
+    ///
+    /// Not free: a detached Session keeps its slot, its cycle budget
+    /// ([`max_live_cycle_bytes`](Self::max_live_cycle_bytes)) and its SURBs, and the fill keeps
+    /// spending them into the funded cycle for up to this long, at the cost of some of the client's
+    /// quota.
+    ///
+    /// Default is upstream's, 60 seconds.
+    #[default(default_pix_resume_window())]
+    #[serde(default = "default_pix_resume_window", with = "humantime_serde")]
+    pub resume_window: Duration,
     /// Ceiling on the live Exit-side reconstructor state this node commits to, in bytes.
     ///
     /// This, and not `maximum_sessions`, is what bounds how many PIX Sessions the node accepts: a
@@ -573,6 +596,9 @@ fn default_pix_max_ssa_delivery_time() -> Duration {
 }
 fn default_pix_max_deposit_wait() -> Duration {
     SupervisorConfig::default().max_deposit_wait
+}
+fn default_pix_resume_window() -> Duration {
+    IncomingSessionPixConfig::default().resume_window
 }
 fn default_pix_max_recovery_time() -> Duration {
     SupervisorConfig::default().max_recovery_time
@@ -792,6 +818,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     quota_range: value.network.incoming_session_pix.quota_range_min
                         ..=value.network.incoming_session_pix.quota_range_max,
                     max_live_cycle_bytes: value.network.incoming_session_pix.max_live_cycle_bytes,
+                    resume_window: value.network.incoming_session_pix.resume_window,
                     supervision: SupervisorConfig {
                         max_ssa_delivery_time: value
                             .network
@@ -1092,6 +1119,7 @@ mod tests {
         exit.quota_range_max = 222_000;
         exit.max_ssa_delivery_time = Duration::from_secs(11);
         exit.max_deposit_wait = Duration::from_secs(13);
+        exit.resume_window = Duration::from_secs(17);
         exit.max_live_cycle_bytes = 17_000_000;
         exit.max_recovery_time = Duration::from_secs(1900);
         exit.max_served_without_progress = 19;
@@ -1123,6 +1151,7 @@ mod tests {
             exit.quota_range_min..=exit.quota_range_max
         );
         assert_eq!(incoming.max_live_cycle_bytes, exit.max_live_cycle_bytes);
+        assert_eq!(incoming.resume_window, exit.resume_window);
 
         assert_eq!(
             supervision.max_ssa_delivery_time,
@@ -1144,6 +1173,36 @@ mod tests {
         assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
         assert_eq!(supervision.fill.finish_fraction, exit.fill_finish_fraction);
         assert_eq!(supervision.fill.drain_after_close, exit.drain_after_close);
+    }
+
+    /// The PIX resume window defaults to upstream's, parses as humantime, and is passed through
+    /// unchanged, however large: upstream caps it against the session idle timeout at runtime.
+    #[test]
+    fn the_pix_resume_window_is_exposed_and_passed_through() -> anyhow::Result<()> {
+        let default = UserIncomingSessionPixConfig::default();
+        assert_eq!(
+            default.resume_window,
+            IncomingSessionPixConfig::default().resume_window
+        );
+
+        let parsed: UserIncomingSessionPixConfig = serde_saphyr::from_str("resume_window: 2m\n")?;
+        assert_eq!(parsed.resume_window, Duration::from_secs(120));
+
+        for window in [
+            Duration::ZERO,
+            Duration::from_secs(10),
+            Duration::from_secs(86_400),
+        ] {
+            let mut cfg = UserHoprLibConfig::default();
+            cfg.network.incoming_session_pix.resume_window = window;
+            cfg.network.session_idle_timeout = Duration::from_secs(60);
+            let lib = HoprLibConfig::from(cfg);
+            assert_eq!(
+                lib.protocol.incoming_session_pix_config.resume_window,
+                window
+            );
+        }
+        Ok(())
     }
 
     /// CT nodes must be able to trade locality for reachability. The fixture contains 60 healthy
