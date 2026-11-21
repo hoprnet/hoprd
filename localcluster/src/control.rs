@@ -23,7 +23,10 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-use crate::summary::ClusterSummary;
+use crate::{
+    impair::Impairment,
+    summary::{ClusterSummary, RelaySummary},
+};
 
 /// Shared, mutable cluster summary served over the control socket.
 pub type SharedSummary = Arc<Mutex<ClusterSummary>>;
@@ -46,7 +49,13 @@ impl ControlServer {
     ///
     /// The caller must already hold the single-instance lock, so any pre-existing socket
     /// file is guaranteed stale and is removed before binding.
-    pub fn start(path: PathBuf, shared: SharedSummary) -> Result<Self> {
+    /// `impairment`, when present, is reported alongside the summary: its counters change while
+    /// the cluster runs, so they are read when a client asks rather than carried in `shared`.
+    pub fn start(
+        path: PathBuf,
+        shared: SharedSummary,
+        impairment: Option<Arc<Impairment>>,
+    ) -> Result<Self> {
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)
             .with_context(|| format!("failed to bind control socket {}", path.display()))?;
@@ -55,7 +64,22 @@ impl ControlServer {
             loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
-                        let json = { shared.lock().await.to_json() };
+                        let json = {
+                            let mut summary = shared.lock().await;
+                            summary.relay = impairment.as_ref().map(|impairment| {
+                                let counters = impairment.counters();
+                                let spec = impairment.spec();
+                                RelaySummary {
+                                    forwarded_forward: counters.forwarded_forward,
+                                    forwarded_return: counters.forwarded_return,
+                                    dropped: counters.dropped,
+                                    blackhole: spec.blackhole,
+                                    drop_every: spec.drop_every,
+                                    loss_ppm: spec.loss_ppm,
+                                }
+                            });
+                            summary.to_json()
+                        };
                         match json {
                             Ok(json) => serve_one(stream, json).await,
                             Err(err) => warn!(error = %err, "failed to serialize cluster summary"),
@@ -143,7 +167,7 @@ mod tests {
             let mut s = shared.lock().await;
             s.state = ClusterState::Running;
         }
-        let _server = ControlServer::start(path.clone(), shared).unwrap();
+        let _server = ControlServer::start(path.clone(), shared, None).unwrap();
 
         let json = query(&path).await.unwrap();
         assert!(json.contains("\"state\": \"running\""));

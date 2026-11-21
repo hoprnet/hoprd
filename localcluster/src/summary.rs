@@ -68,6 +68,32 @@ pub struct ClusterSummary {
     /// Failure detail, set only when `state == Failed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What the latency relays have seen and dropped, while they are running.
+    ///
+    /// Filled at serialization time from the relays' own counters, not through the lifecycle: a
+    /// run that reproduces a transport fault needs to show that the impairment reached the
+    /// traffic, and "no datagrams were dropped" is otherwise indistinguishable from "the test
+    /// never applied any".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay: Option<RelaySummary>,
+}
+
+/// Live relay counters plus the schedule they are being dropped under.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct RelaySummary {
+    /// Datagrams the relays let through towards the nodes.
+    pub forwarded_forward: u64,
+    /// Datagrams the relays let through towards the peers.
+    pub forwarded_return: u64,
+    /// Datagrams the impairment dropped, either direction.
+    pub dropped: u64,
+    /// Whether everything is being dropped right now.
+    pub blackhole: bool,
+    /// One datagram in `drop_every` is dropped, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_every: Option<u32>,
+    /// Per-datagram drop probability, in parts per million.
+    pub loss_ppm: u32,
 }
 
 /// A single hoprd node.
@@ -156,6 +182,7 @@ impl ClusterSummary {
             nodes,
             extras: Vec::new(),
             error: None,
+            relay: None,
         }
     }
 
@@ -168,6 +195,7 @@ impl ClusterSummary {
             nodes: Vec::new(),
             extras: Vec::new(),
             error: None,
+            relay: None,
         }
     }
 
@@ -354,6 +382,7 @@ mod tests {
                 password: "local-cluster".to_string(),
             }],
             error: None,
+            relay: None,
         }
     }
 

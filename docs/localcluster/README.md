@@ -380,6 +380,45 @@ reverts its rule within one poll. Nodes are named by index, `0..size`, the same 
 Lines that do not parse are skipped. A change is logged at info
 (`latency relays: blocked links changed` / `stalled links changed`).
 
+### Runtime impairment (blackhole / loss)
+
+The delay model above is resolved once at startup, so it cannot express a schedule that changes
+_while a run is in flight_ — take the link away for a few seconds, then hand it back degraded. That
+schedule is a file the orchestrator watches, `--data-dir`'s `impairment`, which a test rewrites
+between phases:
+
+```text
+blackhole on          # drop every datagram, both directions
+drop-every 20         # drop one datagram in every 20
+loss-ppm 50000        # drop each datagram with probability 50000/1_000_000
+```
+
+Each line is independent; `off` (or `0`) clears it, and a missing or unreadable file means no
+impairment. Unknown keys and `#` comments are ignored, so a commented schedule can stay in the
+file. Rewrite it atomically (write a temporary file, then rename): the watcher polls every 100 ms
+and a half-written file would be read as a different schedule.
+
+The impairment is global rather than per-link, because the link it exists for is the one between a
+client _outside_ the cluster and the node it dials — that client has no cluster index to name a
+link by. It applies on top of the latency delay and needs `--latency` (the relays only exist then).
+
+`status` reports what the relays saw, so a run can prove the impairment reached the traffic:
+
+```json
+"relay": {
+  "forwarded_forward": 6021,
+  "forwarded_return": 6022,
+  "dropped": 37,
+  "blackhole": false,
+  "drop_every": 20,
+  "loss_ppm": 0
+}
+```
+
+`forwarded_forward` counts datagrams the relays sent towards the nodes and `forwarded_return`
+those sent back to the peers; both are counted on a successful send, so a datagram dropped by a
+full queue does not appear in them. `relay` is absent when the relays are not running.
+
 ### Channel management modes
 
 `--channel-management` controls how payment channels are opened during cluster startup:

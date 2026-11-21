@@ -4,6 +4,7 @@ pub mod client_helper;
 pub mod control;
 pub mod curvy_grant;
 pub mod identity;
+pub mod impair;
 pub mod latency;
 pub mod lock;
 pub mod relay;
