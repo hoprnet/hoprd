@@ -392,8 +392,9 @@ pub struct UserIncomingSessionPixConfig {
     /// reconnecting under the same pseudonym can take it over and keep its paid cycle.
     ///
     /// Once the window ends without a takeover, the Session drains or closes as
-    /// [`drain_after_close`](Self::drain_after_close) says. `0` disables detaching, and with it every
-    /// takeover.
+    /// [`drain_after_close`](Self::drain_after_close) says, and a later reconnect under the same
+    /// pseudonym is refused as not resumable: the client continues under a fresh one and pays
+    /// again. `0` disables detaching, and with it every takeover.
     ///
     /// Capped at half the session idle timeout
     /// ([`session_idle_timeout`](UserHoprNetworkConfig::session_idle_timeout)), which would
