@@ -891,6 +891,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // swept up by `..Default::default()` for the same reason as the fields above.
                 latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
                 relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
+                output_priority: HoprProtocolConfig::default().output_priority,
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },
