@@ -761,7 +761,9 @@
           # utilities/transport stack) get Tokio's improved cooperative yielding.
           # The flags already come from `.cargo/config.toml`: Cargo merges nix-lib's
           # CARGO_BUILD_RUSTFLAGS with its `[build] rustflags` rather than replacing
-          # them, so this hook only repeats them, which is harmless.
+          # them, so this hook only repeats them, which is harmless. On
+          # aarch64-apple-darwin the config's target table overrides
+          # `build.rustflags`, so this variable is ignored there entirely.
           # `--check-cfg` keeps the workspace clean under `-D warnings`.
           tokioUnstableHook = ''
             export CARGO_BUILD_RUSTFLAGS="''${CARGO_BUILD_RUSTFLAGS:-} --cfg tokio_unstable --check-cfg cfg(tokio_unstable)"
