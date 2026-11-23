@@ -8,7 +8,7 @@
     # come from its lock, so every hoprnet flake on the same nix-lib release evaluates against the
     # same revisions and shares one set of store paths. To bump them, point nix-lib.url at the new
     # release tag, then run `nix flake update nix-lib`.
-    nix-lib.url = "github:hoprnet/nix-lib/v2.2.1";
+    nix-lib.url = "github:hoprnet/nix-lib/v2.2.4";
     nixpkgs.follows = "nix-lib/nixpkgs";
     nixpkgs-unstable.follows = "nix-lib/nixpkgs-unstable";
     rust-overlay.follows = "nix-lib/rust-overlay";
