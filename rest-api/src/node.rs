@@ -324,8 +324,11 @@ mod tests {
             }),
             auth: Arc::new(crate::config::Auth::None),
             hopr: Arc::new(NoopNode),
+            #[cfg(feature = "session")]
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
+            #[cfg(feature = "session")]
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            #[cfg(feature = "session")]
             session_flow_control: Default::default(),
         });
         Router::new()

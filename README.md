@@ -53,6 +53,21 @@ nix develop -c cargo build
 cargo build --profile release
 ```
 
+### Artifacts: relay and exit
+
+hoprd builds two artifacts. Features are additive, so the relay-only one needs `--no-default-features`.
+
+| Artifact | Cargo features                                                                                        | Nix package                                                          | What it links                                                       |
+| -------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| exit     | default (`exit`, which implies `relay`)                                                               | `binary-hoprd-x86_64-linux`, `docker-hoprd-x86_64-linux`             | The relay plus the Session server, the Session REST API and PIX.    |
+| relay    | `--no-default-features -F relay,runtime-tokio,telemetry,transport-quic,allocator-jemalloc,state-dump` | `binary-hoprd-relay-x86_64-linux`, `docker-hoprd-relay-x86_64-linux` | Ticket and acknowledgement processing only. No Session code at all. |
+
+The relay build rejects the Session and PIX configuration keys (`api.session_flow_control`,
+`api.enable_explicit_path_sessions`, `hopr.network.maximum_sessions`, `hopr.network.pix`,
+`hopr.network.incoming_session_pix`, `session_ip_forwarding`) and has no `/session` endpoints.
+`session-server` is a deprecated alias of `exit`. `scripts/check-entity-fencing.sh` verifies from the
+dependency graph that the relay links no Session crate.
+
 ## Configuration
 
 Generate default config:

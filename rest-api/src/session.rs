@@ -9,7 +9,7 @@ use base64::Engine;
 use hopr_lib::api::chain::ChainKeyOperations;
 use hopr_lib::api::node::HasChainApi;
 use hopr_lib::{
-    HopRouting, HoprSessionClientConfig,
+    HopRouting, HoprSessionEntryConfig,
     api::types::primitive::{errors::GeneralError, prelude::Address, traits::ToHex},
     errors::HoprLibError,
     exports::transport::{
@@ -18,7 +18,7 @@ use hopr_lib::{
     },
 };
 #[allow(deprecated)]
-use hopr_lib::{HoprSessionClientExplicitPathConfig, api::types::internal::NodeId};
+use hopr_lib::{HoprSessionEntryExplicitPathConfig, api::types::internal::NodeId};
 use hopr_utils_session::{
     ListenerId, build_binding_host, create_tcp_client_binding, create_udp_client_binding,
 };
@@ -280,7 +280,7 @@ impl SessionClientRequest {
         self,
         target_protocol: IpProtocol,
         flow_control: Option<hopr_lib::exports::transport::FlowControlConfig>,
-    ) -> Result<(Address, SessionTarget, HoprSessionClientConfig), ApiErrorStatus> {
+    ) -> Result<(Address, SessionTarget, HoprSessionEntryConfig), ApiErrorStatus> {
         let target_spec: hopr_utils_session::SessionTargetSpec = self.target.clone().into();
         let capabilities = self
             .capabilities
@@ -302,7 +302,7 @@ impl SessionClientRequest {
         Ok((
             self.destination,
             target_spec.into_target(target_protocol.into())?,
-            HoprSessionClientConfig {
+            HoprSessionEntryConfig {
                 forward_path: self.forward_path.try_into()?,
                 return_path: self.return_path.try_into()?,
                 capabilities,
@@ -369,7 +369,7 @@ impl SessionClientExplicitPathRequest {
         (
             Address,
             SessionTarget,
-            HoprSessionClientExplicitPathConfig,
+            HoprSessionEntryExplicitPathConfig,
             RoutingOptions,
             RoutingOptions,
         ),
@@ -434,7 +434,7 @@ impl SessionClientExplicitPathRequest {
             target_spec.into_target(target_protocol.into())?,
             #[allow(deprecated)]
             {
-                HoprSessionClientExplicitPathConfig {
+                HoprSessionEntryExplicitPathConfig {
                     forward_path,
                     return_path,
                     capabilities,

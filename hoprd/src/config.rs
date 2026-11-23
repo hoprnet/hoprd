@@ -4,18 +4,25 @@ use hopr_lib::{
     api::types::{internal::tickets::WinningProbability, primitive::prelude::HoprBalance},
     config::{
         HoprLibConfig, HoprPacketPipelineConfig, HostConfig, HostType, MixerConfig, ProbeConfig,
-        SafeModule, SessionGlobalConfig, TransportConfig,
+        SafeModule, TransportConfig,
     },
     exports::transport::{
-        HoprProtocolConfig, TagAllocatorConfig,
-        config::{HoprCodecConfig, PixGlobalConfig},
-        output_priority::OutputPriorityConfig,
-        path::PathPlannerConfig,
+        HoprProtocolConfig, config::HoprCodecConfig, output_priority::OutputPriorityConfig, path::PathPlannerConfig,
         protocol::PacketPipelineConfig,
-        session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
     },
     mixer::{MixerType, UniformConfig},
 };
+// Session and PIX configuration only exists on a node that terminates Sessions.
+#[cfg(feature = "exit")]
+use hopr_lib::{
+    config::SessionGlobalConfig,
+    exports::transport::{
+        TagAllocatorConfig,
+        config::PixGlobalConfig,
+        session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
+    },
+};
+#[cfg(feature = "exit")]
 use hopr_session_server_forwarder::config::SessionIpForwardingConfig;
 use hoprd_api::config::{Api, Auth};
 use proc_macro_regex::regex;
@@ -131,10 +138,12 @@ pub struct Db {
     pub force_initialize: bool,
 }
 
+#[cfg(feature = "exit")]
 fn default_session_idle_timeout() -> Duration {
     HoprLibConfig::default().protocol.session.idle_timeout
 }
 
+#[cfg(feature = "exit")]
 fn default_max_sessions() -> usize {
     HoprLibConfig::default()
         .protocol
@@ -143,6 +152,7 @@ fn default_max_sessions() -> usize {
         .session as usize
 }
 
+#[cfg(feature = "exit")]
 fn default_session_establish_max_retries() -> usize {
     HoprLibConfig::default()
         .protocol
@@ -280,6 +290,7 @@ where
 }
 
 /// User-facing PIX global configuration (wraps upstream [`PixGlobalConfig`] which has `serde(skip)`).
+#[cfg(feature = "exit")]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserPixGlobalConfig {
@@ -328,15 +339,19 @@ pub struct UserPixGlobalConfig {
     pub max_ssas_per_request: usize,
 }
 
+#[cfg(feature = "exit")]
 fn default_pix_num_ssa_parts() -> usize {
     PixGlobalConfig::default().num_ssa_parts
 }
+#[cfg(feature = "exit")]
 fn default_pix_ssa_part_size() -> usize {
     PixGlobalConfig::default().ssa_part_size
 }
+#[cfg(feature = "exit")]
 fn default_pix_additional_shares() -> Option<usize> {
     PixGlobalConfig::default().additional_shares
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_ssas_per_request() -> usize {
     PixGlobalConfig::default().max_ssas_per_request
 }
@@ -354,6 +369,7 @@ fn default_pix_max_ssas_per_request() -> usize {
 /// only mean something *relative to it* — `max_recovery_idle`, `tombstone_retention_window` — are
 /// left at defaults chosen to pair with those. What is exposed here is what an operator can move
 /// without also having to move something hoprd does not surface.
+#[cfg(feature = "exit")]
 #[derive(Debug, Clone, PartialEq, smart_default::SmartDefault, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UserIncomingSessionPixConfig {
@@ -608,50 +624,63 @@ pub struct UserIncomingSessionPixConfig {
 // quota bounds carried a literal 128 MB / 512 MB here while a config file omitting them got
 // upstream's ≈162 MiB / ≈649 MiB, so `UserIncomingSessionPixConfig::default()` and an empty stanza
 // meant different things.
+#[cfg(feature = "exit")]
 fn default_pix_quota_range_min() -> u64 {
     let range = IncomingSessionPixConfig::default().quota_range;
     *range.start()
 }
+#[cfg(feature = "exit")]
 fn default_pix_quota_range_max() -> u64 {
     let range = IncomingSessionPixConfig::default().quota_range;
     *range.end()
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_live_cycle_bytes() -> u64 {
     IncomingSessionPixConfig::default().max_live_cycle_bytes
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_ssa_delivery_time() -> Duration {
     SupervisorConfig::default().max_ssa_delivery_time
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_deposit_wait() -> Duration {
     SupervisorConfig::default().max_deposit_wait
 }
+#[cfg(feature = "exit")]
 fn default_pix_resume_window() -> Duration {
     IncomingSessionPixConfig::default().resume_window
 }
 fn default_pix_max_recovery_time() -> Duration {
     SupervisorConfig::default().max_recovery_time
 }
+#[cfg(feature = "exit")]
 fn default_pix_ssas_per_request() -> usize {
     SupervisorConfig::default().ssas_per_request
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_served_without_progress() -> u64 {
     SupervisorConfig::default().max_served_without_progress
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_predeposit_packets() -> u64 {
     SupervisorConfig::default().max_predeposit_packets
 }
 fn default_pix_allow_dynamic_ssa_batches() -> bool {
     SupervisorConfig::default().allow_dynamic_ssa_batches
 }
+#[cfg(feature = "exit")]
 fn default_pix_drain_after_close() -> bool {
     SupervisorConfig::default().fill.drain_after_close
 }
+#[cfg(feature = "exit")]
 fn default_pix_fill_enabled() -> bool {
     SupervisorConfig::default().fill.enabled
 }
+#[cfg(feature = "exit")]
 fn default_pix_fill_max_rate() -> u32 {
     SupervisorConfig::default().fill.max_rate
 }
+#[cfg(feature = "exit")]
 fn default_pix_fill_finish_fraction() -> f64 {
     SupervisorConfig::default().fill.finish_fraction
 }
@@ -662,14 +691,17 @@ fn default_pix_fill_finish_fraction() -> f64 {
 #[serde(deny_unknown_fields)]
 pub struct UserHoprNetworkConfig {
     /// How long it takes before HOPR Session is considered idle and is closed automatically
+    #[cfg(feature = "exit")]
     #[default(default_session_idle_timeout())]
     #[serde(default = "default_session_idle_timeout", with = "humantime_serde")]
     pub session_idle_timeout: Duration,
     /// Maximum number of outgoing or incoming Sessions allowed by the Session manager
+    #[cfg(feature = "exit")]
     #[default(default_max_sessions())]
     #[serde(default = "default_max_sessions")]
     pub maximum_sessions: usize,
     /// How many retries are made to establish an outgoing HOPR Session
+    #[cfg(feature = "exit")]
     #[default(default_session_establish_max_retries())]
     #[serde(default = "default_session_establish_max_retries")]
     pub session_establish_max_retries: usize,
@@ -761,9 +793,11 @@ pub struct UserHoprNetworkConfig {
     )]
     pub mixer: MixerConfig,
     /// PIX global configuration.
+    #[cfg(feature = "exit")]
     #[serde(default)]
     pub pix: UserPixGlobalConfig,
     /// PIX configuration for incoming sessions (Exit node).
+    #[cfg(feature = "exit")]
     #[serde(default)]
     pub incoming_session_pix: UserIncomingSessionPixConfig,
 }
@@ -813,6 +847,7 @@ fn default_host() -> HostConfig {
 
 impl From<UserHoprLibConfig> for HoprLibConfig {
     fn from(value: UserHoprLibConfig) -> Self {
+        #[cfg(feature = "exit")]
         let supervision_defaults = SupervisorConfig::default();
         HoprLibConfig {
             host: value.host,
@@ -854,6 +889,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     recheck_threshold: value.network.probe_recheck_threshold,
                     ..Default::default()
                 },
+                #[cfg(feature = "exit")]
                 session: SessionGlobalConfig {
                     idle_timeout: value.network.session_idle_timeout,
                     establish_max_retries: value.network.session_establish_max_retries,
@@ -863,6 +899,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     },
                     ..Default::default()
                 },
+                #[cfg(feature = "exit")]
                 pix: PixGlobalConfig {
                     num_ssa_parts: value.network.pix.num_ssa_parts,
                     ssa_part_size: value.network.pix.ssa_part_size,
@@ -874,6 +911,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                     // upstream field into a compile error here instead of a silent default.
                     reconstructor: Default::default(),
                 },
+                #[cfg(feature = "exit")]
                 incoming_session_pix_config: IncomingSessionPixConfig {
                     enforce_pix: value.network.incoming_session_pix.enforce_pix,
                     quota_range: value.network.incoming_session_pix.quota_range_min
@@ -1031,6 +1069,7 @@ pub struct HoprdConfig {
     #[serde(default)]
     pub api: Api,
     /// Configuration of the Session entry/exit node IP protocol forwarding.
+    #[cfg(feature = "exit")]
     #[validate(nested)]
     #[serde(default)]
     pub session_ip_forwarding: SessionIpForwardingConfig,
@@ -1202,6 +1241,7 @@ mod tests {
     /// Hence: set every hoisted field to something that is *not* its default, convert once, and
     /// assert each one arrived. A field pinned to an upstream default on purpose does not belong
     /// here — the point is the ones that claim to be operator-facing.
+    #[cfg(feature = "exit")]
     #[test]
     fn hoisted_pix_knobs_reach_the_library_config() {
         let mut cfg = UserHoprLibConfig::default();
@@ -1450,6 +1490,7 @@ path_planner:
     /// reasoning recorded in that block — that `max_recovery_idle` and
     /// `tombstone_retention_window` pair with a reconstructor hoprd does not surface, that the
     /// fill rate law is sized against that same reconstructor — would be enforced by nothing.
+    #[cfg(feature = "exit")]
     #[test]
     fn unhoisted_pix_policy_stays_at_upstream_defaults() {
         let defaults = SupervisorConfig::default();
@@ -2121,5 +2162,53 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             uniform_delay_range(&default_net.mixer),
             Duration::from_millis(7)
         );
+    }
+    /// The relay-only build has no Session stack, so its configuration must not accept the
+    /// Session knobs: a silently ignored `maximum_sessions` or `session_ip_forwarding` would
+    /// look like a node that serves Sessions.
+    #[cfg(not(feature = "exit"))]
+    #[test]
+    fn relay_build_rejects_session_and_pix_configuration() -> anyhow::Result<()> {
+        const BASE: &str = "blokli_url: http://localhost:8080\n";
+        // The control: without a Session key the same document parses, so a rejection below is
+        // about that key and not about the rest of the document.
+        serde_saphyr::from_str::<HoprdConfig>(BASE)?;
+
+        for (what, yaml) in [
+            (
+                "api.session_flow_control",
+                "api:\n  session_flow_control: robust\n",
+            ),
+            (
+                "api.enable_explicit_path_sessions",
+                "api:\n  enable_explicit_path_sessions: true\n",
+            ),
+            (
+                "hopr.network.maximum_sessions",
+                "hopr:\n  network:\n    maximum_sessions: 10\n",
+            ),
+            ("hopr.network.pix", "hopr:\n  network:\n    pix: {}\n"),
+            (
+                "hopr.network.incoming_session_pix",
+                "hopr:\n  network:\n    incoming_session_pix: {}\n",
+            ),
+            ("session_ip_forwarding", "session_ip_forwarding: {}\n"),
+        ] {
+            assert!(
+                serde_saphyr::from_str::<HoprdConfig>(&format!("{BASE}{yaml}")).is_err(),
+                "the relay build must reject `{what}`"
+            );
+        }
+        Ok(())
+    }
+
+    /// The counterpart of the relay check: the relaying exit accepts the same keys.
+    #[cfg(feature = "exit")]
+    #[test]
+    fn exit_build_accepts_session_and_pix_configuration() -> anyhow::Result<()> {
+        serde_saphyr::from_str::<HoprdConfig>(
+            "blokli_url: http://localhost:8080\napi:\n  session_flow_control: robust\n  enable_explicit_path_sessions: true\nhopr:\n  network:\n    maximum_sessions: 10\n    pix: {}\n    incoming_session_pix: {}\nsession_ip_forwarding: {}\n",
+        )?;
+        Ok(())
     }
 }

@@ -15,17 +15,18 @@ hoprd = { path = "hoprd", default-features = false }
 hoprd-api = { path = "rest-api", default-features = false }
 hoprd-api-client = { path = "rest-api-client" }
 
-hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "c0ad8d7ed1202b79c4c9dc11445dc9a52e6b890d", default-features = false }
-hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "c0ad8d7ed1202b79c4c9dc11445dc9a52e6b890d", default-features = false }
+hopr-lib = { git = "https://github.com/hoprnet/hoprnet", rev = "8a9133c8aa7f204e3b1bbc3b87f2607df30e1d76", default-features = false }
+hopr-utils-session = { git = "https://github.com/hoprnet/hoprnet", rev = "8a9133c8aa7f204e3b1bbc3b87f2607df30e1d76", default-features = false }
 
 # crates.io HOPR deps
-hopr-api = { version = "=6.1.0" }
+hopr-api = { version = "=6.2.0" }
 hopr-chain-connector = "0.36.1"
 hopr-ct-full-network = { version = "0.12.0", default-features = false }
 hopr-network-graph = { version = "0.13.0", default-features = false }
 hopr-session-server-forwarder = { version = "0.8.0", default-features = false }
 hopr-strategy = { version = "9.2.3", default-features = false }
-hopr-ticket-manager = { version = "0.11.1", default-features = false, features = [
+hopr-ticket-manager = { version = "0.12.0", default-features = false, features = [
+  "manager",
   "redb",
   "cli",
   "serde",
@@ -178,6 +179,12 @@ debug = true
 strip = false
 lto = false
 codegen-units = 16
+
+# Unpublished: remove once hopr-api 6.2.0 and hopr-ticket-manager 0.12.0 are on crates.io
+# (hoprnet/hopr-api#181, hoprnet/hopr-impls#131).
+[patch.crates-io]
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "3794cecf182503b24f9de18188cf63856aadb573" }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", rev = "a8a664bfcf4c7ec5e81aae2a5f1b943bd1bbf8ec" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]

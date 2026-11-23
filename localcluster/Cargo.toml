@@ -22,10 +22,15 @@ humantime-serde = { workspace = true }
 # harness never settles anything: the plain pool's config stanza is a subset of the Curvy pool's,
 # and `session_pix_soak` reads the binary to learn which pool it carries and adapts its
 # accounting to it. The plain pool here because it needs nothing at runtime.
+#
+# `exit` for the same reason: the harness drives Sessions and compiles the Session and PIX config
+# types, and every node it launches must be the relaying exit build (`HOPRD_BIN`), not the
+# relay-only one, which has no Session endpoints.
 hoprd = { workspace = true, features = [
   "runtime-tokio",
   "telemetry",
   "transport-quic",
+  "exit",
   "strategy-pix-test",
 ] }
 hopr-chain-connector = { workspace = true }
@@ -38,7 +43,7 @@ hopr-strategy = { workspace = true, features = [
   # `hoprd/Cargo.toml`.
   "strategy-pix-test",
 ] }
-hopr-lib = { workspace = true }
+hopr-lib = { workspace = true, features = ["exit"] }
 hopr-session-server-forwarder = { workspace = true }
 hoprd-api-client = { workspace = true }
 hoprd-api = { workspace = true }

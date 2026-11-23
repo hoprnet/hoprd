@@ -46,6 +46,7 @@ pub struct Api {
     #[default(default_api_host())]
     pub host: HostConfig,
     /// Enables the deprecated explicit-path session creation endpoint.
+    #[cfg(feature = "session")]
     #[serde(default)]
     pub enable_explicit_path_sessions: bool,
     /// Flow-control (AIMD send-window) profile applied to sessions this node *initiates*
@@ -55,11 +56,13 @@ pub struct Api {
     /// it, so this setting has no effect on nodes used purely for relaying/exiting.
     /// Default is `robust` — the tail-tolerance profile validated for throttled /
     /// high-latency (multi-hop) paths.
+    #[cfg(feature = "session")]
     #[serde(default)]
     pub session_flow_control: SessionFlowControl,
 }
 
 /// Flow-control profile for node-initiated sessions. See the `api.session_flow_control` config option.
+#[cfg(feature = "session")]
 #[derive(
     Debug,
     Clone,
@@ -83,6 +86,7 @@ pub enum SessionFlowControl {
     Robust,
 }
 
+#[cfg(feature = "session")]
 impl SessionFlowControl {
     /// Maps the profile to the protocol-level flow-control configuration.
     pub fn to_config(self) -> Option<hopr_lib::exports::transport::FlowControlConfig> {
@@ -101,7 +105,7 @@ fn default_api_host() -> HostConfig {
         .expect("default credentials should always work")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "session"))]
 mod tests {
     use std::time::Duration;
 

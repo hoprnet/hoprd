@@ -9,11 +9,13 @@ mod network;
 mod node;
 mod peers;
 mod root;
+#[cfg(feature = "session")]
 mod session;
 #[cfg(test)]
 pub(crate) mod testing;
 mod tickets;
 
+#[cfg(feature = "session")]
 pub(crate) mod env {
     /// Name of the environment variable specifying automatic port range selection for Sessions.
     /// Expected format: "<start_port>:<end_port>" (e.g., "9091:9099")
@@ -34,6 +36,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use hopr_lib::{api::types::primitive::prelude::Address, errors::HoprLibError};
+#[cfg(feature = "session")]
 use hopr_utils_session::ListenerJoinHandles;
 use serde::Serialize;
 use tokio::net::TcpListener;
@@ -57,37 +60,64 @@ use crate::config::Auth;
 pub(crate) const BASE_PATH: &str =
     const_format::formatcp!("/api/v{}", env!("CARGO_PKG_VERSION_MAJOR"));
 
-/// Combined trait bound for the HOPR node type parameter used throughout the REST API.
-///
-/// Any type `H: HoprNode` can be used as the node implementation backing the API.
-/// In production this is `Hopr<Chain, Graph, Net, TMgr>`; in tests it can be a mock.
-pub trait HoprNode:
+/// Trait bound shared by every REST API handler: node operations, chain, network, graph, transport and tickets.
+pub trait HoprNodeCore:
     hopr_lib::api::node::HoprNodeOperations
     + hopr_lib::api::node::HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
     + hopr_lib::api::node::HasNetworkView
     + hopr_lib::api::node::HasGraphView
     + hopr_lib::api::node::HasTransportApi
     + hopr_lib::api::node::HasTicketManagement
-    + hopr_lib::api::node::HoprSessionClientOperations
     + Send
     + Sync
     + 'static
 {
 }
 
-impl<T> HoprNode for T where
+impl<T> HoprNodeCore for T where
     T: hopr_lib::api::node::HoprNodeOperations
         + hopr_lib::api::node::HasChainApi<ChainError = hopr_lib::errors::HoprLibError>
         + hopr_lib::api::node::HasNetworkView
         + hopr_lib::api::node::HasGraphView
         + hopr_lib::api::node::HasTransportApi
         + hopr_lib::api::node::HasTicketManagement
-        + hopr_lib::api::node::HoprSessionClientOperations
         + Send
         + Sync
         + 'static
 {
 }
+
+/// Combined trait bound for the HOPR node type parameter used throughout the REST API.
+///
+/// Any type `H: HoprNode` can be used as the node implementation backing the API.
+/// In production this is `Hopr<Chain, Graph, Net, TMgr>`; in tests it can be a mock.
+///
+/// With the `session` feature a node must also open Sessions as an entry; without it
+/// (a relay-only node) the Session endpoints do not exist and the bound is just [`HoprNodeCore`].
+#[cfg(feature = "session")]
+pub trait HoprNode: HoprNodeCore + hopr_lib::api::node::HoprSessionEntryOperations {}
+
+#[cfg(feature = "session")]
+impl<T> HoprNode for T where T: HoprNodeCore + hopr_lib::api::node::HoprSessionEntryOperations {}
+
+#[cfg(not(feature = "session"))]
+pub trait HoprNode: HoprNodeCore {}
+
+#[cfg(not(feature = "session"))]
+impl<T> HoprNode for T where T: HoprNodeCore {}
+
+/// A node the API can serve: [`HoprNode`], plus the Session factories when Sessions are enabled.
+#[cfg(feature = "session")]
+pub trait ServedNode: HoprNode + RestApiSessionFactory {}
+
+#[cfg(feature = "session")]
+impl<T> ServedNode for T where T: HoprNode + RestApiSessionFactory {}
+
+#[cfg(not(feature = "session"))]
+pub trait ServedNode: HoprNode {}
+
+#[cfg(not(feature = "session"))]
+impl<T> ServedNode for T where T: HoprNode {}
 
 pub(crate) struct AppState<H> {
     pub hopr: Arc<H>,
@@ -108,9 +138,12 @@ pub(crate) struct InternalState<H> {
     pub hoprd_cfg: serde_json::Value,
     pub auth: Arc<Auth>,
     pub hopr: Arc<H>,
+    #[cfg(feature = "session")]
     pub open_listeners: Arc<ListenerJoinHandles>,
+    #[cfg(feature = "session")]
     pub default_listen_host: std::net::SocketAddr,
     /// Flow-control profile applied to sessions this node initiates as a client.
+    #[cfg(feature = "session")]
     pub session_flow_control: crate::config::SessionFlowControl,
 }
 
@@ -121,8 +154,11 @@ impl<H> Clone for InternalState<H> {
             hoprd_cfg: self.hoprd_cfg.clone(),
             auth: self.auth.clone(),
             hopr: self.hopr.clone(),
+            #[cfg(feature = "session")]
             open_listeners: self.open_listeners.clone(),
+            #[cfg(feature = "session")]
             default_listen_host: self.default_listen_host,
+            #[cfg(feature = "session")]
             session_flow_control: self.session_flow_control,
         }
     }
@@ -155,11 +191,6 @@ impl<H> Clone for InternalState<H> {
         peers::ping_peer,
         peers::show_peer_info,
         root::metrics,
-        session::create_client,
-        session::list_clients,
-        session::adjust_session,
-        session::session_config,
-        session::close_client,
         tickets::redeem_tickets,
         tickets::show_ticket_statistics,
     ),
@@ -177,7 +208,6 @@ impl<H> Clone for InternalState<H> {
             network::AnnouncementOriginResponse,
             node::NodeInfoResponse, node::NodeVersionResponse, node::NodeStatusResponse, node::ComponentStatusesResponse, node::ComponentStatusInfo,
             peers::MultiaddressSource, peers::NodePeerInfoResponse, peers::PeerChannelInfo, peers::PeerQosInfo, peers::PingResponse,
-            session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
             tickets::NodeTicketStatisticsResponse, tickets::ChannelTicket, tickets::RedeemTicketsRequest,
         )
     ),
@@ -190,13 +220,35 @@ impl<H> Clone for InternalState<H> {
         (name = "Network", description = "HOPR node network endpoints"),
         (name = "Node", description = "HOPR node information endpoints"),
         (name = "Peers", description = "HOPR node peer manipulation endpoints"),
-        (name = "Session", description = "HOPR node session management endpoints"),
         (name = "Tickets", description = "HOPR node ticket management endpoints"),
         (name = "Metrics", description = "HOPR node metrics endpoints"),
     )
 )]
 struct BaseApiDoc;
 
+/// The Session endpoints, merged into the base document only when the `session` feature is on.
+#[cfg(feature = "session")]
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        session::create_client,
+        session::list_clients,
+        session::adjust_session,
+        session::session_config,
+        session::close_client,
+    ),
+    components(
+        schemas(
+            session::SessionClientRequest, session::SessionCapability, session::RoutingOptions, session::SessionTargetSpec, session::SessionClientResponse, session::IpProtocol, session::SessionConfig,
+        )
+    ),
+    tags(
+        (name = "Session", description = "HOPR node session management endpoints"),
+    )
+)]
+struct SessionApiDoc;
+
+#[cfg(feature = "session")]
 #[derive(OpenApi)]
 #[openapi(
     paths(session::create_client_explicit_path,),
@@ -214,14 +266,29 @@ impl OpenApi for ApiDoc {
 
 impl ApiDoc {
     fn openapi_for_config(cfg: &crate::config::Api) -> utoipa::openapi::OpenApi {
-        Self::openapi_with_explicit_path_sessions(cfg.enable_explicit_path_sessions)
+        #[cfg(feature = "session")]
+        {
+            Self::openapi_with_explicit_path_sessions(cfg.enable_explicit_path_sessions)
+        }
+        #[cfg(not(feature = "session"))]
+        {
+            let _ = cfg;
+            Self::openapi_with_explicit_path_sessions(false)
+        }
     }
 
     fn openapi_with_explicit_path_sessions(enabled: bool) -> utoipa::openapi::OpenApi {
+        #[cfg_attr(not(feature = "session"), allow(unused_mut))]
         let mut openapi = BaseApiDoc::openapi();
-        if enabled {
-            openapi.merge(ExplicitPathApiDoc::openapi());
+        #[cfg(feature = "session")]
+        {
+            openapi.merge(SessionApiDoc::openapi());
+            if enabled {
+                openapi.merge(ExplicitPathApiDoc::openapi());
+            }
         }
+        #[cfg(not(feature = "session"))]
+        let _ = enabled;
         openapi
     }
 }
@@ -255,23 +322,25 @@ impl Modify for SecurityAddon {
     }
 }
 
+#[cfg(feature = "session")]
 #[allow(deprecated)]
 pub trait RestApiSessionFactory: Send + Sync + 'static {
-    type HopFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>;
-    type ExplicitPathFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientExplicitPathConfig>;
+    type HopFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionEntryConfig>;
+    type ExplicitPathFactory: hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionEntryExplicitPathConfig>;
 
     fn hop_session_factory(hopr: Arc<Self>) -> Self::HopFactory;
     fn explicit_path_session_factory(hopr: Arc<Self>) -> Self::ExplicitPathFactory;
 }
 
+#[cfg(feature = "session")]
 #[allow(deprecated)]
 impl<Chain, Graph, Net, TMgr> RestApiSessionFactory for hopr_lib::Hopr<Chain, Graph, Net, TMgr>
 where
     hopr_lib::Hopr<Chain, Graph, Net, TMgr>: Send + Sync + 'static,
     hopr_utils_session::HopSessionFactory<Chain, Graph, Net, TMgr>:
-        hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientConfig>,
+        hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionEntryConfig>,
     hopr_utils_session::ExplicitPathSessionFactory<Chain, Graph, Net, TMgr>:
-        hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionClientExplicitPathConfig>,
+        hopr_utils_session::SessionFactory<Cfg = hopr_lib::HoprSessionEntryExplicitPathConfig>,
 {
     type HopFactory = hopr_utils_session::HopSessionFactory<Chain, Graph, Net, TMgr>;
     type ExplicitPathFactory =
@@ -293,12 +362,14 @@ pub struct RestApiParameters<H> {
     pub hoprd_cfg: serde_json::Value,
     pub cfg: crate::config::Api,
     pub hopr: Arc<H>,
+    #[cfg(feature = "session")]
     pub session_listener_sockets: Arc<ListenerJoinHandles>,
+    #[cfg(feature = "session")]
     pub default_session_listen_host: std::net::SocketAddr,
 }
 
 /// Starts the Rest API listener and router.
-pub async fn serve_api<H: HoprNode + RestApiSessionFactory>(
+pub async fn serve_api<H: ServedNode>(
     params: RestApiParameters<H>,
 ) -> Result<(), std::io::Error>
 where
@@ -311,7 +382,9 @@ where
         hoprd_cfg,
         cfg,
         hopr,
+        #[cfg(feature = "session")]
         session_listener_sockets,
+        #[cfg(feature = "session")]
         default_session_listen_host,
     } = params;
 
@@ -320,7 +393,9 @@ where
         hoprd_cfg,
         cfg,
         hopr,
+        #[cfg(feature = "session")]
         session_listener_sockets,
+        #[cfg(feature = "session")]
         default_session_listen_host,
     )
     .await;
@@ -328,13 +403,13 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn build_api<H: HoprNode + RestApiSessionFactory>(
+async fn build_api<H: ServedNode>(
     version: String,
     hoprd_cfg: serde_json::Value,
     cfg: crate::config::Api,
     hopr: Arc<H>,
-    open_listeners: Arc<ListenerJoinHandles>,
-    default_listen_host: std::net::SocketAddr,
+    #[cfg(feature = "session")] open_listeners: Arc<ListenerJoinHandles>,
+    #[cfg(feature = "session")] default_listen_host: std::net::SocketAddr,
 ) -> Router
 where
     <<H as hopr_lib::api::node::HasTransportApi>::Transport as hopr_lib::api::node::TransportOperations>::Error:
@@ -342,14 +417,18 @@ where
 {
     let api_doc = ApiDoc::openapi_for_config(&cfg);
     let state = AppState { hopr };
+    #[cfg(feature = "session")]
     let enable_explicit_path_sessions = cfg.enable_explicit_path_sessions;
     let inner_state = InternalState {
         version,
         auth: Arc::new(cfg.auth.clone()),
         hoprd_cfg,
         hopr: state.hopr.clone(),
+        #[cfg(feature = "session")]
         open_listeners,
+        #[cfg(feature = "session")]
         default_listen_host,
+        #[cfg(feature = "session")]
         session_flow_control: cfg.session_flow_control,
     };
 
@@ -432,15 +511,10 @@ where
                 .route("/node/info", get(node::info::<H>))
                 .route("/node/status", get(node::status::<H>))
                 .route("/peers/{address}/ping", post(peers::ping_peer::<H>))
-                .route("/session/config/{id}", get(session::session_config::<H>))
-                .route("/session/config/{id}", post(session::adjust_session::<H>))
-                .route("/session/{protocol}", post(session::create_client::<H>))
-                .merge(explicit_path_router::<H>(enable_explicit_path_sessions))
-                .route("/session/{protocol}", get(session::list_clients::<H>))
-                .route(
-                    "/session/{protocol}/{ip}/{port}",
-                    delete(session::close_client::<H>),
-                )
+                .merge(session_router::<H>(
+                    #[cfg(feature = "session")]
+                    enable_explicit_path_sessions,
+                ))
                 .with_state(inner_state.clone().into())
                 .layer(axum::middleware::from_fn_with_state(
                     inner_state.clone(),
@@ -472,10 +546,32 @@ where
         )
 }
 
-#[allow(deprecated)]
-fn explicit_path_router<H: HoprNode + RestApiSessionFactory>(
-    enabled: bool,
+/// The Session endpoints; an empty router when the `session` feature is off.
+fn session_router<H: ServedNode>(
+    #[cfg(feature = "session")] enable_explicit_path_sessions: bool,
 ) -> Router<Arc<InternalState<H>>> {
+    #[cfg(feature = "session")]
+    {
+        Router::new()
+            .route("/session/config/{id}", get(session::session_config::<H>))
+            .route("/session/config/{id}", post(session::adjust_session::<H>))
+            .route("/session/{protocol}", post(session::create_client::<H>))
+            .merge(explicit_path_router::<H>(enable_explicit_path_sessions))
+            .route("/session/{protocol}", get(session::list_clients::<H>))
+            .route(
+                "/session/{protocol}/{ip}/{port}",
+                delete(session::close_client::<H>),
+            )
+    }
+    #[cfg(not(feature = "session"))]
+    {
+        Router::new()
+    }
+}
+
+#[cfg(feature = "session")]
+#[allow(deprecated)]
+fn explicit_path_router<H: ServedNode>(enabled: bool) -> Router<Arc<InternalState<H>>> {
     if enabled {
         Router::new().route(
             "/session/{protocol}/explicit-path",

@@ -352,6 +352,58 @@ jobs:
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
+  entity-fence:
+    name: Entity fence
+    # Builds both artifacts (the relay-only one and the relaying exit) and proves the relay links no
+    # Session code. Not a required check; skip in the merge queue and for changes outside the code paths.
+    if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true' }}
+    needs: [changes, checks, tests]
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Build both artifacts and verify the fence
+        uses: hoprnet/hopr-workflows/actions/nix-action@43c833e72dffe4f2f3be60193733e5657f8aa0d7 # nix-action-v2.0.0
+        with:
+          repo_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          command: |
+            nix build -L --no-link .#binary-hoprd-relay-x86_64-linux .#binary-hoprd-x86_64-linux
+            nix develop -c bash scripts/check-entity-fencing.sh
+
+  build-docker-relay:
+    name: Docker (relay)
+    # The relay-only image. Not a required check; skip in the merge queue.
+    if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' }}
+    needs: [changes, checks, tests, build-binaries]
+    uses: hoprnet/hopr-workflows/.github/workflows/build-docker.yaml@3df1022f4b852f1b7acd064123ce819258a62fe3 # build-docker-v4.0.1
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    with:
+      repo_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      concurrency_group_suffix: relay
+      build_matrix: >-
+        [
+          {
+            "runner": "depot-ubuntu-24.04-4",
+            "architecture": "x86_64-linux",
+            "build_command": "nix build -L .#docker-hoprd-relay-x86_64-linux"
+          },
+          {
+            "runner": "depot-ubuntu-24.04-arm-4",
+            "architecture": "aarch64-linux",
+            "build_command": "nix build -L .#docker-hoprd-relay-aarch64-linux"
+          }
+        ]
+      build_file: ./hoprd/Cargo.toml
+      docker_image_name: hoprd-relay
+      docker_image_format: skopeo
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
   docs:
     name: Docs
     # Not a required check; skip in the merge queue and for changes outside the code paths.
@@ -415,7 +467,9 @@ jobs:
       - build-binaries
       - build-docker
       - build-docker-pix-test
+      - build-docker-relay
       - docs
+      - entity-fence
       - localcluster-smoke
     runs-on: depot-ubuntu-24.04
     permissions: {}
@@ -429,4 +483,4 @@ jobs:
           # design (see `checks`); the queue only runs Integration throughput (merge-queue.yaml).
           # Path filter: tests, binaries, docs and smoke skip only when no code path changed.
           # A failed job reds the gate either way; a Rust change that skips tests does too.
-          allowed-skips: ${{ format('validate-pr-title, label, validate-release-branch-deps{0}{1}', github.event_name == 'merge_group' && ', checks, tests, build-binaries, build-docker, build-docker-pix-test, docs, localcluster-smoke' || '', needs.changes.outputs.rust != 'true' && ', tests, build-binaries, docs, localcluster-smoke' || '') }}
+          allowed-skips: ${{ format('validate-pr-title, label, validate-release-branch-deps{0}{1}', github.event_name == 'merge_group' && ', checks, tests, build-binaries, build-docker, build-docker-pix-test, build-docker-relay, docs, entity-fence, localcluster-smoke' || '', needs.changes.outputs.rust != 'true' && ', tests, build-binaries, docs, entity-fence, localcluster-smoke' || '') }}

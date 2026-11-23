@@ -1,6 +1,6 @@
 [package]
 name = "hoprd"
-version = "5.0.7"
+version = "5.1.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,14 +12,31 @@ build = "build.rs"
 
 [features]
 # No `strategy-pix-*` pairing here, deliberately.
+# The default build is the relaying exit, what a hoprd node has always been. The relay-only artifact
+# is `--no-default-features -F relay,runtime-tokio,telemetry,transport-quic,allocator-jemalloc,state-dump`.
 default = [
   "runtime-tokio",
   "telemetry",
   "transport-quic",
   "allocator-jemalloc",
-  "session-server",
+  "exit",
   "state-dump",
 ] # uses tokio by default because of axum
+# === Node entity: the two hoprd artifacts ===
+#
+# * `relay` — ticket and acknowledgement processing; links no Session code at all: no Session
+#   transport, no Session REST endpoints, no Session server forwarder, no PIX.
+# * `exit`  — the relaying exit: `relay` plus the Session server (IP forwarding), the Session
+#   REST endpoints, and PIX.
+relay = ["hopr-lib/relay"]
+exit = [
+  "relay",
+  "hopr-lib/exit",
+  "hoprd-api/session",
+  "dep:hopr-session-server-forwarder",
+  "dep:hopr-utils-session",
+  "dep:if-addrs",
+]
 runtime-tokio = [
   "dep:tokio",
   "hopr-lib/runtime-tokio",
@@ -53,7 +70,7 @@ strategy-pix-test = [
 ]
 # Not meant to be enabled directly — on its own it selects no pool and `hopr_strategy::pix`
 # will not resolve.
-pix = ["runtime-tokio"]
+pix = ["runtime-tokio", "exit"]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",
@@ -93,7 +110,8 @@ allocator-jemalloc-stats = [
   "dep:tikv-jemalloc-ctl",
   "dep:humansize",
 ]
-session-server = ["hopr-lib/session-server"]
+# Deprecated name of `exit`.
+session-server = ["exit"]
 # Periodic chain, graph and transport state records in the log; see `src/state_dump.rs`.
 state-dump = [
   "hopr-lib/state-dump",
@@ -111,7 +129,7 @@ console-subscriber = { workspace = true, optional = true }
 futures = { workspace = true }
 flagset = { workspace = true, optional = true }
 home = { workspace = true }
-if-addrs = { workspace = true }
+if-addrs = { workspace = true, optional = true }
 humansize = { workspace = true, optional = true, features = ["no_alloc"] }
 humantime-serde = { workspace = true }
 proc-macro-regex = { workspace = true }
@@ -147,16 +165,15 @@ tracing-opentelemetry = { workspace = true, optional = true }
 hopr-strategy = { workspace = true }
 hopr-lib = { workspace = true, features = [
   "runtime-tokio",
-  "session-client",
   "utils_parallel",
   "telemetry",
 ] }
-hopr-utils-session = { workspace = true }
+hopr-utils-session = { workspace = true, optional = true }
 hoprd-api = { workspace = true, features = ["telemetry"] }
 hopr-chain-connector = { workspace = true }
 hopr-ct-full-network = { workspace = true }
 hopr-network-graph = { workspace = true, features = ["petgraph"] }
-hopr-session-server-forwarder = { workspace = true, features = [
+hopr-session-server-forwarder = { workspace = true, optional = true, features = [
   "runtime-tokio",
 ] }
 hopr-ticket-manager = { workspace = true }
@@ -179,13 +196,7 @@ anyhow = { workspace = true }
 tempfile = { workspace = true }
 rstest = { workspace = true }
 test-log = { workspace = true }
-hopr-lib = { workspace = true, features = [
-  "runtime-tokio",
-  "session-client",
-  "session-server",
-  "utils_parallel",
-  "testing",
-] }
+hopr-lib = { workspace = true, features = ["runtime-tokio", "utils_parallel"] }
 hopr-chain-connector = { workspace = true, features = ["testing"] }
 
 [[bench]]

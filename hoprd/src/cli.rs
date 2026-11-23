@@ -5,7 +5,9 @@ use std::{
 
 use clap::{ArgAction, Parser, builder::ValueParser};
 use hopr_chain_connector::Address;
-use hopr_lib::config::{HostConfig, HostType, looks_like_domain};
+#[cfg(feature = "exit")]
+use hopr_lib::config::HostType;
+use hopr_lib::config::{HostConfig, looks_like_domain};
 use hoprd_api::config::Auth;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +20,7 @@ pub const DEFAULT_API_PORT: u16 = 3001;
 
 pub const MINIMAL_API_TOKEN_LENGTH: usize = 8;
 
+#[cfg(feature = "exit")]
 /// Sentinel host for the session listen host that triggers local-IP auto-detection.
 ///
 /// Used by container deployments that cannot know their routable IP ahead of time:
@@ -37,6 +40,7 @@ fn parse_host(s: &str) -> Result<HostConfig, String> {
     HostConfig::from_str(s)
 }
 
+#[cfg(feature = "exit")]
 /// Parses the session listen host, additionally accepting the [`SESSION_LISTEN_HOST_AUTO`]
 /// sentinel (`auto` or `auto:<port>`). The sentinel is carried as a `Domain` host and
 /// resolved to a concrete IP when the effective config is built.
@@ -62,6 +66,7 @@ fn parse_session_listen_host(s: &str) -> Result<HostConfig, String> {
     parse_host(s)
 }
 
+#[cfg(feature = "exit")]
 /// Detects the node's primary non-loopback IPv4 address.
 ///
 /// Mirrors the container entrypoint's historical `hostname -i` behavior: it returns the
@@ -76,6 +81,7 @@ fn detect_local_ipv4() -> anyhow::Result<IpAddr> {
         .ok_or_else(|| anyhow!("no non-loopback IPv4 address found for session listen host"))
 }
 
+#[cfg(feature = "exit")]
 fn resolve_session_listen_host(
     host: HostConfig,
     detect_local_ipv4: impl FnOnce() -> anyhow::Result<IpAddr>,
@@ -195,6 +201,7 @@ pub struct CliArgs {
     )]
     pub api_port: Option<u16>,
 
+    #[cfg(feature = "exit")]
     #[arg(
         long = "defaultSessionListenHost",
         env = "HOPRD_DEFAULT_SESSION_LISTEN_HOST",
@@ -203,6 +210,7 @@ pub struct CliArgs {
     )]
     pub default_session_listen_host: Option<HostConfig>,
 
+    #[cfg(feature = "exit")]
     #[arg(
         long = "enableExplicitPathSessions",
         env = "HOPRD_ENABLE_EXPLICIT_PATH_SESSIONS",
@@ -363,12 +371,15 @@ impl TryFrom<CliArgs> for HoprdConfig {
             cfg.hopr.network.prefer_local_addresses = true;
         }
 
-        if let Some(host) = value.default_session_listen_host {
-            cfg.session_ip_forwarding.default_entry_listen_host =
-                resolve_session_listen_host(host, detect_local_ipv4)?;
-        }
-        if value.enable_explicit_path_sessions {
-            cfg.api.enable_explicit_path_sessions = true;
+        #[cfg(feature = "exit")]
+        {
+            if let Some(host) = value.default_session_listen_host {
+                cfg.session_ip_forwarding.default_entry_listen_host =
+                    resolve_session_listen_host(host, detect_local_ipv4)?;
+            }
+            if value.enable_explicit_path_sessions {
+                cfg.api.enable_explicit_path_sessions = true;
+            }
         }
 
         // db
@@ -469,6 +480,7 @@ impl TryFrom<CliArgs> for HoprdConfig {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "exit")]
     use std::net::SocketAddr;
 
     use super::*;
@@ -503,6 +515,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "exit")]
     #[test]
     fn auto_sentinel_resolves_to_non_loopback_ipv4_with_given_port() -> anyhow::Result<()> {
         let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto:1234"])?;
@@ -522,6 +535,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "exit")]
     #[test]
     fn auto_sentinel_without_port_defaults_to_zero() -> anyhow::Result<()> {
         let args = CliArgs::try_parse_from(["hoprd", "--defaultSessionListenHost", "auto"])?;
@@ -536,6 +550,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "exit")]
     #[test]
     fn concrete_ipv4_listen_host_passes_through() -> anyhow::Result<()> {
         let args =
@@ -550,6 +565,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "exit")]
     #[test]
     fn non_auto_domain_listen_host_is_rejected() -> anyhow::Result<()> {
         // A domain is accepted by CLI parsing but rejected when the effective config is built,
