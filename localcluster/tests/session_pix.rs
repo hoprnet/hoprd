@@ -333,6 +333,7 @@ fn pix_settings(
         quota_range_min: 0,
         quota_range_max: 1024 * 1024,
         max_ssa_delivery_time: MAX_SSA_DELIVERY_TIME,
+        resume_window: None,
         max_deposit_wait: MAX_DEPOSIT_WAIT,
         // Only the Exit refuses non-PIX Sessions; the relay never terminates one.
         enforce_on_nodes: vec![EXIT],
