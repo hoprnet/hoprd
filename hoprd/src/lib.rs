@@ -13,6 +13,8 @@ pub mod strategy;
 
 #[cfg(all(target_os = "linux", feature = "allocator-jemalloc-stats"))]
 mod jemalloc_stats;
+#[cfg(feature = "state-dump")]
+mod state_dump;
 
 use async_signal::{Signal, Signals};
 use futures::{FutureExt, StreamExt, future::abortable};
@@ -34,7 +36,7 @@ use hopr_chain_connector::{
 use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
-use hopr_network_graph::{ChannelGraph, SharedChannelGraph};
+use hopr_network_graph::{ChannelGraph, ChannelGraphConfig, SharedChannelGraph, StarvationParams};
 #[cfg(feature = "session-server")]
 use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
 use hopr_ticket_manager::{
@@ -154,12 +156,10 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     chain_connector.connect().await?;
     let chain_connector = Arc::new(chain_connector);
 
-    let egress_cfg = hopr_ct_full_network::EgressConfig {
-        interval: cfg.hopr.network.probe_interval,
-        shuffle_ttl: cfg.hopr.network.probe_interval * 2,
-        ..Default::default()
-    };
-    egress_cfg.validate_against_probe_timeout(hopr_lib_cfg.protocol.probe.timeout)?;
+    let loopback_window = cfg.hopr.network.loopback_window;
+    let egress_cfg = cfg.hopr.network.egress_config();
+    egress_cfg
+        .validate_against_loopback_window(hopr_lib_cfg.protocol.probe.timeout, loopback_window)?;
 
     let ticket_store = open_ticket_store(&cfg)?;
     let (ticket_manager, ticket_factory) =
@@ -170,12 +170,19 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     let outgoing_index_factory = ticket_factory.clone();
 
     let path_cfg = hopr_lib_cfg.protocol.path_planner;
-    let graph: SharedChannelGraph = Arc::new(ChannelGraph::with_edge_params(
-        *hopr_keys.packet_key.public(),
-        path_cfg.edge_penalty,
-        path_cfg.min_ack_rate,
-        path_cfg.max_plausible_loopback_rtt,
-    ));
+    let graph: SharedChannelGraph = Arc::new(
+        ChannelGraph::with_config(
+            *hopr_keys.packet_key.public(),
+            ChannelGraphConfig {
+                edge_penalty: path_cfg.edge_penalty,
+                min_ack_rate: path_cfg.min_ack_rate,
+                max_plausible_loopback_rtt: path_cfg.max_plausible_loopback_rtt,
+                starvation: StarvationParams::default(),
+                loopback_window,
+            },
+        )
+        .map_err(anyhow::Error::msg)?,
+    );
     let graph_for_ct = graph.clone();
     let safe_address = hopr_lib_cfg.safe_module.safe_address;
     let module_address = hopr_lib_cfg.safe_module.module_address;
@@ -222,6 +229,10 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
                 graph_for_ct,
             )
         });
+    #[cfg(feature = "state-dump")]
+    let builder = builder.with_state_dump(state_dump::ComponentStateReporter::new(
+        Keypair::public(&hopr_keys.chain_key).to_address().to_hex(),
+    ));
 
     #[cfg(feature = "session-server")]
     let node = Arc::new(
@@ -743,7 +754,6 @@ mod tests {
         // ticket indices until it is told to stop.
         let producer = {
             let factory = factory.clone();
-            let channel = channel.clone();
             tokio::spawn(async move {
                 for _ in 0..50 {
                     factory.next_outgoing_ticket_index(&channel);

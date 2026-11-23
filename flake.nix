@@ -8,7 +8,7 @@
     # come from its lock, so every hoprnet flake on the same nix-lib release evaluates against the
     # same revisions and shares one set of store paths. To bump them, point nix-lib.url at the new
     # release tag, then run `nix flake update nix-lib`.
-    nix-lib.url = "github:hoprnet/nix-lib/v2.1.7";
+    nix-lib.url = "github:hoprnet/nix-lib/v2.2.1";
     nixpkgs.follows = "nix-lib/nixpkgs";
     nixpkgs-unstable.follows = "nix-lib/nixpkgs-unstable";
     rust-overlay.follows = "nix-lib/rust-overlay";
@@ -24,6 +24,7 @@
     # its checkout's version names. `hopr-strategy` pins the `curvy-*` crates of the same release,
     # so the two move together: change the ref here and in `hopr-strategy`, then
     # `nix flake update curvy-zk-artifacts`.
+    # Stays on v0.2.0 under the 0.2.2 crates: same zkey/graph hashes, and v0.2.2's flake regex fails to evaluate on CI.
     curvy-zk-artifacts.url = "github:0xCurvy/rs-sdk/v0.2.0";
 
     curvy-zk-artifacts.inputs.nixpkgs.follows = "nixpkgs";
@@ -82,20 +83,10 @@
             inherit localSystem;
             overlays = baseOverlays;
           };
-          overlays = baseOverlays ++ [
-            # In release-26.05, nss-cacert-3.131.1 fails to build when overridden with
-            # a blacklist because Mozilla removed 'emSign ECC Root CA - G3' from certdata.txt,
-            # triggering buildcatrust assertion error code 3.
-            # Intercept only .override so stock cacert remains unmodified (preserving binary
-            # cache substitution for gnupg and others in nixpkgs), while blacklist overrides
-            # (used by nixLib.mkDockerImage) delegate to pkgs-unstable.cacert.override.
-            (final: prev: {
-              cacert = prev.cacert // {
-                override = args: pkgs-unstable.cacert.override args;
-              };
-            })
-          ];
-          pkgs = import nixpkgs { inherit localSystem overlays; };
+          pkgs = import nixpkgs {
+            inherit localSystem;
+            overlays = baseOverlays;
+          };
           buildPlatform = pkgs.stdenv.buildPlatform;
 
           nixLib = nix-lib.lib.${system};
@@ -292,7 +283,7 @@
               + (old.preBuild or "");
             });
 
-          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server";
+          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server,state-dump";
 
           clippyDerivation = rust-builder-local.callPackage nixLib.mkRustPackage (
             projectBuildArgs

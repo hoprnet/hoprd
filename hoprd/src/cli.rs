@@ -471,8 +471,6 @@ impl TryFrom<CliArgs> for HoprdConfig {
 mod tests {
     use std::net::SocketAddr;
 
-    use clap::Parser as _;
-
     use super::*;
     use crate::config::HoprdConfig;
 
