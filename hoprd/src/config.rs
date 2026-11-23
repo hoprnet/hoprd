@@ -982,6 +982,9 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
                         },
                     },
+                    // How long a detached Exit PIX Session waits for its Entry to return; not exposed
+                    // by hoprd, so upstream's default applies (hoprnet#8721).
+                    resume_window: IncomingSessionPixConfig::default().resume_window,
                 },
                 path_planner: value.network.path_planner,
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
