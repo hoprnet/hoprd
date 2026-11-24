@@ -32,8 +32,8 @@ use hopr_strategy::{
 use hoprd::{
     config::{
         Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig,
-        UserIncomingSessionPixConfig, UserPixGlobalConfig, default_connection_sync_timeout,
-        default_sync_tolerance,
+        UserIncomingSessionPixConfig, UserPixGlobalConfig, default_connection_attempts,
+        default_connection_sync_timeout, default_sync_tolerance,
     },
     strategy::{MultiStrategyConfig, PixConfig, StrategyKind},
 };
@@ -819,7 +819,9 @@ fn node_config(
             ..Default::default()
         },
         strategy: node_strategy.clone(),
-        ..Default::default()
+        connection_sync_timeout: default_connection_sync_timeout(),
+        sync_tolerance: default_sync_tolerance(),
+        connection_attempts: default_connection_attempts(),
     })
 }
 
