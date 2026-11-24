@@ -818,6 +818,7 @@ fn node_config(
             ..Default::default()
         },
         strategy: node_strategy.clone(),
+        ..Default::default()
     })
 }
 

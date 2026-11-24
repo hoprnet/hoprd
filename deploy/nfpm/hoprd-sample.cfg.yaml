@@ -4,6 +4,8 @@ blokli_url: https://blokli.prod.hoprnet.link
 connection_sync_timeout: 5m
 # Percentage (1-100) of on-chain state to sync before ready (default 100). Below 100 risks purging unredeemed tickets
 sync_tolerance: 100
+# Attempts to connect to Blokli and sync before the node exits, with a growing delay between them (default 3)
+connection_attempts: 3
 db:
   data: /var/lib/hoprd
 identity:

@@ -998,6 +998,13 @@ pub struct HoprdConfig {
     #[serde(default = "default_sync_tolerance")]
     #[default(default_sync_tolerance())]
     pub sync_tolerance: usize,
+    /// How many times the node tries to connect to Blokli and sync the on-chain graph at startup
+    /// before it exits, each within `connection_sync_timeout`. Attempts are separated by a delay
+    /// that starts at 10 seconds and doubles up to 1 minute. Defaults to 3.
+    #[validate(range(min = 1))]
+    #[serde(default = "default_connection_attempts")]
+    #[default(default_connection_attempts())]
+    pub connection_attempts: u32,
     /// Configuration of underlying node behavior in the form strategies
     ///
     /// Strategies represent automatically executable behavior performed by
@@ -1044,6 +1051,11 @@ fn default_blokli_url() -> String {
 /// Default percentage of the on-chain state that must be synced at startup.
 pub fn default_sync_tolerance() -> usize {
     100
+}
+
+/// Default number of attempts to connect to Blokli and sync at startup.
+pub fn default_connection_attempts() -> u32 {
+    3
 }
 
 /// Default maximum time to wait for the chain connector to sync at startup.
@@ -1473,6 +1485,27 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             serde_saphyr::from_str("blokli_url: http://localhost:8080\nsync_tolerance: 90\n")?;
 
         assert_eq!(cfg.sync_tolerance, 90);
+
+        Ok(())
+    }
+
+    #[test]
+    fn connection_attempts_should_default_to_3_and_be_read_from_config() -> anyhow::Result<()> {
+        let cfg: HoprdConfig = serde_saphyr::from_str("blokli_url: http://localhost:8080\n")?;
+        assert_eq!(cfg.connection_attempts, 3);
+
+        let cfg: HoprdConfig =
+            serde_saphyr::from_str("blokli_url: http://localhost:8080\nconnection_attempts: 5\n")?;
+        assert_eq!(cfg.connection_attempts, 5);
+
+        let cfg = HoprdConfig {
+            connection_attempts: 0,
+            ..Default::default()
+        };
+        assert!(
+            cfg.validate()
+                .is_err_and(|e| e.field_errors().contains_key("connection_attempts"))
+        );
 
         Ok(())
     }
