@@ -462,6 +462,23 @@ pub struct UserIncomingSessionPixConfig {
     #[default(default_pix_max_served_without_progress())]
     #[serde(default = "default_pix_max_served_without_progress")]
     pub max_served_without_progress: u64,
+    /// Packets the Exit serves a Session for free while its current front cycle is unfunded, before
+    /// its egress gate blocks until the deposit confirms on chain.
+    ///
+    /// The free allowance an Exit grants so the application is not held up for as long as a deposit
+    /// takes to land. A Session gets it when it starts, and again for an unfunded successor after a
+    /// paid cycle leaves the front; retiring an unfunded front does not grant it again. Each packet
+    /// carries up to 1452 bytes of Session data, so the 10000 default is ≈14.5 MB.
+    ///
+    /// `0` is strict prepay: the Exit answers nothing until a sufficient deposit is confirmed. The
+    /// funding handshake bypasses the gate, so a zero budget stalls the application but never the
+    /// deposit. Upstream caps the effective budget at `target_useful_shares - 1`, which is in the
+    /// hundreds of thousands at production PIX dimensions.
+    ///
+    /// Default is upstream's 10000 packets.
+    #[default(default_pix_max_predeposit_packets())]
+    #[serde(default = "default_pix_max_predeposit_packets")]
+    pub max_predeposit_packets: u64,
     /// Number of SSAs this node, acting as an Exit, asks the Entry to commit to in one request.
     ///
     /// Batching amortizes the round trip over several deposit cycles, at the cost of holding that
@@ -608,6 +625,9 @@ fn default_pix_ssas_per_request() -> usize {
 }
 fn default_pix_max_served_without_progress() -> u64 {
     SupervisorConfig::default().max_served_without_progress
+}
+fn default_pix_max_predeposit_packets() -> u64 {
+    SupervisorConfig::default().max_predeposit_packets
 }
 fn default_pix_allow_dynamic_ssa_batches() -> bool {
     SupervisorConfig::default().allow_dynamic_ssa_batches
@@ -835,6 +855,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .network
                             .incoming_session_pix
                             .max_served_without_progress,
+                        max_predeposit_packets: value
+                            .network
+                            .incoming_session_pix
+                            .max_predeposit_packets,
                         // Upstream defaults, named so a new upstream field fails to compile here.
                         // Some pair with the pinned reconstructor; exposing them breaks `validate`.
                         // Three more only apply at a batch size of two or more, not hoprd's default.
@@ -844,7 +868,6 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                         max_off_front_share_fraction: supervision_defaults
                             .max_off_front_share_fraction,
                         min_share_order_sample: supervision_defaults.min_share_order_sample,
-                        max_predeposit_packets: supervision_defaults.max_predeposit_packets,
                         tombstone_retention_window: supervision_defaults.tombstone_retention_window,
                         commitment_recommit_interval: supervision_defaults
                             .commitment_recommit_interval,
@@ -1163,6 +1186,7 @@ mod tests {
         exit.max_live_cycle_bytes = 17_000_000;
         exit.max_recovery_time = Duration::from_secs(1900);
         exit.max_served_without_progress = 19;
+        exit.max_predeposit_packets = 23;
         exit.ssas_per_request = 3;
         exit.allow_dynamic_ssa_batches = !exit.allow_dynamic_ssa_batches;
         exit.drain_after_close = !exit.drain_after_close;
@@ -1208,6 +1232,10 @@ mod tests {
             supervision.max_served_without_progress,
             exit.max_served_without_progress
         );
+        assert_eq!(
+            supervision.max_predeposit_packets,
+            exit.max_predeposit_packets
+        );
 
         assert_eq!(supervision.fill.enabled, exit.fill_enabled);
         assert_eq!(supervision.fill.max_rate, exit.fill_max_rate);
@@ -1242,6 +1270,23 @@ mod tests {
                 window
             );
         }
+        Ok(())
+    }
+
+    /// The free predeposit budget defaults to upstream's, and zero — strict prepay — parses rather
+    /// than being refused, because upstream supports it on purpose.
+    #[test]
+    fn the_pix_predeposit_budget_defaults_to_upstream_and_accepts_strict_prepay()
+    -> anyhow::Result<()> {
+        let parsed: UserIncomingSessionPixConfig = serde_saphyr::from_str("enforce_pix: true\n")?;
+        assert_eq!(
+            parsed.max_predeposit_packets,
+            SupervisorConfig::default().max_predeposit_packets
+        );
+
+        let parsed: UserIncomingSessionPixConfig =
+            serde_saphyr::from_str("max_predeposit_packets: 0\n")?;
+        assert_eq!(parsed.max_predeposit_packets, 0);
         Ok(())
     }
 
@@ -1385,10 +1430,6 @@ path_planner:
         assert_eq!(
             supervision.min_share_order_sample,
             defaults.min_share_order_sample
-        );
-        assert_eq!(
-            supervision.max_predeposit_packets,
-            defaults.max_predeposit_packets
         );
         assert_eq!(
             supervision.tombstone_retention_window,
