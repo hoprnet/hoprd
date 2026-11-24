@@ -116,18 +116,25 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
+    if cfg.sync_tolerance < 100 {
+        tracing::warn!(
+            sync_tolerance = cfg.sync_tolerance,
+            "sync_tolerance is below 100: channels missing at startup may cause persisted unredeemed tickets and outgoing ticket indices to be purged"
+        );
+    }
+
     let mut chain_connector = create_trustful_hopr_blokli_connector(
         &hopr_keys.chain_key,
         BlockchainConnectorConfig {
-            connection_sync_timeout: std::time::Duration::from_mins(1),
+            connection_sync_timeout: cfg.connection_sync_timeout,
             // The ticket manager syncs from the channel graph seeded by `connect()` and purges the
             // persisted ticket queues and outgoing indices of every channel it does not see. That store
             // is durable (`hopr.ticket_storage_file` or `db.data/tickets.redb`), so a channel that is
-            // missing here -- possible at the 90% default -- would lose its unredeemed tickets and its
+            // missing here -- possible at the 90% connector default or any configured tolerance below 100 -- would lose its unredeemed tickets and its
             // saved outgoing index, and the node would reissue ticket indices after a restart.
             // Counters advance on every replayed account and channel event, so a complete replay also
             // satisfies this when channels open or close during the sync.
-            sync_tolerance: 100,
+            sync_tolerance: cfg.sync_tolerance,
             tx_timeout_multiplier: std::env::var("HOPR_TX_TIMEOUT_MULTIPLIER")
                 .ok()
                 .and_then(|p| {
