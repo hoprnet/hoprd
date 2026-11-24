@@ -556,6 +556,9 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             // engages on a Session that closes mid-cycle holding SURBs enough to finish it, which no
             // scenario here sets up on purpose. Named for the same reason as everything above it.
             drain_after_close: UserIncomingSessionPixConfig::default().drain_after_close,
+            // Left at upstream's default rather than made a [`PixSettings`] field: no scenario here
+            // measures the free service before a deposit. Named for the same reason as the rest.
+            max_predeposit_packets: UserIncomingSessionPixConfig::default().max_predeposit_packets,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
