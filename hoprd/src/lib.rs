@@ -116,44 +116,57 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
-    let mut chain_connector = create_trustful_hopr_blokli_connector(
-        &hopr_keys.chain_key,
-        BlockchainConnectorConfig {
-            connection_sync_timeout: std::time::Duration::from_mins(1),
-            // The ticket manager syncs from the channel graph seeded by `connect()` and purges the
-            // persisted ticket queues and outgoing indices of every channel it does not see. That store
-            // is durable (`hopr.ticket_storage_file` or `db.data/tickets.redb`), so a channel that is
-            // missing here -- possible at the 90% default -- would lose its unredeemed tickets and its
-            // saved outgoing index, and the node would reissue ticket indices after a restart.
-            // Counters advance on every replayed account and channel event, so a complete replay also
-            // satisfies this when channels open or close during the sync.
-            sync_tolerance: 100,
-            tx_timeout_multiplier: std::env::var("HOPR_TX_TIMEOUT_MULTIPLIER")
-                .ok()
-                .and_then(|p| {
-                    p.parse()
-                        .inspect_err(|error| tracing::warn!(%error, "failed to parse HOPR_TX_TIMEOUT_MULTIPLIER"))
-                        .ok()
-                })
-                .unwrap_or_else(|| BlockchainConnectorConfig::default().tx_timeout_multiplier),
-            // Blokli stops tracking a transaction after 5 minutes, so the local nonce is resynced
-            // with the on-chain one after that gap instead of staying ahead forever.
-            nonce_gap_tolerance: BlockchainConnectorConfig::default().nonce_gap_tolerance,
-        },
-        BlokliClient::new(
-            cfg.blokli_url.parse()?,
-            blokli_client::BlokliClientConfig {
-                timeout: std::time::Duration::from_secs(30),
-                stream_reconnect_timeout: std::time::Duration::from_secs(30),
-                subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
-                dns_override: cfg.blokli_dns_override.map(|(ip, port)| BlokliDnsOverride { ip, port }),
-                ..Default::default()
+    if cfg.sync_tolerance < 100 {
+        tracing::warn!(
+            sync_tolerance = cfg.sync_tolerance,
+            "sync_tolerance is below 100: channels missing at startup may cause persisted unredeemed tickets and outgoing ticket indices to be purged"
+        );
+    }
+
+    // Creating the connector already queries Blokli, so it is retried together with the sync.
+    let chain_connector = connect_to_blokli(&cfg, async || {
+        let mut connector = create_trustful_hopr_blokli_connector(
+            &hopr_keys.chain_key,
+            BlockchainConnectorConfig {
+                connection_sync_timeout: cfg.connection_sync_timeout,
+                // The ticket manager syncs from the channel graph seeded by `connect()` and purges the
+                // persisted ticket queues and outgoing indices of every channel it does not see. That store
+                // is durable (`hopr.ticket_storage_file` or `db.data/tickets.redb`), so a channel that is
+                // missing here -- possible at the 90% connector default or any configured tolerance
+                // below 100 -- would lose its unredeemed tickets and its saved outgoing index, and the
+                // node would reissue ticket indices after a restart.
+                // Counters advance on every replayed account and channel event, so a complete replay also
+                // satisfies this when channels open or close during the sync.
+                sync_tolerance: cfg.sync_tolerance,
+                tx_timeout_multiplier: std::env::var("HOPR_TX_TIMEOUT_MULTIPLIER")
+                    .ok()
+                    .and_then(|p| {
+                        p.parse()
+                            .inspect_err(|error| tracing::warn!(%error, "failed to parse HOPR_TX_TIMEOUT_MULTIPLIER"))
+                            .ok()
+                    })
+                    .unwrap_or_else(|| BlockchainConnectorConfig::default().tx_timeout_multiplier),
+                // Blokli stops tracking a transaction after 5 minutes, so the local nonce is resynced
+                // with the on-chain one after that gap instead of staying ahead forever.
+                nonce_gap_tolerance: BlockchainConnectorConfig::default().nonce_gap_tolerance,
             },
-        ),
-        cfg.hopr.safe_module.module_address,
-    )
+            BlokliClient::new(
+                cfg.blokli_url.parse()?,
+                blokli_client::BlokliClientConfig {
+                    timeout: std::time::Duration::from_secs(30),
+                    stream_reconnect_timeout: std::time::Duration::from_secs(30),
+                    subscription_stream_restart_delay: Some(std::time::Duration::from_secs(1)),
+                    dns_override: cfg.blokli_dns_override.map(|(ip, port)| BlokliDnsOverride { ip, port }),
+                    ..Default::default()
+                },
+            ),
+            cfg.hopr.safe_module.module_address,
+        )
+        .await?;
+        connector.connect().await?;
+        Ok(connector)
+    })
     .await?;
-    chain_connector.connect().await?;
     let chain_connector = Arc::new(chain_connector);
 
     let loopback_window = cfg.hopr.network.loopback_window;
@@ -325,6 +338,57 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     }
 
     Ok(())
+}
+
+/// Connects to Blokli and syncs the on-chain graph, retrying with a growing delay.
+///
+/// A failed sync is retried because it is usually transient: Blokli overloaded or restarting,
+/// or a sync that was too slow on a busy machine.
+#[cfg(feature = "runtime-tokio")]
+async fn connect_to_blokli(
+    cfg: &HoprdConfig,
+    mut connect: impl AsyncFnMut() -> anyhow::Result<HoprBlokliConnector>,
+) -> anyhow::Result<HoprBlokliConnector> {
+    const FIRST_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+    const MAX_RETRY_DELAY: std::time::Duration = std::time::Duration::from_mins(1);
+
+    let attempts = cfg.connection_attempts;
+    let mut attempt = 1;
+    let mut retry_delay = FIRST_RETRY_DELAY;
+    loop {
+        tracing::info!(
+            attempt,
+            attempts,
+            blokli_url = cfg.blokli_url,
+            sync_timeout = ?cfg.connection_sync_timeout,
+            "connecting to Blokli and syncing the on-chain graph"
+        );
+        let started = std::time::Instant::now();
+        match connect().await {
+            Ok(connector) => {
+                tracing::info!(elapsed = ?started.elapsed(), "connected to Blokli and synced the on-chain graph");
+                return Ok(connector);
+            }
+            Err(error) if attempt < attempts => {
+                tracing::warn!(
+                    %error,
+                    attempt,
+                    attempts,
+                    retry_in = ?retry_delay,
+                    "failed to connect to Blokli and sync the on-chain graph, retrying"
+                );
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = (retry_delay * 2).min(MAX_RETRY_DELAY);
+                attempt += 1;
+            }
+            // The error is logged with its display only, so the cause goes into the message.
+            Err(error) => {
+                return Err(anyhow::anyhow!(
+                    "failed to connect to Blokli and sync the on-chain graph after {attempts} attempts: {error}"
+                ));
+            }
+        }
+    }
 }
 
 async fn init_rest_api(

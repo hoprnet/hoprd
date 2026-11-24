@@ -32,7 +32,8 @@ use hopr_strategy::{
 use hoprd::{
     config::{
         Db, HoprdConfig, Identity, UserHoprLibConfig, UserHoprNetworkConfig,
-        UserIncomingSessionPixConfig, UserPixGlobalConfig,
+        UserIncomingSessionPixConfig, UserPixGlobalConfig, default_connection_attempts,
+        default_connection_sync_timeout, default_sync_tolerance,
     },
     strategy::{MultiStrategyConfig, PixConfig, StrategyKind},
 };
@@ -555,6 +556,9 @@ fn incoming_pix_config(pix: Option<&PixSettings>, id: usize) -> UserIncomingSess
             // engages on a Session that closes mid-cycle holding SURBs enough to finish it, which no
             // scenario here sets up on purpose. Named for the same reason as everything above it.
             drain_after_close: UserIncomingSessionPixConfig::default().drain_after_close,
+            // Left at upstream's default rather than made a [`PixSettings`] field: no scenario here
+            // measures the free service before a deposit. Named for the same reason as the rest.
+            max_predeposit_packets: UserIncomingSessionPixConfig::default().max_predeposit_packets,
         },
         None => UserIncomingSessionPixConfig::default(),
     }
@@ -818,6 +822,9 @@ fn node_config(
             ..Default::default()
         },
         strategy: node_strategy.clone(),
+        connection_sync_timeout: default_connection_sync_timeout(),
+        sync_tolerance: default_sync_tolerance(),
+        connection_attempts: default_connection_attempts(),
     })
 }
 
