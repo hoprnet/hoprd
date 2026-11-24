@@ -994,6 +994,9 @@ pub struct HoprdConfig {
     ///
     /// Values below 100 can make the node purge the persisted tickets and outgoing ticket indices
     /// of channels that were not yet seen, losing unredeemed tickets.
+    ///
+    /// A lower value only makes sense on Entry nodes (and possibly Exit nodes) that want a faster
+    /// startup. Relay nodes must keep 100.
     #[validate(range(min = 1, max = 100))]
     #[serde(default = "default_sync_tolerance")]
     #[default(default_sync_tolerance())]
