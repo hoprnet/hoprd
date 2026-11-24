@@ -6,6 +6,8 @@ connection_sync_timeout: 5m
 # purging unredeemed tickets. Only use a lower value on Entry nodes (and possibly Exit nodes) for faster startup.
 # Relay nodes must keep 100.
 sync_tolerance: 100
+# Attempts to connect to Blokli and sync before the node exits, with a growing delay between them (default 3)
+connection_attempts: 3
 db:
   data: /var/lib/hoprd
 identity:
