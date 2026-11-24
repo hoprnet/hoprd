@@ -2,7 +2,9 @@
 blokli_url: https://blokli.prod.hoprnet.link
 # Maximum time to wait for the on-chain graph to sync at startup (default 5m)
 connection_sync_timeout: 5m
-# Percentage (1-100) of on-chain state to sync before ready (default 100). Below 100 risks purging unredeemed tickets
+# Percentage (1-100) of on-chain state to sync before ready (default 100). Below 100 starts faster but risks
+# purging unredeemed tickets. Only use a lower value on Entry nodes (and possibly Exit nodes) for faster startup.
+# Relay nodes must keep 100.
 sync_tolerance: 100
 db:
   data: /var/lib/hoprd
