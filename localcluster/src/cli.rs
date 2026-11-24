@@ -210,6 +210,10 @@ pub struct Args {
     /// a geometry moved far from the default usually has to move `quota_range_*` with it, since
     /// the Exit refuses a Session whose offered quota falls outside that window.
     ///
+    /// `resume_window` (humantime, e.g. `5s`) sets every node's Exit resume window, the time a
+    /// detached funded Session waits for its client to return; `0s` disables it. Set a short one in
+    /// tests that exercise a takeover. It is capped at half the session idle timeout.
+    ///
     /// e.g. `--pix-config profiles/traffic-shapes.yaml`
     #[arg(long, value_name = "PATH")]
     pub pix_config: Option<PathBuf>,
