@@ -1,5 +1,9 @@
 ---
 blokli_url: https://blokli.prod.hoprnet.link
+# Maximum time to wait for the on-chain graph to sync at startup (default 5m)
+connection_sync_timeout: 5m
+# Percentage (1-100) of on-chain state to sync before ready (default 100). Below 100 risks purging unredeemed tickets
+sync_tolerance: 100
 identity:
   file: "/app/hoprd/conf/hopr.id"
 db:

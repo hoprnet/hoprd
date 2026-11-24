@@ -983,6 +983,21 @@ pub struct HoprdConfig {
     /// Optional override for the DNS resolution of the Blokli provider
     #[serde(default)]
     pub blokli_dns_override: Option<(IpAddr, Option<u16>)>,
+    /// Maximum time to wait for the chain connector to sync the on-chain graph at startup.
+    ///
+    /// Nodes with many open channels need a longer window. Defaults to 5 minutes.
+    #[serde(default = "default_connection_sync_timeout", with = "humantime_serde")]
+    #[default(default_connection_sync_timeout())]
+    pub connection_sync_timeout: Duration,
+    /// Percentage (1..=100) of the on-chain accounts and channels that must be synced before the
+    /// chain connector reports ready. Defaults to 100.
+    ///
+    /// Values below 100 can make the node purge the persisted tickets and outgoing ticket indices
+    /// of channels that were not yet seen, losing unredeemed tickets.
+    #[validate(range(min = 1, max = 100))]
+    #[serde(default = "default_sync_tolerance")]
+    #[default(default_sync_tolerance())]
+    pub sync_tolerance: usize,
     /// Configuration of underlying node behavior in the form strategies
     ///
     /// Strategies represent automatically executable behavior performed by
@@ -1024,6 +1039,16 @@ fn just_true() -> bool {
 // Local Blokli endpoint default; suitable for development. Production deployments must override via config or CLI.
 fn default_blokli_url() -> String {
     "http://localhost:8080".to_string()
+}
+
+/// Default percentage of the on-chain state that must be synced at startup.
+pub fn default_sync_tolerance() -> usize {
+    100
+}
+
+/// Default maximum time to wait for the chain connector to sync at startup.
+pub fn default_connection_sync_timeout() -> Duration {
+    Duration::from_mins(5)
 }
 
 #[cfg(test)]
@@ -1406,6 +1431,71 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             network.min_incoming_ticket_price
         );
         Ok(())
+    }
+
+    #[test]
+    fn connection_sync_timeout_should_default_to_five_minutes_when_omitted() -> anyhow::Result<()> {
+        let cfg: HoprdConfig = serde_saphyr::from_str("blokli_url: http://localhost:8080\n")?;
+
+        assert_eq!(cfg.connection_sync_timeout, Duration::from_secs(300));
+        assert_eq!(
+            HoprdConfig::default().connection_sync_timeout,
+            Duration::from_secs(300)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn connection_sync_timeout_should_be_read_from_config_when_present() -> anyhow::Result<()> {
+        let cfg: HoprdConfig = serde_saphyr::from_str(
+            "blokli_url: http://localhost:8080\nconnection_sync_timeout: 10m\n",
+        )?;
+
+        assert_eq!(cfg.connection_sync_timeout, Duration::from_secs(600));
+
+        Ok(())
+    }
+
+    #[test]
+    fn sync_tolerance_should_default_to_100_when_omitted() -> anyhow::Result<()> {
+        let cfg: HoprdConfig = serde_saphyr::from_str("blokli_url: http://localhost:8080\n")?;
+
+        assert_eq!(cfg.sync_tolerance, 100);
+        assert_eq!(HoprdConfig::default().sync_tolerance, 100);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sync_tolerance_should_be_read_from_config_when_present() -> anyhow::Result<()> {
+        let cfg: HoprdConfig =
+            serde_saphyr::from_str("blokli_url: http://localhost:8080\nsync_tolerance: 90\n")?;
+
+        assert_eq!(cfg.sync_tolerance, 90);
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(100, true)]
+    #[case(101, false)]
+    fn sync_tolerance_should_be_validated_within_1_to_100(
+        #[case] value: usize,
+        #[case] valid: bool,
+    ) {
+        let cfg = HoprdConfig {
+            sync_tolerance: value,
+            ..Default::default()
+        };
+
+        let errors = cfg
+            .validate()
+            .err()
+            .map(|e| e.field_errors().contains_key("sync_tolerance"));
+        assert_eq!(errors.unwrap_or(false), !valid);
     }
 
     #[test]
