@@ -170,9 +170,8 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     let chain_connector = Arc::new(chain_connector);
 
     let loopback_window = cfg.hopr.network.loopback_window;
-    let egress_cfg = cfg.hopr.network.egress_config();
-    egress_cfg
-        .validate_against_loopback_window(hopr_lib_cfg.protocol.probe.timeout, loopback_window)?;
+    // Probe pacing is hopr-lib's `ProbeControl`; the CT generator itself runs on its defaults.
+    let egress_cfg = hopr_ct_full_network::EgressConfig::default();
 
     let ticket_store = open_ticket_store(&cfg)?;
     let (ticket_manager, ticket_factory) =

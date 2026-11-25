@@ -157,7 +157,7 @@ fn default_probe_interval() -> Duration {
     Duration::from_secs(60)
 }
 
-// Twice the probe interval: the shortest window the egress check accepts for it.
+// Twice the default probe interval.
 fn default_loopback_window() -> Duration {
     default_probe_interval() * 2
 }
@@ -672,8 +672,7 @@ pub struct UserHoprNetworkConfig {
     pub probe_interval: Duration,
     /// How long the loopback probe outcomes over a channel are counted.
     ///
-    /// `probe_interval` must fit twice in it. A longer window delays noticing that a relay stopped
-    /// returning probes by up to the added span.
+    /// A longer window delays noticing that a relay stopped returning probes by up to the added span.
     #[default(default_loopback_window())]
     #[serde(default = "default_loopback_window", with = "humantime_serde")]
     pub loopback_window: Duration,
@@ -873,6 +872,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .commitment_recommit_interval,
                         ssa_request_resend_interval: supervision_defaults
                             .ssa_request_resend_interval,
+                        max_opening_ssa_request_resends: supervision_defaults
+                            .max_opening_ssa_request_resends,
                         // Four of the seven are hoprd dials: whether the Exit fills at all, the
                         // ceiling on what it originates for itself, whether a close mid-cycle
                         // drains or tears down, and where in `max_recovery_time` fill aims to be
@@ -938,32 +939,12 @@ impl Validate for UserHoprLibConfig {
                 "loopback_window",
                 ValidationError::new("loopback_window").with_message(error.into()),
             );
-        } else if let Err(error) = network.egress_config().validate_against_loopback_window(
-            lib_cfg.protocol.probe.timeout,
-            network.loopback_window,
-        ) {
-            errors.add(
-                "probe_interval",
-                ValidationError::new("probe_interval").with_message(error.to_string().into()),
-            );
         }
 
         if errors.is_empty() {
             Ok(())
         } else {
             Err(errors)
-        }
-    }
-}
-
-impl UserHoprNetworkConfig {
-    /// The CT egress configuration derived from the probe interval.
-    pub fn egress_config(&self) -> hopr_ct_full_network::EgressConfig {
-        hopr_ct_full_network::EgressConfig {
-            interval: self.probe_interval,
-            // Saturate: validation must reject an absurd interval, not panic on it.
-            shuffle_ttl: self.probe_interval.saturating_mul(2),
-            ..Default::default()
         }
     }
 }
@@ -1702,12 +1683,9 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     }
 
     #[rstest]
-    #[case::interval_does_not_fit_twice(Duration::from_secs(60), Duration::from_secs(119))]
-    #[case::default_window_with_long_interval(Duration::from_secs(61), Duration::from_secs(120))]
     #[case::interval_below_probe_timeout(Duration::from_millis(500), Duration::from_secs(120))]
     #[case::window_below_minimum(Duration::from_secs(1), Duration::from_secs(5))]
-    #[case::interval_too_large_to_double(Duration::MAX, Duration::from_secs(120))]
-    fn hopr_config_should_fail_validation_when_probing_does_not_fit_the_loopback_window(
+    fn hopr_config_should_fail_validation_when_probing_is_misconfigured(
         #[case] interval: Duration,
         #[case] window: Duration,
     ) {
@@ -1721,7 +1699,7 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         #[case] interval: Duration,
         #[case] window: Duration,
     ) -> anyhow::Result<()> {
-        // The interval fits twice in the window and is not below the probe timeout, so only the range is wrong.
+        // The interval is not below the probe timeout, so only the range is wrong.
         let errors = hopr_cfg_with_probing(interval, window)
             .validate()
             .expect_err("a window outside the range must be rejected");
@@ -1741,7 +1719,10 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     #[case::exactly_twice(Duration::from_secs(60), Duration::from_secs(120))]
     #[case::default_probing_in_a_longer_window(Duration::from_secs(60), Duration::from_secs(300))]
     #[case::short_probing(Duration::from_secs(10), Duration::from_secs(30))]
-    fn hopr_config_should_validate_when_probing_fits_the_loopback_window(
+    // Loopback probing is pull driven since hopr-ct-full-network 0.12, so the interval no longer has
+    // to fit twice in the window.
+    #[case::interval_not_fitting_twice(Duration::from_secs(60), Duration::from_secs(119))]
+    fn hopr_config_should_validate_when_probing_is_well_formed(
         #[case] interval: Duration,
         #[case] window: Duration,
     ) {
