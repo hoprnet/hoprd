@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, PixGlobalConfig},
+        output_priority::OutputPriorityConfig,
         path::PathPlannerConfig,
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
@@ -153,13 +154,23 @@ fn default_probe_recheck_threshold() -> Duration {
     Duration::from_secs(120)
 }
 
-fn default_probe_interval() -> Duration {
-    Duration::from_secs(60)
+fn default_loopback_window() -> Duration {
+    Duration::from_secs(120)
 }
 
-// Twice the probe interval: the shortest window the egress check accepts for it.
-fn default_loopback_window() -> Duration {
-    default_probe_interval() * 2
+// hoprd's own probing defaults, pinned rather than read from upstream: together they set what a
+// node spends on probe tickets, which an upstream default change must not raise silently. At these
+// values a node sends about 2 generated probes per second.
+fn default_probe_pace() -> Duration {
+    Duration::from_millis(500)
+}
+
+fn default_probe_dial() -> f64 {
+    1.0
+}
+
+fn default_probe_share() -> f64 {
+    0.1
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
@@ -666,14 +677,44 @@ pub struct UserHoprNetworkConfig {
     #[default(default_probe_recheck_threshold())]
     #[serde(default = "default_probe_recheck_threshold", with = "humantime_serde")]
     pub probe_recheck_threshold: Duration,
-    /// The delay between individual probing rounds for neighbor discovery
-    #[default(default_probe_interval())]
-    #[serde(default = "default_probe_interval", with = "humantime_serde")]
-    pub probe_interval: Duration,
+    /// Deprecated and ignored.
+    ///
+    /// Probes are generated on demand since hopr-ct-full-network 0.12 and paced by hopr-lib's
+    /// `ProbeConfig::pace`, so no probing round is left for this interval to time. It is still
+    /// accepted, with any value, so that configs written for earlier versions keep the node
+    /// starting; the node logs a warning when it is set.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "humantime_serde"
+    )]
+    pub probe_interval: Option<Duration>,
+    /// Spacing between generated probes at a `probe_dial` of 1.0.
+    ///
+    /// Probes are generated on demand, so this is the only clock on probing: probes go out
+    /// `probe_pace / probe_dial` apart. `0s` removes the spacing, and probes then go out as fast as
+    /// the parallel-probe limit allows.
+    #[default(default_probe_pace())]
+    #[serde(default = "default_probe_pace", with = "humantime_serde")]
+    pub probe_pace: Duration,
+    /// Multiplier on the probing rate set by `probe_pace`, applied when the node starts.
+    ///
+    /// `2.0` probes twice as often, `0.1` a tenth as often. `0` stops generated probing; manual
+    /// pings still work. Must be a finite number that is not negative.
+    #[default(default_probe_dial())]
+    #[serde(default = "default_probe_dial")]
+    pub probe_dial: f64,
+    /// Share of the outgoing packet slots kept for probes while session data is queued.
+    ///
+    /// A floor, not a cap: when no session data waits, probes go out at the `probe_pace` /
+    /// `probe_dial` rate. `0.1` lets 9 session packets go before each probe; `0` sends probes only
+    /// when no session data waits. Must be finite and in `0.0..=0.5`.
+    #[default(default_probe_share())]
+    #[serde(default = "default_probe_share")]
+    pub probe_share: f64,
     /// How long the loopback probe outcomes over a channel are counted.
     ///
-    /// `probe_interval` must fit twice in it. A longer window delays noticing that a relay stopped
-    /// returning probes by up to the added span.
+    /// A longer window delays noticing that a relay stopped returning probes by up to the added span.
     #[default(default_loopback_window())]
     #[serde(default = "default_loopback_window", with = "humantime_serde")]
     pub loopback_window: Duration,
@@ -809,7 +850,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // Simulated transit-latency shim (testing only); production leaves it disabled.
                 transit_latency: None,
                 probe: ProbeConfig {
-                    interval: value.network.probe_interval,
+                    pace: value.network.probe_pace,
                     recheck_threshold: value.network.probe_recheck_threshold,
                     ..Default::default()
                 },
@@ -873,6 +914,8 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             .commitment_recommit_interval,
                         ssa_request_resend_interval: supervision_defaults
                             .ssa_request_resend_interval,
+                        max_opening_ssa_request_resends: supervision_defaults
+                            .max_opening_ssa_request_resends,
                         // Four of the seven are hoprd dials: whether the Exit fills at all, the
                         // ceiling on what it originates for itself, whether a close mid-cycle
                         // drains or tears down, and where in `max_recovery_time` fill aims to be
@@ -914,7 +957,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // swept up by `..Default::default()` for the same reason as the fields above.
                 latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
                 relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
-                output_priority: HoprProtocolConfig::default().output_priority,
+                output_priority: OutputPriorityConfig {
+                    probe_share: value.network.probe_share,
+                    ..HoprProtocolConfig::default().output_priority
+                },
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },
@@ -938,13 +984,14 @@ impl Validate for UserHoprLibConfig {
                 "loopback_window",
                 ValidationError::new("loopback_window").with_message(error.into()),
             );
-        } else if let Err(error) = network.egress_config().validate_against_loopback_window(
-            lib_cfg.protocol.probe.timeout,
-            network.loopback_window,
-        ) {
+        }
+        if !(network.probe_dial.is_finite() && network.probe_dial >= 0.0) {
             errors.add(
-                "probe_interval",
-                ValidationError::new("probe_interval").with_message(error.to_string().into()),
+                "probe_dial",
+                ValidationError::new("probe_dial").with_message(
+                    "probe_dial must be a finite number, 0 or above (0 stops generated probing)"
+                        .into(),
+                ),
             );
         }
 
@@ -952,18 +999,6 @@ impl Validate for UserHoprLibConfig {
             Ok(())
         } else {
             Err(errors)
-        }
-    }
-}
-
-impl UserHoprNetworkConfig {
-    /// The CT egress configuration derived from the probe interval.
-    pub fn egress_config(&self) -> hopr_ct_full_network::EgressConfig {
-        hopr_ct_full_network::EgressConfig {
-            interval: self.probe_interval,
-            // Saturate: validation must reject an absurd interval, not panic on it.
-            shuffle_ttl: self.probe_interval.saturating_mul(2),
-            ..Default::default()
         }
     }
 }
@@ -1687,65 +1722,124 @@ min_incoming_ticket_price: "0.06 wxHOPR"
         Ok(())
     }
 
-    fn hopr_cfg_with_probing(interval: Duration, window: Duration) -> UserHoprLibConfig {
+    fn hopr_cfg_with_loopback_window(window: Duration) -> UserHoprLibConfig {
         let mut cfg = UserHoprLibConfig::default();
-        cfg.network.probe_interval = interval;
         cfg.network.loopback_window = window;
         cfg
     }
 
     #[test]
-    fn default_hopr_config_should_validate_and_keep_the_one_minute_probe_interval() {
+    fn default_hopr_config_should_validate_and_leave_the_probe_interval_unset() {
         let cfg = UserHoprLibConfig::default();
-        assert_eq!(cfg.network.probe_interval, Duration::from_secs(60));
+        assert_eq!(cfg.network.probe_interval, None);
         assert!(cfg.validate().is_ok());
     }
 
+    /// A node upgraded with a config written for an earlier version must keep starting: the
+    /// deprecated `probe_interval` is accepted with any value, including ones earlier versions
+    /// rejected, and does not reach the probing configuration.
     #[rstest]
-    #[case::interval_does_not_fit_twice(Duration::from_secs(60), Duration::from_secs(119))]
-    #[case::default_window_with_long_interval(Duration::from_secs(61), Duration::from_secs(120))]
-    #[case::interval_below_probe_timeout(Duration::from_millis(500), Duration::from_secs(120))]
-    #[case::window_below_minimum(Duration::from_secs(1), Duration::from_secs(5))]
-    #[case::interval_too_large_to_double(Duration::MAX, Duration::from_secs(120))]
-    fn hopr_config_should_fail_validation_when_probing_does_not_fit_the_loopback_window(
-        #[case] interval: Duration,
-        #[case] window: Duration,
-    ) {
-        assert!(hopr_cfg_with_probing(interval, window).validate().is_err());
+    #[case::earlier_default("60s")]
+    #[case::localcluster("3s")]
+    #[case::below_the_probe_timeout("500ms")]
+    #[case::not_fitting_twice_in_the_window("61s")]
+    fn a_config_with_the_deprecated_probe_interval_should_still_load_and_validate(
+        #[case] interval: &str,
+    ) -> anyhow::Result<()> {
+        let network: UserHoprNetworkConfig = serde_saphyr::from_str(&format!(
+            "probe_interval: \"{interval}\"\nprobe_recheck_threshold: \"120s\"\n"
+        ))?;
+        assert!(network.probe_interval.is_some());
+
+        let cfg = UserHoprLibConfig {
+            network,
+            ..Default::default()
+        };
+        cfg.validate()
+            .context("a legacy probe_interval must not fail validation")?;
+        assert_eq!(
+            HoprLibConfig::from(cfg).protocol.probe.interval,
+            ProbeConfig::default().interval
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn probing_settings_should_reach_the_lib_config_with_pinned_defaults() -> anyhow::Result<()> {
+        // Pinned in hoprd, not read from upstream: these three set the node's probe ticket spend.
+        let defaults = HoprLibConfig::from(UserHoprLibConfig::default());
+        assert_eq!(defaults.protocol.probe.pace, Duration::from_millis(500));
+        assert_eq!(defaults.protocol.output_priority.probe_share, 0.1);
+        assert_eq!(UserHoprNetworkConfig::default().probe_dial, 1.0);
+
+        let network: UserHoprNetworkConfig =
+            serde_saphyr::from_str("probe_pace: \"250ms\"\nprobe_dial: 0.25\nprobe_share: 0.4\n")?;
+        assert_eq!(network.probe_dial, 0.25);
+        let lib = HoprLibConfig::from(UserHoprLibConfig {
+            network,
+            ..Default::default()
+        });
+        assert_eq!(lib.protocol.probe.pace, Duration::from_millis(250));
+        assert_eq!(lib.protocol.output_priority.probe_share, 0.4);
+        Ok(())
     }
 
     #[rstest]
-    #[case::window_below_minimum(Duration::from_secs(3), Duration::from_secs(11))]
-    #[case::window_above_maximum(Duration::from_secs(60), Duration::from_secs(3601))]
-    fn hopr_config_should_blame_the_loopback_window_when_only_its_range_is_violated(
-        #[case] interval: Duration,
+    #[case::zero(0.0, true)]
+    #[case::half(0.5, true)]
+    #[case::above_half(0.51, false)]
+    #[case::negative(-0.1, false)]
+    #[case::nan(f64::NAN, false)]
+    fn probe_share_should_accept_only_values_up_to_half(#[case] share: f64, #[case] valid: bool) {
+        let mut cfg = UserHoprLibConfig::default();
+        cfg.network.probe_share = share;
+        assert_eq!(cfg.validate().is_ok(), valid, "probe_share {share}");
+    }
+
+    #[rstest]
+    #[case::off(0.0, true)]
+    #[case::low(0.1, true)]
+    #[case::ultra(3.0, true)]
+    #[case::negative(-1.0, false)]
+    #[case::nan(f64::NAN, false)]
+    #[case::infinite(f64::INFINITY, false)]
+    fn probe_dial_should_accept_only_finite_values_from_zero(
+        #[case] dial: f64,
+        #[case] valid: bool,
+    ) {
+        let mut cfg = UserHoprLibConfig::default();
+        cfg.network.probe_dial = dial;
+        match cfg.validate() {
+            Ok(()) => assert!(valid, "{dial} must be rejected"),
+            Err(errors) => {
+                assert!(!valid, "{dial} must be accepted, got {errors}");
+                assert!(errors.field_errors().contains_key("probe_dial"));
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::window_below_minimum(Duration::from_secs(5))]
+    #[case::window_above_maximum(Duration::from_secs(3601))]
+    fn hopr_config_should_reject_a_loopback_window_outside_the_range(
         #[case] window: Duration,
     ) -> anyhow::Result<()> {
-        // The interval fits twice in the window and is not below the probe timeout, so only the range is wrong.
-        let errors = hopr_cfg_with_probing(interval, window)
+        let errors = hopr_cfg_with_loopback_window(window)
             .validate()
             .expect_err("a window outside the range must be rejected");
-
         anyhow::ensure!(
             errors.field_errors().contains_key("loopback_window"),
             "expected a loopback_window error, got {errors}"
-        );
-        anyhow::ensure!(
-            !errors.field_errors().contains_key("probe_interval"),
-            "the interval must not be blamed, got {errors}"
         );
         Ok(())
     }
 
     #[rstest]
-    #[case::exactly_twice(Duration::from_secs(60), Duration::from_secs(120))]
-    #[case::default_probing_in_a_longer_window(Duration::from_secs(60), Duration::from_secs(300))]
-    #[case::short_probing(Duration::from_secs(10), Duration::from_secs(30))]
-    fn hopr_config_should_validate_when_probing_fits_the_loopback_window(
-        #[case] interval: Duration,
-        #[case] window: Duration,
-    ) {
-        assert!(hopr_cfg_with_probing(interval, window).validate().is_ok());
+    #[case::default_window(Duration::from_secs(120))]
+    #[case::longer_window(Duration::from_secs(300))]
+    #[case::short_window(Duration::from_secs(30))]
+    fn hopr_config_should_validate_a_loopback_window_in_the_range(#[case] window: Duration) {
+        assert!(hopr_cfg_with_loopback_window(window).validate().is_ok());
     }
 
     #[test]

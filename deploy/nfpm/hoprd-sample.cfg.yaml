@@ -37,8 +37,12 @@ strategy:
           max_concurrent_actions: 5
 hopr:
   network:
-    probe_interval: "60s"
     probe_recheck_threshold: "120s"
+    # Probes go out probe_pace / probe_dial apart. probe_dial: 0 stops generated probing.
+    # probe_pace: "500ms"
+    # probe_dial: 1.0
+    # Share of outgoing slots kept for probes while session data is queued (0.0..=0.5).
+    # probe_share: 0.1
     # CT nodes may retain remote relayers by reducing latency bias and retaining more candidates.
     # path_planner:
     #   latency_halflife: "10s"
