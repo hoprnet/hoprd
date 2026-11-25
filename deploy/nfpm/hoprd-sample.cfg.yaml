@@ -38,6 +38,9 @@ strategy:
 hopr:
   network:
     probe_recheck_threshold: "120s"
+    # Probes go out probe_pace / probe_dial apart. probe_dial: 0 stops generated probing.
+    # probe_pace: "50ms"
+    # probe_dial: 1.0
     # CT nodes may retain remote relayers by reducing latency bias and retaining more candidates.
     # path_planner:
     #   latency_halflife: "10s"

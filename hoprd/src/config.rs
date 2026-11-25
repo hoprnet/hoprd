@@ -157,6 +157,14 @@ fn default_loopback_window() -> Duration {
     Duration::from_secs(120)
 }
 
+fn default_probe_pace() -> Duration {
+    ProbeConfig::default().pace
+}
+
+fn default_probe_dial() -> f64 {
+    hopr_lib::exports::transport::Dial::default().multiplier()
+}
+
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
     HoprLibConfig::default()
         .protocol
@@ -673,6 +681,21 @@ pub struct UserHoprNetworkConfig {
         with = "humantime_serde"
     )]
     pub probe_interval: Option<Duration>,
+    /// Spacing between generated probes at a `probe_dial` of 1.0.
+    ///
+    /// Probes are generated on demand, so this is the only clock on probing: probes go out
+    /// `probe_pace / probe_dial` apart. `0s` removes the spacing, and probes then go out as fast as
+    /// the parallel-probe limit allows.
+    #[default(default_probe_pace())]
+    #[serde(default = "default_probe_pace", with = "humantime_serde")]
+    pub probe_pace: Duration,
+    /// Multiplier on the probing rate set by `probe_pace`, applied when the node starts.
+    ///
+    /// `2.0` probes twice as often, `0.1` a tenth as often. `0` stops generated probing; manual
+    /// pings still work. Must be a finite number that is not negative.
+    #[default(default_probe_dial())]
+    #[serde(default = "default_probe_dial")]
+    pub probe_dial: f64,
     /// How long the loopback probe outcomes over a channel are counted.
     ///
     /// A longer window delays noticing that a relay stopped returning probes by up to the added span.
@@ -811,6 +834,7 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // Simulated transit-latency shim (testing only); production leaves it disabled.
                 transit_latency: None,
                 probe: ProbeConfig {
+                    pace: value.network.probe_pace,
                     recheck_threshold: value.network.probe_recheck_threshold,
                     ..Default::default()
                 },
@@ -940,6 +964,15 @@ impl Validate for UserHoprLibConfig {
             errors.add(
                 "loopback_window",
                 ValidationError::new("loopback_window").with_message(error.into()),
+            );
+        }
+        if !(network.probe_dial.is_finite() && network.probe_dial >= 0.0) {
+            errors.add(
+                "probe_dial",
+                ValidationError::new("probe_dial").with_message(
+                    "probe_dial must be a finite number, 0 or above (0 stops generated probing)"
+                        .into(),
+                ),
             );
         }
 
@@ -1710,6 +1743,44 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             ProbeConfig::default().interval
         );
         Ok(())
+    }
+
+    #[test]
+    fn probe_pace_should_reach_the_probe_config_and_default_to_upstream() -> anyhow::Result<()> {
+        assert_eq!(
+            HoprLibConfig::from(UserHoprLibConfig::default()).protocol.probe.pace,
+            ProbeConfig::default().pace
+        );
+        assert_eq!(UserHoprNetworkConfig::default().probe_dial, 1.0);
+
+        let network: UserHoprNetworkConfig =
+            serde_saphyr::from_str("probe_pace: \"250ms\"\nprobe_dial: 0.25\n")?;
+        assert_eq!(network.probe_dial, 0.25);
+        let lib = HoprLibConfig::from(UserHoprLibConfig {
+            network,
+            ..Default::default()
+        });
+        assert_eq!(lib.protocol.probe.pace, Duration::from_millis(250));
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::off(0.0, true)]
+    #[case::low(0.1, true)]
+    #[case::ultra(3.0, true)]
+    #[case::negative(-1.0, false)]
+    #[case::nan(f64::NAN, false)]
+    #[case::infinite(f64::INFINITY, false)]
+    fn probe_dial_should_accept_only_finite_values_from_zero(#[case] dial: f64, #[case] valid: bool) {
+        let mut cfg = UserHoprLibConfig::default();
+        cfg.network.probe_dial = dial;
+        match cfg.validate() {
+            Ok(()) => assert!(valid, "{dial} must be rejected"),
+            Err(errors) => {
+                assert!(!valid, "{dial} must be accepted, got {errors}");
+                assert!(errors.field_errors().contains_key("probe_dial"));
+            }
+        }
     }
 
     #[rstest]

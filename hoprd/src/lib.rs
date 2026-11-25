@@ -263,6 +263,17 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
 
+    // The dial is read on every probe pull, so it applies from the next generated probe. `0` maps to
+    // `None`, which stops generated probing; validation has already rejected negative and non-finite
+    // values.
+    let probe_dial = hopr_lib::exports::transport::Dial::new(cfg.hopr.network.probe_dial);
+    node.probe_control().set_dial(probe_dial);
+    tracing::info!(
+        probe_pace = ?cfg.hopr.network.probe_pace,
+        probe_dial = ?probe_dial.map(|dial| dial.multiplier()),
+        "probing rate configured"
+    );
+
     // The task is stopped through its channel, not through the abortable list: an in-flight
     // `spawn_blocking` save cannot be aborted, so the shutdown path awaits the handle instead.
     let (shutdown_save_tx, shutdown_save_rx) = tokio::sync::oneshot::channel();
