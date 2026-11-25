@@ -1748,7 +1748,10 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     #[test]
     fn probe_pace_should_reach_the_probe_config_and_default_to_upstream() -> anyhow::Result<()> {
         assert_eq!(
-            HoprLibConfig::from(UserHoprLibConfig::default()).protocol.probe.pace,
+            HoprLibConfig::from(UserHoprLibConfig::default())
+                .protocol
+                .probe
+                .pace,
             ProbeConfig::default().pace
         );
         assert_eq!(UserHoprNetworkConfig::default().probe_dial, 1.0);
@@ -1771,7 +1774,10 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     #[case::negative(-1.0, false)]
     #[case::nan(f64::NAN, false)]
     #[case::infinite(f64::INFINITY, false)]
-    fn probe_dial_should_accept_only_finite_values_from_zero(#[case] dial: f64, #[case] valid: bool) {
+    fn probe_dial_should_accept_only_finite_values_from_zero(
+        #[case] dial: f64,
+        #[case] valid: bool,
+    ) {
         let mut cfg = UserHoprLibConfig::default();
         cfg.network.probe_dial = dial;
         match cfg.validate() {
