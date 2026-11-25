@@ -759,9 +759,12 @@
 
           # Build with `--cfg tokio_unstable` so the hoprnet crates (incl. the
           # utilities/transport stack) get Tokio's improved cooperative yielding.
-          # nix-lib's shells set CARGO_BUILD_RUSTFLAGS (linker flag), which Cargo
-          # lets *replace* .cargo/config.toml — so append the cfg here to keep it
-          # in effect. `--check-cfg` keeps the workspace clean under `-D warnings`.
+          # The flags already come from `.cargo/config.toml`: Cargo merges nix-lib's
+          # CARGO_BUILD_RUSTFLAGS with its `[build] rustflags` rather than replacing
+          # them, so this hook only repeats them, which is harmless. On
+          # aarch64-apple-darwin the config's target table overrides
+          # `build.rustflags`, so this variable is ignored there entirely.
+          # `--check-cfg` keeps the workspace clean under `-D warnings`.
           tokioUnstableHook = ''
             export CARGO_BUILD_RUSTFLAGS="''${CARGO_BUILD_RUSTFLAGS:-} --cfg tokio_unstable --check-cfg cfg(tokio_unstable)"
           '';
