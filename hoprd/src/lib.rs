@@ -116,6 +116,13 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
+    if let Some(probe_interval) = cfg.hopr.network.probe_interval {
+        tracing::warn!(
+            ?probe_interval,
+            "hopr.network.probe_interval is deprecated and ignored: probes are paced by hopr-lib; remove it from the config"
+        );
+    }
+
     if cfg.sync_tolerance < 100 {
         tracing::warn!(
             sync_tolerance = cfg.sync_tolerance,

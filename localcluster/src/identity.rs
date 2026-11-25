@@ -785,7 +785,6 @@ fn node_config(
                 announce_local_addresses: true,
                 prefer_local_addresses: true,
                 probe_recheck_threshold: std::time::Duration::from_secs(3),
-                probe_interval: std::time::Duration::from_secs(3),
                 pix: pix_global.clone().unwrap_or_default(),
                 incoming_session_pix: incoming_pix_config(config.pix.as_ref(), id),
                 ..Default::default()
