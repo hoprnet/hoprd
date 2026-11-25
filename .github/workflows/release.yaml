@@ -94,6 +94,9 @@ jobs:
         uses: hoprnet/hopr-workflows/actions/release-version@fbff794d74b43d44576a9074c3456b7dea84179b # 5.4.2
         with:
           source_branch: ${{ github.ref_name }}
+          # Tag the commit the binaries and images were built from, not the branch head,
+          # which may have moved on during the build.
+          target_commitish: ${{ github.sha }}
           file: ./hoprd/Cargo.toml
           release_type: ${{ inputs.release_type }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
