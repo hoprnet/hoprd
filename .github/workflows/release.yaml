@@ -91,7 +91,7 @@ jobs:
     steps:
       - name: Release version
         id: release_version
-        uses: hoprnet/hopr-workflows/actions/release-version@fbff794d74b43d44576a9074c3456b7dea84179b # 5.4.2
+        uses: hoprnet/hopr-workflows/actions/release-version@7cda0a770f32f8a304ff2d07b2f7aab858749678 # release-version-v5.5.3
         with:
           source_branch: ${{ github.ref_name }}
           # Tag the commit the binaries and images were built from, not the branch head,
