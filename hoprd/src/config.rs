@@ -650,6 +650,7 @@ fn default_pix_max_deposit_wait() -> Duration {
 fn default_pix_resume_window() -> Duration {
     IncomingSessionPixConfig::default().resume_window
 }
+#[cfg(feature = "exit")]
 fn default_pix_max_recovery_time() -> Duration {
     SupervisorConfig::default().max_recovery_time
 }
@@ -665,6 +666,7 @@ fn default_pix_max_served_without_progress() -> u64 {
 fn default_pix_max_predeposit_packets() -> u64 {
     SupervisorConfig::default().max_predeposit_packets
 }
+#[cfg(feature = "exit")]
 fn default_pix_allow_dynamic_ssa_batches() -> bool {
     SupervisorConfig::default().allow_dynamic_ssa_batches
 }
@@ -982,9 +984,6 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                             min_surb_reserve: supervision_defaults.fill.min_surb_reserve,
                         },
                     },
-                    // How long a detached Exit PIX Session waits for its Entry to return; not exposed
-                    // by hoprd, so upstream's default applies (hoprnet#8721).
-                    resume_window: IncomingSessionPixConfig::default().resume_window,
                 },
                 path_planner: value.network.path_planner,
                 counter_flush_interval: HoprProtocolConfig::default().counter_flush_interval,
@@ -1323,6 +1322,7 @@ mod tests {
 
     /// The PIX resume window defaults to upstream's, parses as humantime, and is passed through
     /// unchanged, however large: upstream caps it against the session idle timeout at runtime.
+    #[cfg(feature = "exit")]
     #[test]
     fn the_pix_resume_window_is_exposed_and_passed_through() -> anyhow::Result<()> {
         let default = UserIncomingSessionPixConfig::default();
@@ -1353,6 +1353,7 @@ mod tests {
 
     /// The free predeposit budget defaults to upstream's, and zero — strict prepay — parses rather
     /// than being refused, because upstream supports it on purpose.
+    #[cfg(feature = "exit")]
     #[test]
     fn the_pix_predeposit_budget_defaults_to_upstream_and_accepts_strict_prepay()
     -> anyhow::Result<()> {

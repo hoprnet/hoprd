@@ -183,8 +183,8 @@ codegen-units = 16
 # Unpublished: remove once hopr-api 6.2.0 and hopr-ticket-manager 0.12.0 are on crates.io
 # (hoprnet/hopr-api#181, hoprnet/hopr-impls#131).
 [patch.crates-io]
-hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "3794cecf182503b24f9de18188cf63856aadb573" }
-hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", rev = "a8a664bfcf4c7ec5e81aae2a5f1b943bd1bbf8ec" }
+hopr-api = { git = "https://github.com/hoprnet/hopr-api", rev = "9d1902d306bfe68dc73bded165a1def8e87476ea" }
+hopr-ticket-manager = { git = "https://github.com/hoprnet/hopr-impls", rev = "9031aae2582fa6c0feef170eaf36bb61e4914dae" }
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
