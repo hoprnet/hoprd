@@ -9,6 +9,7 @@ use hopr_lib::{
     exports::transport::{
         HoprProtocolConfig, TagAllocatorConfig,
         config::{HoprCodecConfig, PixGlobalConfig},
+        output_priority::OutputPriorityConfig,
         path::PathPlannerConfig,
         protocol::PacketPipelineConfig,
         session::{IncomingSessionPixConfig, PixFillConfig, SupervisorConfig},
@@ -157,12 +158,19 @@ fn default_loopback_window() -> Duration {
     Duration::from_secs(120)
 }
 
+// hoprd's own probing defaults, pinned rather than read from upstream: together they set what a
+// node spends on probe tickets, which an upstream default change must not raise silently. At these
+// values a node sends about 2 generated probes per second.
 fn default_probe_pace() -> Duration {
-    ProbeConfig::default().pace
+    Duration::from_millis(500)
 }
 
 fn default_probe_dial() -> f64 {
-    hopr_lib::exports::transport::Dial::default().multiplier()
+    1.0
+}
+
+fn default_probe_share() -> f64 {
+    0.1
 }
 
 fn default_outgoing_ticket_winning_prob() -> Option<f64> {
@@ -696,6 +704,14 @@ pub struct UserHoprNetworkConfig {
     #[default(default_probe_dial())]
     #[serde(default = "default_probe_dial")]
     pub probe_dial: f64,
+    /// Share of the outgoing packet slots kept for probes while session data is queued.
+    ///
+    /// A floor, not a cap: when no session data waits, probes go out at the `probe_pace` /
+    /// `probe_dial` rate. `0.1` lets 9 session packets go before each probe; `0` sends probes only
+    /// when no session data waits. Must be finite and in `0.0..=0.5`.
+    #[default(default_probe_share())]
+    #[serde(default = "default_probe_share")]
+    pub probe_share: f64,
     /// How long the loopback probe outcomes over a channel are counted.
     ///
     /// A longer window delays noticing that a relay stopped returning probes by up to the added span.
@@ -941,7 +957,10 @@ impl From<UserHoprLibConfig> for HoprLibConfig {
                 // swept up by `..Default::default()` for the same reason as the fields above.
                 latency_race_memory: HoprProtocolConfig::default().latency_race_memory,
                 relayer_health_weight: HoprProtocolConfig::default().relayer_health_weight,
-                output_priority: HoprProtocolConfig::default().output_priority,
+                output_priority: OutputPriorityConfig {
+                    probe_share: value.network.probe_share,
+                    ..HoprProtocolConfig::default().output_priority
+                },
                 mixer: value.network.mixer,
                 stream: Default::default(),
             },
@@ -1746,25 +1765,35 @@ min_incoming_ticket_price: "0.06 wxHOPR"
     }
 
     #[test]
-    fn probe_pace_should_reach_the_probe_config_and_default_to_upstream() -> anyhow::Result<()> {
-        assert_eq!(
-            HoprLibConfig::from(UserHoprLibConfig::default())
-                .protocol
-                .probe
-                .pace,
-            ProbeConfig::default().pace
-        );
+    fn probing_settings_should_reach_the_lib_config_with_pinned_defaults() -> anyhow::Result<()> {
+        // Pinned in hoprd, not read from upstream: these three set the node's probe ticket spend.
+        let defaults = HoprLibConfig::from(UserHoprLibConfig::default());
+        assert_eq!(defaults.protocol.probe.pace, Duration::from_millis(500));
+        assert_eq!(defaults.protocol.output_priority.probe_share, 0.1);
         assert_eq!(UserHoprNetworkConfig::default().probe_dial, 1.0);
 
         let network: UserHoprNetworkConfig =
-            serde_saphyr::from_str("probe_pace: \"250ms\"\nprobe_dial: 0.25\n")?;
+            serde_saphyr::from_str("probe_pace: \"250ms\"\nprobe_dial: 0.25\nprobe_share: 0.4\n")?;
         assert_eq!(network.probe_dial, 0.25);
         let lib = HoprLibConfig::from(UserHoprLibConfig {
             network,
             ..Default::default()
         });
         assert_eq!(lib.protocol.probe.pace, Duration::from_millis(250));
+        assert_eq!(lib.protocol.output_priority.probe_share, 0.4);
         Ok(())
+    }
+
+    #[rstest]
+    #[case::zero(0.0, true)]
+    #[case::half(0.5, true)]
+    #[case::above_half(0.51, false)]
+    #[case::negative(-0.1, false)]
+    #[case::nan(f64::NAN, false)]
+    fn probe_share_should_accept_only_values_up_to_half(#[case] share: f64, #[case] valid: bool) {
+        let mut cfg = UserHoprLibConfig::default();
+        cfg.network.probe_share = share;
+        assert_eq!(cfg.validate().is_ok(), valid, "probe_share {share}");
     }
 
     #[rstest]

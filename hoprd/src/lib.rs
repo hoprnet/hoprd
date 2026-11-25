@@ -271,6 +271,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     tracing::info!(
         probe_pace = ?cfg.hopr.network.probe_pace,
         probe_dial = ?probe_dial.map(|dial| dial.multiplier()),
+        probe_share = cfg.hopr.network.probe_share,
         "probing rate configured"
     );
 

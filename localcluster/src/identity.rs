@@ -785,6 +785,9 @@ fn node_config(
                 announce_local_addresses: true,
                 prefer_local_addresses: true,
                 probe_recheck_threshold: std::time::Duration::from_secs(3),
+                // The pre-2-probes/s pace: hoprd's default is set for ticket cost, which a
+                // local cluster does not pay, and its timings assume the faster loopback fill.
+                probe_pace: std::time::Duration::from_millis(50),
                 pix: pix_global.clone().unwrap_or_default(),
                 incoming_session_pix: incoming_pix_config(config.pix.as_ref(), id),
                 ..Default::default()
