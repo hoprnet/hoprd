@@ -258,8 +258,11 @@ mod tests {
             hoprd_cfg: serde_json::Value::Null,
             auth: Arc::new(crate::config::Auth::Token("test".into())),
             hopr: Arc::new(node),
+            #[cfg(feature = "session")]
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
+            #[cfg(feature = "session")]
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            #[cfg(feature = "session")]
             session_flow_control: Default::default(),
         });
 
@@ -331,8 +334,11 @@ mod tests {
             hoprd_cfg: serde_json::Value::Null,
             auth: Arc::new(crate::config::Auth::Token("test".into())),
             hopr: Arc::new(node),
+            #[cfg(feature = "session")]
             open_listeners: Arc::new(hopr_utils_session::ListenerJoinHandles::default()),
+            #[cfg(feature = "session")]
             default_listen_host: "127.0.0.1:0".parse().unwrap(),
+            #[cfg(feature = "session")]
             session_flow_control: Default::default(),
         });
 

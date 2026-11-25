@@ -1,6 +1,6 @@
 [package]
 name = "hoprd-api"
-version = "4.14.0"
+version = "4.15.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,10 @@ license.workspace = true
 crate-type = ["rlib"]
 
 [features]
-default = ["telemetry", "runtime-tokio"]
+default = ["telemetry", "runtime-tokio", "session"]
+# Session endpoints (create, list, adjust and close client Sessions). Needs `hopr-lib/session-entry`,
+# so a relay-only node, which links no Session code, builds without it.
+session = ["hopr-lib/explicit-path", "dep:hopr-utils-session"]
 telemetry = ["hopr-lib/telemetry", "dep:lazy_static", "dep:regex"]
 runtime-tokio = ["hopr-lib/runtime-tokio"]
 
@@ -40,14 +43,11 @@ utoipa-scalar = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 validator = { workspace = true }
 
-hopr-lib = { workspace = true, features = [
-  "explicit-path",
-  "serde",
-  "session-client",
-  "utils_futures",
-] }
+hopr-lib = { workspace = true, features = ["serde", "utils_futures"] }
 
-hopr-utils-session = { workspace = true, features = ["explicit-path"] }
+hopr-utils-session = { workspace = true, optional = true, features = [
+  "explicit-path",
+] }
 
 [dev-dependencies]
 anyhow = { workspace = true }
@@ -61,5 +61,3 @@ parking_lot = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower = { workspace = true, features = ["util"] }
-
-hopr-lib = { workspace = true, features = ["session-server"] }

@@ -18,10 +18,11 @@ api:
     address:
       IPv4: 0.0.0.0
     port: 3001
-  # Flow-control (AIMD send-window) profile for sessions this node initiates as a
-  # client via the session API: off | clean | robust. Only affects node-originated
-  # sessions — relays and exit nodes never run flow control. Default: robust.
-  session_flow_control: robust
+    # Flow-control (AIMD send-window) profile for sessions this node initiates as a
+    # client via the session API: off | clean | robust. Only affects node-originated
+    # sessions — relays and exit nodes never run flow control. Default: robust.
+    # Only exists in the exit build: the relay-only build has no Session API and rejects it.
+    # session_flow_control: robust
 strategy:
   allow_recursive: false
   strategies:

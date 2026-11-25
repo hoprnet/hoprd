@@ -7,6 +7,9 @@
 //!
 //! ## Usage
 //! See `hoprd --help` for the full list of options.
+#[cfg(not(feature = "relay"))]
+compile_error!("hoprd is a relay: enable the `relay` feature, or `exit` for the relaying exit");
+
 pub mod cli;
 pub mod config;
 pub mod strategy;
@@ -37,7 +40,7 @@ use hopr_lib::builder::HoprBuilder;
 use hopr_lib::config::HoprLibConfig;
 use hopr_lib::{AbortableList, HoprKeys, api::types::crypto::keypairs::Keypair};
 use hopr_network_graph::{ChannelGraph, ChannelGraphConfig, SharedChannelGraph, StarvationParams};
-#[cfg(feature = "session-server")]
+#[cfg(feature = "exit")]
 use hopr_session_server_forwarder::HoprServerIpForwardingReactor;
 use hopr_ticket_manager::{
     HoprTicketFactory, HoprTicketManager, RedbStore, RedbTicketQueue, ticket_manager_from_chain,
@@ -66,6 +69,7 @@ const TICKET_FACTORY_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum::Display)]
 enum HoprdProcess {
+    #[cfg(feature = "exit")]
     #[strum(to_string = "session listener sockets")]
     ListenerSocket,
     #[strum(to_string = "hopr strategies process")]
@@ -205,7 +209,7 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     let graph_for_ct = graph.clone();
     let safe_address = hopr_lib_cfg.safe_module.safe_address;
     let module_address = hopr_lib_cfg.safe_module.module_address;
-    #[cfg(feature = "session-server")]
+    #[cfg(feature = "exit")]
     let server = HoprServerIpForwardingReactor::new(
         hopr_keys.packet_key.clone(),
         cfg.session_ip_forwarding.clone(),
@@ -253,15 +257,16 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
         Keypair::public(&hopr_keys.chain_key).to_address().to_hex(),
     ));
 
-    #[cfg(feature = "session-server")]
+    // The relaying exit also terminates Sessions; the relay-only build has no Session stack.
+    #[cfg(feature = "exit")]
     let node = Arc::new(
         builder
-            .with_session_server(server)
-            .build_full(ticket_manager, ticket_factory)
+            .with_session_exit(server)
+            .build_relay_exit(ticket_manager, ticket_factory)
             .await?,
     );
-    #[cfg(not(feature = "session-server"))]
-    let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
+    #[cfg(not(feature = "exit"))]
+    let node = Arc::new(builder.build_relay(ticket_manager, ticket_factory).await?);
 
     // The dial is read on every probe pull, so it applies from the next generated probe. `0` maps to
     // `None`, which stops generated probing; validation has already rejected negative and non-finite
@@ -434,15 +439,18 @@ async fn init_rest_api(
 
     tracing::info!(listen_address, "Running a REST API");
 
+    #[cfg(feature = "exit")]
     let session_listener_sockets = Arc::new(hopr_utils_session::ListenerJoinHandles::default());
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
+    #[cfg(feature = "exit")]
     processes.insert(
         HoprdProcess::ListenerSocket,
         session_listener_sockets.clone(),
     );
 
+    #[cfg(feature = "exit")]
     let cfg_clone = cfg.clone();
     let (proc, abort_handle) = abortable(
         async move {
@@ -452,7 +460,9 @@ async fn init_rest_api(
                 hoprd_cfg: node_cfg_value,
                 cfg: api_cfg,
                 hopr,
+                #[cfg(feature = "exit")]
                 session_listener_sockets,
+                #[cfg(feature = "exit")]
                 default_session_listen_host: cfg_clone
                     .session_ip_forwarding
                     .default_entry_listen_host,
@@ -585,7 +595,7 @@ fn update_hopr_lib_config_from_env_vars(cfg: &mut HoprLibConfig) -> anyhow::Resu
                 .ok()
         });
 
-    #[cfg(feature = "session-server")]
+    #[cfg(feature = "exit")]
     if let Some(cap) = std::env::var("HOPR_INTERNAL_SESSION_INCOMING_CAPACITY")
         .ok()
         .and_then(|s| {
@@ -647,6 +657,7 @@ mod tests {
 
     #[test]
     fn hoprd_process_display_strings() -> anyhow::Result<()> {
+        #[cfg(feature = "exit")]
         assert_eq!(
             HoprdProcess::ListenerSocket.to_string(),
             "session listener sockets"

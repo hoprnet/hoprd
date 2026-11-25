@@ -177,6 +177,13 @@
               pkgs.stdenv.cc.cc.lib
             ];
           };
+          # The relay-only artifact: `relay` without `exit` links no Session code at all (no Session
+          # transport, REST endpoints, server forwarder or PIX). The default feature set of the
+          # package above is the relaying exit. `scripts/check-entity-fencing.sh` proves the split.
+          relayFeatures = "relay,runtime-tokio,telemetry,transport-quic,allocator-jemalloc,state-dump";
+          relayBuildArgs = projectBuildArgs // {
+            cargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F ${relayFeatures}";
+          };
           localclusterBuildArgs = {
             inherit src depsSrc rev;
             cargoExtraArgs = "-p hoprd-localcluster";
@@ -283,7 +290,7 @@
               + (old.preBuild or "");
             });
 
-          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,session-server,state-dump";
+          qualityCargoExtraArgs = "-p hoprd -p hoprd-api --no-default-features -F runtime-tokio,telemetry,transport-quic,exit,state-dump";
 
           clippyDerivation = rust-builder-local.callPackage nixLib.mkRustPackage (
             projectBuildArgs
@@ -390,6 +397,9 @@
 
           hoprdPackages = {
             binary-hoprd = rust-builder-local.callPackage nixLib.mkRustPackage projectBuildArgs;
+            binary-hoprd-relay = rust-builder-local.callPackage nixLib.mkRustPackage relayBuildArgs;
+            binary-hoprd-relay-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage relayBuildArgs;
+            binary-hoprd-relay-aarch64-linux = rust-builder-aarch64-linux.callPackage nixLib.mkRustPackage relayBuildArgs;
             binary-hoprd-localcluster = rust-builder-local.callPackage nixLib.mkRustPackage localclusterBuildArgs;
             binary-hoprd-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage projectBuildArgs;
             binary-hoprd-localcluster-x86_64-linux = rust-builder-x86_64-linux.callPackage nixLib.mkRustPackage localclusterBuildArgs;
@@ -578,6 +588,8 @@
               name,
               binary,
               architecture,
+              # The relay-only binary has no Session listen host to configure.
+              withSessions ? true,
             }:
             nixLib.mkDockerImage {
               inherit name;
@@ -605,8 +617,8 @@
               Cmd = [ "hoprd" ];
               env = [
                 "TMPDIR=/app/.tmp"
-                "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0"
-              ];
+              ]
+              ++ pkgs.lib.optional withSessions "HOPRD_DEFAULT_SESSION_LISTEN_HOST=auto:0";
             };
 
           mkHoprdProfileDocker =
@@ -668,6 +680,19 @@
               name = "hoprd";
               binary = hoprdPackages.binary-hoprd-dev-aarch64-linux;
               architecture = "aarch64-linux";
+            };
+            # The relay-only image: no Session stack, so no exit and no PIX.
+            docker-hoprd-relay-x86_64-linux = mkHoprdDocker {
+              name = "hoprd-relay";
+              binary = hoprdPackages.binary-hoprd-relay-x86_64-linux;
+              architecture = "x86_64-linux";
+              withSessions = false;
+            };
+            docker-hoprd-relay-aarch64-linux = mkHoprdDocker {
+              name = "hoprd-relay";
+              binary = hoprdPackages.binary-hoprd-relay-aarch64-linux;
+              architecture = "aarch64-linux";
+              withSessions = false;
             };
             docker-hoprd-pix-test-x86_64-linux = mkHoprdDocker {
               name = "hoprd-pix-test";
