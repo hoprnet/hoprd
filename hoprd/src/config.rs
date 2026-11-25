@@ -1703,7 +1703,8 @@ min_incoming_ticket_price: "0.06 wxHOPR"
             network,
             ..Default::default()
         };
-        cfg.validate().context("a legacy probe_interval must not fail validation")?;
+        cfg.validate()
+            .context("a legacy probe_interval must not fail validation")?;
         assert_eq!(
             HoprLibConfig::from(cfg).protocol.probe.interval,
             ProbeConfig::default().interval
