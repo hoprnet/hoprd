@@ -116,6 +116,13 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
 
     let mut processes = AbortableList::<HoprdProcess>::default();
 
+    if let Some(probe_interval) = cfg.hopr.network.probe_interval {
+        tracing::warn!(
+            ?probe_interval,
+            "hopr.network.probe_interval is deprecated and ignored: probes are paced by hopr-lib; remove it from the config"
+        );
+    }
+
     if cfg.sync_tolerance < 100 {
         tracing::warn!(
             sync_tolerance = cfg.sync_tolerance,
@@ -170,9 +177,8 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     let chain_connector = Arc::new(chain_connector);
 
     let loopback_window = cfg.hopr.network.loopback_window;
-    let egress_cfg = cfg.hopr.network.egress_config();
-    egress_cfg
-        .validate_against_loopback_window(hopr_lib_cfg.protocol.probe.timeout, loopback_window)?;
+    // Probe pacing is hopr-lib's `ProbeControl`; the CT generator itself runs on its defaults.
+    let egress_cfg = hopr_ct_full_network::EgressConfig::default();
 
     let ticket_store = open_ticket_store(&cfg)?;
     let (ticket_manager, ticket_factory) =
@@ -256,6 +262,18 @@ pub async fn main_inner(cfg: HoprdConfig, hopr_keys: HoprKeys) -> anyhow::Result
     );
     #[cfg(not(feature = "session-server"))]
     let node = Arc::new(builder.build_full(ticket_manager, ticket_factory).await?);
+
+    // The dial is read on every probe pull, so it applies from the next generated probe. `0` maps to
+    // `None`, which stops generated probing; validation has already rejected negative and non-finite
+    // values.
+    let probe_dial = hopr_lib::exports::transport::Dial::new(cfg.hopr.network.probe_dial);
+    node.probe_control().set_dial(probe_dial);
+    tracing::info!(
+        probe_pace = ?cfg.hopr.network.probe_pace,
+        probe_dial = ?probe_dial.map(|dial| dial.multiplier()),
+        probe_share = cfg.hopr.network.probe_share,
+        "probing rate configured"
+    );
 
     // The task is stopped through its channel, not through the abortable list: an in-flight
     // `spawn_blocking` save cannot be aborted, so the shutdown path awaits the handle instead.
