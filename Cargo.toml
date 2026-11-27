@@ -181,3 +181,24 @@ codegen-units = 16
 
 [workspace.metadata.cargo-shear]
 ignored = ["hopr-api"]
+
+# BBRv2 congestion control for the QUIC transport, until a released `libp2p-quic`
+# on the line `libp2p` 0.56 pins carries it.
+#
+# The branch is the 0.13 backport of the BBRv2 controller (`transports/quic/src/bbr2/`,
+# ported from Cloudflare quiche) plus a runtime selector: `Config::new` reads
+# `HOPR_QUIC_CONGESTION_CONTROLLER` (`cubic` when unset, also `newreno`, `bbr`, `bbr2`)
+# and logs the choice, because a stack that builds its swarm with
+# `SwarmBuilder::with_quic` never sees the `Config` and would otherwise have no way to
+# choose a controller. That switch is what lets one build produce both the CUBIC control
+# and the BBRv2 run for hoprnet/hopr-integration-tests#75.
+#
+# The branch names the registry `libp2p-core`/`libp2p-tls` instead of the fork's workspace
+# paths, so pinning it adds exactly one package to this graph. `quinn`, `quinn-proto` and
+# `quinn-udp` stay at their crates.io versions: BBRv2's rate-based pacing is not part of
+# this backport, so the only difference between the control and treatment runs is the
+# congestion controller.
+#
+# Delete this block once the controller ships on that line.
+[patch.crates-io]
+libp2p-quic = { git = "https://github.com/hoprnet/rust-libp2p", rev = "6921ef5fdad59bf9d05f7da317f5821fd238c482" }
