@@ -1,4 +1,9 @@
-//! The one-time grant a direct Curvy shield needs, executed for a freshly deployed Safe.
+//! The one-time grant a direct Curvy shield *used to* need, executed for a freshly deployed Safe.
+//!
+//! **Obsolete, and inert unless [`SCOPE_AGGREGATOR_ENV`] is set — nothing in this repository sets
+//! it any more.** `hopr-strategy` now shields through Curvy's shield router: the Safe only
+//! ERC-777-`send`s wxHOPR, which every node Safe may call from deployment, so no Safe needs the
+//! aggregator scoped. Kept until a follow-up removes it; what follows describes the old flow.
 //!
 //! The Curvy vault pulls a direct shield's wxHOPR with `safeTransferFrom(msg.sender, …)`, so the
 //! shield must be *called by the Safe* — through `HoprNodeManagementModule.execTransactionFromModule`
